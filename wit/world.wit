@@ -1,0 +1,108 @@
+package component:webgpu;
+
+
+interface gpu {
+  // static async request-adapter(): gpu-adapter;
+  // static getpreferredcanvasformat(): string; // return enum? todo:
+}
+
+world wgpu {
+  export init: func();
+
+
+  // async request-adapter(): gpu-adapter;
+  import request-adapter: func() -> gpu-adapter;
+
+  record gpu-shader-module-descriptor {
+    label: option<string>,
+    code: string,
+  }
+  resource gpu-shader-module {}
+  record gpu-vertex-state {
+    module: gpu-shader-module,
+    entry-point: string,
+  }
+  enum gpu-texture-format {
+    bgra8-unorm-srgb,
+  }
+  record gpu-fragment-state {
+    module: gpu-shader-module,
+    entry-point: string,
+    targets: list<gpu-texture-format>
+  }
+  enum gpu-primitive-topology {
+    point-list,
+    line-list,
+    line-strip,
+    triangle-list,
+    triangle-strip,
+  }
+  record gpu-primitive-state {
+    topology: gpu-primitive-topology
+  }
+  record gpu-render-pipeline-descriptor {
+    // layout: some(&pipeline_layout),
+    vertex: gpu-vertex-state,
+    fragment: gpu-fragment-state,
+    primitive: gpu-primitive-state,
+  }
+  resource gpu-render-pipeline {}
+  resource gpu-adapter {
+    // async request-device(): gpu-device; TODO:
+    request-device: func() -> gpu-device;
+  }
+  resource gpu-command-buffer {
+
+  }
+  resource gpu-device-queue {
+    submit: func(val: list<gpu-command-buffer>);
+  }
+
+  resource gpu-device {
+    create-command-encoder: func() -> gpu-command-encoder;
+    create-shader-module: func(desc: gpu-shader-module-descriptor) -> gpu-shader-module;
+    create-render-pipeline: func(props: gpu-render-pipeline-descriptor) -> gpu-render-pipeline;
+    queue: func() -> gpu-device-queue;
+
+
+
+
+    do-all: func(desc: gpu-render-pass-descriptor, pipeline: gpu-render-pipeline, count: u32) -> gpu-command-encoder;
+  }
+
+  record gpu-color-attachment {
+    view: displayable-entity-view,
+  }
+  record gpu-render-pass-descriptor {
+    label: string,
+    color-attachments: list<gpu-color-attachment>,
+  }
+  resource gpu-command-encoder {
+    begin-render-pass: func(desc: gpu-render-pass-descriptor) -> gpu-render-pass;
+    finish: func() -> gpu-command-buffer;
+  }
+  resource gpu-render-pass {
+    set-pipeline: func(pipeline: gpu-render-pipeline);
+    draw: func(count: u32);
+    end: func();
+  }
+
+
+
+
+
+
+
+
+
+
+  import get-displayable-entity: func(adapter: u32, device: u32) -> displayable-entity;
+  resource displayable-entity {
+    create-view: func() -> displayable-entity-view;
+  }
+  resource displayable-entity-view {}
+
+
+  import print: func(s: string);
+
+}
