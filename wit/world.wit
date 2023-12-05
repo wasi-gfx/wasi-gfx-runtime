@@ -6,7 +6,7 @@ interface gpu {
   // static getpreferredcanvasformat(): string; // return enum? todo:
 }
 
-world wgpu {
+world webgpu {
   export init: func();
 
 
