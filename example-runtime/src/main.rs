@@ -56,8 +56,8 @@ impl From<&wgpu::PrimitiveTopology> for GpuPrimitiveTopology {
 }
 
 wasmtime::component::bindgen!({
-    path: "../wit/world.wit",
-    world: "webgpu",
+    path: "../wit/",
+    world: "example",
     async: {
         only_imports: [],
     },
@@ -82,7 +82,7 @@ struct MyState<'a> {
 }
 
 #[async_trait::async_trait]
-impl<'a> WebgpuImports for MyState<'a> {
+impl<'a> ExampleImports for MyState<'a> {
     fn request_adapter(&mut self) -> wasmtime::Result<Resource<GpuAdapter>> {
         let adapter = block_on(self.instance.request_adapter(&Default::default())).unwrap();
         let id = rand::random();
@@ -468,7 +468,6 @@ impl<'a> MyState<'a> {
 #[async_std::main]
 async fn main() -> anyhow::Result<()> {
     let args = RuntimeArgs::parse();
-    println!("{args:?}");
 
     let mut config = Config::default();
     config.wasm_component_model(true);
@@ -476,7 +475,7 @@ async fn main() -> anyhow::Result<()> {
     let engine = Engine::new(&config)?;
     let mut linker = Linker::new(&engine);
 
-    Webgpu::add_to_linker(&mut linker, |state: &mut MyState| state)?;
+    Example::add_to_linker(&mut linker, |state| state)?;
 
     let wasi_view = MyState::new();
 
@@ -487,7 +486,7 @@ async fn main() -> anyhow::Result<()> {
     let component =
         Component::from_file(&engine, &wasm_path).context("Component file not found")?;
 
-    let (instance, _) = Webgpu::instantiate_async(&mut store, &component, &linker)
+    let (instance, _) = Example::instantiate_async(&mut store, &component, &linker)
         .await
         .unwrap();
 

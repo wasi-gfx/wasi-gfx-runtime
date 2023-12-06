@@ -1,6 +1,6 @@
 wit_bindgen::generate!({
     path: "../../wit",
-    world: "component:webgpu/webgpu",
+    world: "component:webgpu/example",
     exports: {
         world: ExampleTriangle,
     },

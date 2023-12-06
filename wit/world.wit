@@ -7,8 +7,6 @@ interface gpu {
 }
 
 world webgpu {
-  export start: func();
-
 
   // async request-adapter(): gpu-adapter;
   import request-adapter: func() -> gpu-adapter;
@@ -102,7 +100,5 @@ world webgpu {
   }
   resource displayable-entity-view {}
 
-
-  import print: func(s: string);
 
 }
