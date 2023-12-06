@@ -7,7 +7,7 @@ interface gpu {
 }
 
 world webgpu {
-  export init: func();
+  export start: func();
 
 
   // async request-adapter(): gpu-adapter;
