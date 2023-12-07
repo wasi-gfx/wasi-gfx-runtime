@@ -9,6 +9,8 @@ use wasmtime::{
 };
 use winit::event_loop::EventLoop;
 
+use component::webgpu::webgpu;
+
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
     /// The example name
@@ -16,41 +18,41 @@ struct RuntimeArgs {
     example: String,
 }
 
-impl From<&wgpu::TextureFormat> for GpuTextureFormat {
+impl From<&wgpu::TextureFormat> for webgpu::GpuTextureFormat {
     fn from(value: &wgpu::TextureFormat) -> Self {
         match value {
-            wgpu::TextureFormat::Bgra8UnormSrgb => GpuTextureFormat::Bgra8UnormSrgb,
+            wgpu::TextureFormat::Bgra8UnormSrgb => webgpu::GpuTextureFormat::Bgra8UnormSrgb,
             _ => todo!(),
         }
     }
 }
-impl From<&GpuTextureFormat> for wgpu::TextureFormat {
-    fn from(value: &GpuTextureFormat) -> Self {
+impl From<&webgpu::GpuTextureFormat> for wgpu::TextureFormat {
+    fn from(value: &webgpu::GpuTextureFormat) -> Self {
         match value {
-            GpuTextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Bgra8UnormSrgb,
+            webgpu::GpuTextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Bgra8UnormSrgb,
         }
     }
 }
 
-impl From<&GpuPrimitiveTopology> for wgpu::PrimitiveTopology {
-    fn from(value: &GpuPrimitiveTopology) -> Self {
+impl From<&webgpu::GpuPrimitiveTopology> for wgpu::PrimitiveTopology {
+    fn from(value: &webgpu::GpuPrimitiveTopology) -> Self {
         match value {
-            GpuPrimitiveTopology::PointList => wgpu::PrimitiveTopology::PointList,
-            GpuPrimitiveTopology::LineList => wgpu::PrimitiveTopology::LineList,
-            GpuPrimitiveTopology::LineStrip => wgpu::PrimitiveTopology::LineStrip,
-            GpuPrimitiveTopology::TriangleList => wgpu::PrimitiveTopology::TriangleList,
-            GpuPrimitiveTopology::TriangleStrip => wgpu::PrimitiveTopology::TriangleStrip,
+            webgpu::GpuPrimitiveTopology::PointList => wgpu::PrimitiveTopology::PointList,
+            webgpu::GpuPrimitiveTopology::LineList => wgpu::PrimitiveTopology::LineList,
+            webgpu::GpuPrimitiveTopology::LineStrip => wgpu::PrimitiveTopology::LineStrip,
+            webgpu::GpuPrimitiveTopology::TriangleList => wgpu::PrimitiveTopology::TriangleList,
+            webgpu::GpuPrimitiveTopology::TriangleStrip => wgpu::PrimitiveTopology::TriangleStrip,
         }
     }
 }
-impl From<&wgpu::PrimitiveTopology> for GpuPrimitiveTopology {
+impl From<&wgpu::PrimitiveTopology> for webgpu::GpuPrimitiveTopology {
     fn from(value: &wgpu::PrimitiveTopology) -> Self {
         match value {
-            wgpu::PrimitiveTopology::PointList => GpuPrimitiveTopology::PointList,
-            wgpu::PrimitiveTopology::LineList => GpuPrimitiveTopology::LineList,
-            wgpu::PrimitiveTopology::LineStrip => GpuPrimitiveTopology::LineStrip,
-            wgpu::PrimitiveTopology::TriangleList => GpuPrimitiveTopology::TriangleList,
-            wgpu::PrimitiveTopology::TriangleStrip => GpuPrimitiveTopology::TriangleStrip,
+            wgpu::PrimitiveTopology::PointList => webgpu::GpuPrimitiveTopology::PointList,
+            wgpu::PrimitiveTopology::LineList => webgpu::GpuPrimitiveTopology::LineList,
+            wgpu::PrimitiveTopology::LineStrip => webgpu::GpuPrimitiveTopology::LineStrip,
+            wgpu::PrimitiveTopology::TriangleList => webgpu::GpuPrimitiveTopology::TriangleList,
+            wgpu::PrimitiveTopology::TriangleStrip => webgpu::GpuPrimitiveTopology::TriangleStrip,
         }
     }
 }
@@ -83,7 +85,15 @@ struct MyState<'a> {
 
 #[async_trait::async_trait]
 impl<'a> ExampleImports for MyState<'a> {
-    fn request_adapter(&mut self) -> wasmtime::Result<Resource<GpuAdapter>> {
+    fn print(&mut self, s: String) -> Result<(), anyhow::Error> {
+        println!("{s}");
+        Ok(())
+    }
+}
+
+
+impl<'a> webgpu::Host for MyState<'a> {
+    fn request_adapter(&mut self) -> wasmtime::Result<Resource<webgpu::GpuAdapter>> {
         let adapter = block_on(self.instance.request_adapter(&Default::default())).unwrap();
         let id = rand::random();
         self.adapters.insert(id, adapter);
@@ -93,7 +103,7 @@ impl<'a> ExampleImports for MyState<'a> {
         &mut self,
         _adapter: u32,
         _device: u32,
-    ) -> wasmtime::Result<Resource<DisplayableEntity>> {
+    ) -> wasmtime::Result<Resource<webgpu::DisplayableEntity>> {
         let device = self.devices.keys().into_iter().next().unwrap();
         let adapter = self.adapters.keys().into_iter().next().unwrap();
 
@@ -133,17 +143,13 @@ impl<'a> ExampleImports for MyState<'a> {
 
         Ok(Resource::new_own(id))
     }
-    fn print(&mut self, s: String) -> Result<(), anyhow::Error> {
-        println!("{s}");
-        Ok(())
-    }
 }
 
-impl<'a> HostGpuDevice for MyState<'a> {
+impl<'a> webgpu::HostGpuDevice for MyState<'a> {
     fn create_command_encoder(
         &mut self,
-        self_: Resource<GpuDevice>,
-    ) -> wasmtime::Result<Resource<GpuCommandEncoder>> {
+        self_: Resource<webgpu::GpuDevice>,
+    ) -> wasmtime::Result<Resource<webgpu::GpuCommandEncoder>> {
         let (device, _) = self.devices.get(&self_.rep()).unwrap();
         let command_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -155,11 +161,11 @@ impl<'a> HostGpuDevice for MyState<'a> {
     }
     fn do_all(
         &mut self,
-        self_: Resource<GpuDevice>,
-        desc: GpuRenderPassDescriptor,
-        pipeline: Resource<GpuRenderPipeline>,
+        self_: Resource<webgpu::GpuDevice>,
+        desc: webgpu::GpuRenderPassDescriptor,
+        pipeline: Resource<webgpu::GpuRenderPipeline>,
         _count: u32,
-    ) -> wasmtime::Result<Resource<GpuCommandEncoder>> {
+    ) -> wasmtime::Result<Resource<webgpu::GpuCommandEncoder>> {
         let (device, _) = self.devices.get(&self_.rep()).unwrap();
         let render_pipeline = self.render_pipelines.get(&pipeline.rep()).unwrap();
 
@@ -202,9 +208,9 @@ impl<'a> HostGpuDevice for MyState<'a> {
 
     fn create_shader_module(
         &mut self,
-        self_: Resource<GpuDevice>,
-        desc: GpuShaderModuleDescriptor,
-    ) -> wasmtime::Result<Resource<GpuShaderModule>> {
+        self_: Resource<webgpu::GpuDevice>,
+        desc: webgpu::GpuShaderModuleDescriptor,
+    ) -> wasmtime::Result<Resource<webgpu::GpuShaderModule>> {
         let (device, _) = self.devices.get(&self_.rep()).unwrap();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: desc.label.as_deref(),
@@ -219,9 +225,9 @@ impl<'a> HostGpuDevice for MyState<'a> {
 
     fn create_render_pipeline(
         &mut self,
-        self_: Resource<GpuDevice>,
-        props: GpuRenderPipelineDescriptor,
-    ) -> wasmtime::Result<Resource<GpuRenderPipeline>> {
+        self_: Resource<webgpu::GpuDevice>,
+        props: webgpu::GpuRenderPipelineDescriptor,
+    ) -> wasmtime::Result<Resource<webgpu::GpuRenderPipeline>> {
         let vertex = wgpu::VertexState {
             module: &self.shaders.get(&props.vertex.module.rep()).unwrap(),
             entry_point: &props.vertex.entry_point,
@@ -270,20 +276,20 @@ impl<'a> HostGpuDevice for MyState<'a> {
         Ok(Resource::new_own(id))
     }
 
-    fn queue(&mut self, self_: Resource<GpuDevice>) -> wasmtime::Result<Resource<GpuDeviceQueue>> {
+    fn queue(&mut self, self_: Resource<webgpu::GpuDevice>) -> wasmtime::Result<Resource<webgpu::GpuDeviceQueue>> {
         Ok(Resource::new_own(self_.rep()))
     }
 
-    fn drop(&mut self, rep: Resource<GpuDevice>) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
         self.devices.remove(&rep.rep());
         Ok(())
     }
 }
-impl<'a> HostDisplayableEntity for MyState<'a> {
+impl<'a> webgpu::HostDisplayableEntity for MyState<'a> {
     fn create_view(
         &mut self,
-        self_: Resource<DisplayableEntity>,
-    ) -> wasmtime::Result<Resource<DisplayableEntityView>> {
+        self_: Resource<webgpu::DisplayableEntity>,
+    ) -> wasmtime::Result<Resource<webgpu::DisplayableEntityView>> {
         let displayable_entity = self.displayable_entities.get(&self_.rep()).unwrap();
         let surface = displayable_entity.get_current_texture().unwrap();
         let view = surface.texture.create_view(&Default::default());
@@ -293,42 +299,42 @@ impl<'a> HostDisplayableEntity for MyState<'a> {
         Ok(Resource::new_own(id))
     }
 
-    fn drop(&mut self, rep: Resource<DisplayableEntity>) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: Resource<webgpu::DisplayableEntity>) -> wasmtime::Result<()> {
         self.displayable_entities.remove(&rep.rep());
         Ok(())
     }
 }
 
-impl<'a> HostDisplayableEntityView for MyState<'a> {
-    fn drop(&mut self, rep: Resource<DisplayableEntityView>) -> wasmtime::Result<()> {
+impl<'a> webgpu::HostDisplayableEntityView for MyState<'a> {
+    fn drop(&mut self, rep: Resource<webgpu::DisplayableEntityView>) -> wasmtime::Result<()> {
         self.displayable_entities.remove(&rep.rep());
         Ok(())
     }
 }
 
-impl<'a> HostGpuCommandBuffer for MyState<'a> {
-    fn drop(&mut self, rep: Resource<GpuCommandBuffer>) -> wasmtime::Result<()> {
+impl<'a> webgpu::HostGpuCommandBuffer for MyState<'a> {
+    fn drop(&mut self, rep: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<()> {
         self.command_buffers.remove(&rep.rep());
         Ok(())
     }
 }
-impl<'a> HostGpuShaderModule for MyState<'a> {
-    fn drop(&mut self, rep: Resource<GpuShaderModule>) -> wasmtime::Result<()> {
+impl<'a> webgpu::HostGpuShaderModule for MyState<'a> {
+    fn drop(&mut self, rep: Resource<webgpu::GpuShaderModule>) -> wasmtime::Result<()> {
         self.shaders.remove(&rep.rep());
         Ok(())
     }
 }
-impl<'a> HostGpuRenderPipeline for MyState<'a> {
-    fn drop(&mut self, _rep: Resource<GpuRenderPipeline>) -> wasmtime::Result<()> {
+impl<'a> webgpu::HostGpuRenderPipeline for MyState<'a> {
+    fn drop(&mut self, _rep: Resource<webgpu::GpuRenderPipeline>) -> wasmtime::Result<()> {
         // TODO:
         Ok(())
     }
 }
-impl<'a> HostGpuAdapter for MyState<'a> {
+impl<'a> webgpu::HostGpuAdapter for MyState<'a> {
     fn request_device(
         &mut self,
-        self_: Resource<GpuAdapter>,
-    ) -> wasmtime::Result<Resource<GpuDevice>> {
+        self_: Resource<webgpu::GpuAdapter>,
+    ) -> wasmtime::Result<Resource<webgpu::GpuDevice>> {
         let adapter = self.adapters.get(&self_.rep()).unwrap();
 
         let device =
@@ -339,16 +345,16 @@ impl<'a> HostGpuAdapter for MyState<'a> {
         Ok(Resource::new_own(id))
     }
 
-    fn drop(&mut self, rep: Resource<GpuAdapter>) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: Resource<webgpu::GpuAdapter>) -> wasmtime::Result<()> {
         self.adapters.remove(&rep.rep());
         Ok(())
     }
 }
-impl<'a> HostGpuDeviceQueue for MyState<'a> {
+impl<'a> webgpu::HostGpuDeviceQueue for MyState<'a> {
     fn submit(
         &mut self,
-        self_: Resource<GpuDeviceQueue>,
-        val: Vec<Resource<GpuCommandBuffer>>,
+        self_: Resource<webgpu::GpuDeviceQueue>,
+        val: Vec<Resource<webgpu::GpuCommandBuffer>>,
     ) -> wasmtime::Result<()> {
         let (_, queue) = self.devices.get(&self_.rep()).unwrap();
         let command_buffers = val
@@ -370,17 +376,17 @@ impl<'a> HostGpuDeviceQueue for MyState<'a> {
         Ok(())
     }
 
-    fn drop(&mut self, _rep: Resource<GpuDeviceQueue>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _rep: Resource<webgpu::GpuDeviceQueue>) -> wasmtime::Result<()> {
         // todo!()
         Ok(())
     }
 }
-impl<'a> HostGpuCommandEncoder for MyState<'a> {
+impl<'a> webgpu::HostGpuCommandEncoder for MyState<'a> {
     fn begin_render_pass(
         &mut self,
-        self_: Resource<GpuCommandEncoder>,
-        desc: GpuRenderPassDescriptor,
-    ) -> wasmtime::Result<Resource<GpuRenderPass>> {
+        self_: Resource<webgpu::GpuCommandEncoder>,
+        desc: webgpu::GpuRenderPassDescriptor,
+    ) -> wasmtime::Result<Resource<webgpu::GpuRenderPass>> {
         let encoder = self.encoders.get_mut(&self_.rep()).unwrap();
 
         let color_attachments = desc
@@ -413,8 +419,8 @@ impl<'a> HostGpuCommandEncoder for MyState<'a> {
 
     fn finish(
         &mut self,
-        self_: Resource<GpuCommandEncoder>,
-    ) -> wasmtime::Result<Resource<GpuCommandBuffer>> {
+        self_: Resource<webgpu::GpuCommandEncoder>,
+    ) -> wasmtime::Result<Resource<webgpu::GpuCommandBuffer>> {
         let encoder = self.encoders.remove(&self_.rep()).unwrap().0;
         let command_buffer = encoder.finish();
         let id = rand::random();
@@ -422,29 +428,29 @@ impl<'a> HostGpuCommandEncoder for MyState<'a> {
         Ok(Resource::new_own(id))
     }
 
-    fn drop(&mut self, rep: Resource<GpuCommandEncoder>) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: Resource<webgpu::GpuCommandEncoder>) -> wasmtime::Result<()> {
         self.encoders.remove(&rep.rep());
         Ok(())
     }
 }
-impl<'a> HostGpuRenderPass for MyState<'a> {
+impl<'a> webgpu::HostGpuRenderPass for MyState<'a> {
     fn set_pipeline(
         &mut self,
-        _self_: Resource<GpuRenderPass>,
-        _pipeline: Resource<GpuRenderPipeline>,
+        _self_: Resource<webgpu::GpuRenderPass>,
+        _pipeline: Resource<webgpu::GpuRenderPipeline>,
     ) -> wasmtime::Result<()> {
         anyhow::bail!("")
     }
 
-    fn draw(&mut self, _self_: Resource<GpuRenderPass>, _count: u32) -> wasmtime::Result<()> {
+    fn draw(&mut self, _self_: Resource<webgpu::GpuRenderPass>, _count: u32) -> wasmtime::Result<()> {
         anyhow::bail!("")
     }
 
-    fn end(&mut self, _self_: Resource<GpuRenderPass>) -> wasmtime::Result<()> {
+    fn end(&mut self, _self_: Resource<webgpu::GpuRenderPass>) -> wasmtime::Result<()> {
         anyhow::bail!("")
     }
 
-    fn drop(&mut self, _rep: Resource<GpuRenderPass>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _rep: Resource<webgpu::GpuRenderPass>) -> wasmtime::Result<()> {
         anyhow::bail!("")
     }
 }

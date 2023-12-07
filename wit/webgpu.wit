@@ -6,10 +6,10 @@ interface gpu {
   // static getpreferredcanvasformat(): string; // return enum? todo:
 }
 
-world webgpu {
+interface webgpu {
 
   // async request-adapter(): gpu-adapter;
-  import request-adapter: func() -> gpu-adapter;
+  request-adapter: func() -> gpu-adapter;
 
   record gpu-shader-module-descriptor {
     label: option<string>,
@@ -94,7 +94,7 @@ world webgpu {
 
 
 
-  import get-displayable-entity: func(adapter: u32, device: u32) -> displayable-entity;
+  get-displayable-entity: func(adapter: u32, device: u32) -> displayable-entity;
   resource displayable-entity {
     create-view: func() -> displayable-entity-view;
   }

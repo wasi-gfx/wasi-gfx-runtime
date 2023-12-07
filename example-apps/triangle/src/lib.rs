@@ -14,6 +14,8 @@ impl Guest for ExampleTriangle {
     }
 }
 
+use component::webgpu::webgpu;
+
 const SHADER_CODE: &str = r#"
 @vertex
 fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
@@ -29,28 +31,28 @@ fn fs_main() -> @location(0) vec4<f32> {
 "#;
 
 fn draw_triangle() {
-    let adapter = request_adapter();
+    let adapter = webgpu::request_adapter();
     let device = adapter.request_device();
 
-    let displayable_entity = get_displayable_entity(adapter.handle(), device.handle());
-    let render_pipeline = device.create_render_pipeline(GpuRenderPipelineDescriptor {
-        vertex: GpuVertexState {
-            module: device.create_shader_module(&GpuShaderModuleDescriptor {
+    let displayable_entity = webgpu::get_displayable_entity(adapter.handle(), device.handle());
+    let render_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
+        vertex: webgpu::GpuVertexState {
+            module: device.create_shader_module(&webgpu::GpuShaderModuleDescriptor {
                 code: SHADER_CODE.to_string(),
                 label: None,
             }),
             entry_point: "vs_main".to_string(),
         },
-        fragment: GpuFragmentState {
-            module: device.create_shader_module(&GpuShaderModuleDescriptor {
+        fragment: webgpu::GpuFragmentState {
+            module: device.create_shader_module(&webgpu::GpuShaderModuleDescriptor {
                 code: SHADER_CODE.to_string(),
                 label: None,
             }),
             entry_point: "fs_main".to_string(),
-            targets: vec![GpuTextureFormat::Bgra8UnormSrgb],
+            targets: vec![webgpu::GpuTextureFormat::Bgra8UnormSrgb],
         },
-        primitive: GpuPrimitiveState {
-            topology: GpuPrimitiveTopology::PointList,
+        primitive: webgpu::GpuPrimitiveState {
+            topology: webgpu::GpuPrimitiveTopology::PointList,
         },
     });
 
@@ -80,9 +82,9 @@ fn draw_triangle() {
     //     rpass.draw(2);
     // }
     let encoder = device.do_all(
-        GpuRenderPassDescriptor {
+        webgpu::GpuRenderPassDescriptor {
             label: String::from("fdsa"),
-            color_attachments: vec![GpuColorAttachment { view }],
+            color_attachments: vec![webgpu::GpuColorAttachment { view }],
         },
         render_pipeline,
         4,

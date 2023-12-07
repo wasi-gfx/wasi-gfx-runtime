@@ -2,7 +2,7 @@ package component:webgpu;
 
 /// wit for the examples in this repo
 world example {
-  include webgpu;
+  import webgpu;
 
   /// main entrypoint
   export start: func();
