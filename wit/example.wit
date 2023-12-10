@@ -3,6 +3,7 @@ package component:webgpu;
 /// wit for the examples in this repo
 world example {
   import webgpu;
+  import request-animation-frame;
 
   /// main entrypoint
   export start: func();

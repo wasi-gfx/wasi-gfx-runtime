@@ -1,3 +1,24 @@
+#### Setup env:
+```bash
+rustup target add wasm32-unknown-unknown
+```
+
+```bash
+cargo install wasm-tools
+```
+
+```bash
+cargo install wit-deps-cli
+```
+
+
+#### Install wit dependencies
+In `/`
+```bash
+wit-deps
+```
+
+
 #### To run the examples:
 
 In `example-apps/*/`
@@ -23,5 +44,5 @@ export GRUB_CMDLINE_LINUX="nvidia-drm.modeset=1" && cargo run -- --example trian
 
 In `example-apps/*/`
 ```bash
-wasm-tools component wit ./target/wasm32-unknown-unknown/release/webgpu.wasm
+wasm-tools component wit ./target/wasm32-unknown-unknown/release/triangle.wasm
 ```

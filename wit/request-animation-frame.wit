@@ -1,0 +1,13 @@
+package component:webgpu;
+
+interface request-animation-frame {
+    use wasi:io/poll@0.2.0-rc-2023-11-10.{pollable};
+
+    get-frame: func() -> frame;
+
+    resource frame {
+        subscribe: func() -> pollable;
+
+        get: func() -> option<bool>;
+    }
+}

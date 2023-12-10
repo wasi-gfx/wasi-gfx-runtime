@@ -1,6 +1,6 @@
 use futures::executor::block_on;
 use std::borrow::Cow;
-use std::{collections::HashMap, mem, thread::sleep, time::Duration};
+use std::{collections::HashMap, mem};
 use wasmtime::component::Resource;
 use winit::event_loop::EventLoop;
 
@@ -153,7 +153,13 @@ impl<'a> webgpu::HostGpuDevice for WebGpuHost<'a> {
                     view: &view.0,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
+                        // load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: rand::random(),
+                            a: 0.0,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })
@@ -239,8 +245,6 @@ impl<'a> webgpu::HostGpuDevice for WebGpuHost<'a> {
             label: Default::default(),
             layout: Default::default(),
         });
-
-        sleep(Duration::from_millis(1000));
 
         let id = rand::random();
         self.render_pipelines.insert(id, render_pipeline);
@@ -344,8 +348,6 @@ impl<'a> webgpu::HostGpuDeviceQueue for WebGpuHost<'a> {
         queue.submit(command_buffers);
 
         surface_texture.present();
-
-        sleep(Duration::from_millis(10000));
 
         Ok(())
     }

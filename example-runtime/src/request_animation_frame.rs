@@ -1,0 +1,75 @@
+use std::time::Duration;
+use async_std::task::sleep;
+use wasmtime::component::Resource;
+use crate::component::webgpu::request_animation_frame::{HostFrame, Frame, Pollable};
+use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView, self};
+
+
+pub struct FrameHost {
+    pub table: Table,
+    pub ctx: WasiCtx,
+}
+
+impl FrameHost {
+    pub fn new() -> Self {
+        Self {
+            table: Table::new(),
+            ctx: WasiCtxBuilder::new().inherit_stdio().build(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl WasiView for FrameHost {
+    fn table(&self) -> &Table {
+        &self.table
+    }
+
+    fn table_mut(&mut self) -> &mut Table {
+        &mut self.table
+    }
+
+    fn ctx(&self) -> &WasiCtx {
+        &self.ctx
+    }
+
+    fn ctx_mut(&mut self) -> &mut WasiCtx {
+        &mut self.ctx
+    }
+}
+
+impl crate::component::webgpu::request_animation_frame::Host for FrameHost {
+    fn get_frame(&mut self) -> wasmtime::Result<wasmtime::component::Resource<Frame>> {
+        println!("in get_frame");
+        let g = self.table_mut().push(FrameThis{}).unwrap();
+        Ok(Resource::new_own(g.rep()))
+    }
+}
+
+#[async_trait::async_trait]
+impl HostFrame for FrameHost {
+    fn subscribe(&mut self, self_: Resource<Frame>) -> wasmtime::Result<Resource<Pollable>> {
+        let g: Resource<FrameThis> = Resource::new_own(self_.rep());
+        preview2::subscribe(self.table_mut(), g)
+    }
+    fn get(&mut self, _self_: Resource<Frame>) -> wasmtime::Result<Option<bool>> {
+        println!("in get");
+        Ok(Some(false))
+    }
+    fn drop(&mut self, _self_: Resource<Frame>) -> wasmtime::Result<()> {
+        println!("in drop");
+        Ok(())
+    }
+}
+
+struct FrameThis {
+
+}
+
+#[async_trait::async_trait]
+impl preview2::Subscribe for FrameThis {
+    async fn ready(&mut self) {
+        println!("in subscribe::ready");
+        sleep(Duration::from_millis(20)).await
+    }
+}

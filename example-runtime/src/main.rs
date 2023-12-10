@@ -6,8 +6,11 @@ use wasmtime::{
 };
 
 use crate::webgpu_host::WebGpuHost;
+use crate::request_animation_frame::FrameHost;
+use wasmtime_wasi::preview2;
 
 mod webgpu_host;
+mod request_animation_frame;
 
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
@@ -22,16 +25,22 @@ wasmtime::component::bindgen!({
     async: {
         only_imports: [],
     },
+    with: {
+        "wasi:io/poll": preview2::bindings::io::poll,
+        "wasi:io/streams": preview2::bindings::io::streams,
+     },
 });
 
 struct HostState {
     pub web_gpu_host: WebGpuHost<'static>,
+    pub frame_host: FrameHost,
 }
 
 impl HostState {
     fn new() -> Self {
         Self {
             web_gpu_host: WebGpuHost::new(),
+            frame_host: FrameHost::new(),
         }
     }
 }
@@ -57,6 +66,13 @@ async fn main() -> anyhow::Result<()> {
     component::webgpu::webgpu::add_to_linker(&mut linker, |state: &mut HostState| {
         &mut state.web_gpu_host
     })?;
+
+    component::webgpu::request_animation_frame::add_to_linker(&mut linker, |state: &mut HostState| {
+        &mut state.frame_host
+    })?;
+
+    preview2::bindings::io::poll::add_to_linker(&mut linker, |state| &mut state.frame_host)?;
+    preview2::bindings::io::streams::add_to_linker(&mut linker, |state| &mut state.frame_host)?;
 
     Example::add_root_to_linker(&mut linker, |state: &mut HostState| state)?;
 
