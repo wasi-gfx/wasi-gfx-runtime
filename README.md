@@ -36,7 +36,7 @@ cargo run -- --example triangle
 Wayland on an Nvidia GPU is [not working well](https://github.com/gfx-rs/wgpu/issues/2519), use XWayland instead:
 
 ```bash
-export GRUB_CMDLINE_LINUX="nvidia-drm.modeset=1" && cargo run -- --example triangle
+export WAYLAND_DISPLAY=wayland-1 vkcube && cargo run -- --example triangle
 ```
 
 
