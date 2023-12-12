@@ -1,3 +1,8 @@
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+
 use anyhow::Context;
 use clap::Parser;
 use wasmtime::{
@@ -35,6 +40,74 @@ struct HostState {
     pub web_gpu_host: WebGpuHost<'static>,
     pub table: Table,
     pub ctx: WasiCtx,
+    pub events: Arc<HostStateEvents>,
+}
+
+struct HostStateEvents {
+    pub pointer_up: Mutex<Option<(i32, i32)>>,
+    pub frame: Mutex<Option<()>>,
+}
+
+impl HostStateEvents {
+    pub fn new() -> Self {
+        Self {
+            pointer_up: Mutex::new(None),
+            frame: Mutex::new(None),
+        }
+    }
+
+    pub fn listen_to_events(self: Arc<Self>, event_loop: EventLoop<()>) {
+        use winit::event::{Event, MouseButton, WindowEvent};
+
+        let state = Arc::clone(&self);
+        std::thread::spawn(move || loop {
+            let mut frame = state.frame.lock().unwrap();
+            *frame = Some(());
+            drop(frame);
+            std::thread::sleep(Duration::from_millis(16));
+        });
+
+        event_loop.run(move |event, _target, _control_flow| {
+            // *control_flow = ControlFlow::Poll;
+            match event {
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => {}
+
+                Event::WindowEvent {
+                    event: WindowEvent::Resized(new_size),
+                    ..
+                } => {
+                    println!("Resized to {:?}", new_size);
+                }
+
+                Event::WindowEvent {
+                    event:
+                        WindowEvent::MouseInput {
+                            button: MouseButton::Left,
+                            state: ElementState::Released,
+                            ..
+                        },
+                    ..
+                } => {
+                    println!("mouse click");
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::CursorMoved { position, .. },
+                    ..
+                } => {
+                    println!("mouse CursorMoved {position:?}");
+                    *self.pointer_up.lock().unwrap() = Some((position.x as i32, position.y as i32));
+                }
+                // Event::RedrawRequested(_) => {
+                //     window.request_redraw();
+                //     println!("animation frame {:?}", t.elapsed());
+                // },
+                _ => (),
+            }
+        });
+    }
 }
 
 impl HostState {
@@ -43,6 +116,7 @@ impl HostState {
             web_gpu_host: WebGpuHost::new(event_loop),
             table: Table::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
+            events: Arc::new(HostStateEvents::new()),
         }
     }
 }
@@ -106,9 +180,11 @@ async fn main() -> anyhow::Result<()> {
 
     let event = winit::event_loop::EventLoopBuilder::new().build();
 
-    let webgpu_host = HostState::new(&event);
+    let host_state = HostState::new(&event);
 
-    let mut store = Store::new(&engine, webgpu_host);
+    let events_state = Arc::clone(&host_state.events);
+
+    let mut store = Store::new(&engine, host_state);
 
     let wasm_path = format!("../example-apps/{}/out.wasm", args.example);
 
@@ -123,51 +199,7 @@ async fn main() -> anyhow::Result<()> {
         instance.call_start(&mut store).await.unwrap();
     });
 
-    listen_to_events(event);
+    events_state.listen_to_events(event);
 
     Ok(())
-}
-
-pub fn listen_to_events(event_loop: EventLoop<()>) {
-    use winit::event::{Event, MouseButton, WindowEvent};
-
-    event_loop.run(move |event, _target, _control_flow| {
-        // *control_flow = ControlFlow::Poll;
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {}
-
-            Event::WindowEvent {
-                event: WindowEvent::Resized(new_size),
-                ..
-            } => {
-                println!("Resized to {:?}", new_size);
-            }
-
-            Event::WindowEvent {
-                event:
-                    WindowEvent::MouseInput {
-                        button: MouseButton::Left,
-                        state: ElementState::Released,
-                        ..
-                    },
-                ..
-            } => {
-                println!("mouse click");
-            }
-            Event::WindowEvent {
-                event: WindowEvent::CursorMoved { position, .. },
-                ..
-            } => {
-                println!("mouse CursorMoved {position:?}");
-            }
-            // Event::RedrawRequested(_) => {
-            //     window.request_redraw();
-            //     println!("animation frame {:?}", t.elapsed());
-            // },
-            _ => (),
-        }
-    });
 }
