@@ -330,7 +330,6 @@ impl<'a> webgpu::HostDisplayableEntityView for HostState {
     }
 }
 
-
 #[async_trait::async_trait]
 impl<'a> webgpu::HostGpuCommandBuffer for HostState {
     fn drop(&mut self, rep: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<()> {

@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use crate::{
     component::webgpu::request_animation_frame::{Frame, HostFrame, Pollable},
     HostEvent, HostState,
@@ -12,7 +14,13 @@ impl crate::component::webgpu::request_animation_frame::Host for HostState {
         println!("in get_frame");
         let receiver = self.sender.subscribe();
 
-        let g = self.table_mut().push(FrameThis { receiver }).unwrap();
+        let g = self
+            .table_mut()
+            .push(FrameThis {
+                receiver,
+                data: Default::default(),
+            })
+            .unwrap();
         Ok(Resource::new_own(g.rep()))
     }
 }
@@ -23,9 +31,11 @@ impl HostFrame for HostState {
         let g: Resource<FrameThis> = Resource::new_own(self_.rep());
         preview2::subscribe(self.table_mut(), g)
     }
-    async fn get(&mut self, _self_: Resource<Frame>) -> wasmtime::Result<Option<bool>> {
-        println!("in get");
-        Ok(Some(false))
+    async fn get(&mut self, self_: Resource<Frame>) -> wasmtime::Result<Option<bool>> {
+        let g: Resource<FrameThis> = Resource::new_own(self_.rep());
+        let ddd = self.table.get(&g).unwrap();
+        let res = ddd.data.lock().unwrap().take();
+        Ok(res.map(|_| true))
     }
     fn drop(&mut self, _self_: Resource<Frame>) -> wasmtime::Result<()> {
         println!("in drop");
@@ -35,6 +45,7 @@ impl HostFrame for HostState {
 
 struct FrameThis {
     receiver: Receiver<HostEvent>,
+    data: Mutex<Option<()>>,
 }
 
 #[async_trait::async_trait]
@@ -42,8 +53,8 @@ impl preview2::Subscribe for FrameThis {
     async fn ready(&mut self) {
         loop {
             let event = self.receiver.recv().await.unwrap();
-            if let HostEvent::Frame { .. } = event {
-                println!("frame ready");
+            if let HostEvent::Frame = event {
+                *self.data.lock().unwrap() = Some(());
                 return;
             }
         }
