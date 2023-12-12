@@ -1,8 +1,9 @@
 use futures::executor::block_on;
 use std::borrow::Cow;
-use std::{collections::HashMap, mem};
+use std::collections::HashMap;
 use wasmtime::component::Resource;
 use winit::event_loop::EventLoop;
+use winit::window::Window;
 
 use crate::component::webgpu::webgpu;
 
@@ -61,6 +62,7 @@ pub struct WebGpuHost<'a> {
     >,
     command_buffers: HashMap<u32, wgpu::CommandBuffer>,
     render_pipelines: HashMap<u32, wgpu::RenderPipeline>,
+    window: Window,
 }
 
 impl<'a> webgpu::Host for WebGpuHost<'a> {
@@ -81,18 +83,11 @@ impl<'a> webgpu::Host for WebGpuHost<'a> {
         let (device, _) = self.devices.get(&device).unwrap();
         let adapter = self.adapters.get(&adapter).unwrap();
 
-        let event = EventLoop::new();
-
-        let window = winit::window::Window::new(&event).unwrap();
-
-        // needed on home laptop. No idea why.
-        mem::forget(event);
-
-        let mut size = window.inner_size();
+        let mut size = self.window.inner_size();
         size.width = size.width.max(1);
         size.height = size.height.max(1);
 
-        let surface = unsafe { self.instance.create_surface(&window) }.unwrap();
+        let surface = unsafe { self.instance.create_surface(&self.window) }.unwrap();
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
@@ -436,7 +431,7 @@ impl<'a> webgpu::HostGpuRenderPass for WebGpuHost<'a> {
 }
 
 impl<'a> WebGpuHost<'a> {
-    pub fn new() -> Self {
+    pub fn new(event_loop: &EventLoop<()>) -> Self {
         Self {
             instance: Default::default(),
             adapters: HashMap::new(),
@@ -447,6 +442,7 @@ impl<'a> WebGpuHost<'a> {
             command_buffers: HashMap::new(),
             render_pipelines: HashMap::new(),
             views: HashMap::new(),
+            window: winit::window::Window::new(event_loop).unwrap(),
         }
     }
 }

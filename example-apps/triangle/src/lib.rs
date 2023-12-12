@@ -14,8 +14,7 @@ impl Guest for ExampleTriangle {
     }
 }
 
-use component::webgpu::webgpu;
-use component::webgpu::request_animation_frame;
+use component::webgpu::{webgpu, request_animation_frame, pointer_events};
 
 const SHADER_CODE: &str = r#"
 @vertex
@@ -37,10 +36,11 @@ fn draw_triangle() {
 
     let displayable_entity = webgpu::get_displayable_entity(adapter.handle(), device.handle());
 
-    let frame = request_animation_frame::get_frame();
-    let pollable = frame.subscribe();
+    // let frame = request_animation_frame::get_frame();
+    // let pollable = frame.subscribe();
+    let pointer_up = pointer_events::up();
+    let pollable = pointer_up.subscribe();
     loop {
-
         let render_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
             vertex: webgpu::GpuVertexState {
                 module: device.create_shader_module(&webgpu::GpuShaderModuleDescriptor {

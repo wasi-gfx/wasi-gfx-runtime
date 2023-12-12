@@ -4,13 +4,13 @@ use wasmtime::{
     component::{Component, Linker},
     Config, Engine, Store,
 };
+use winit::{event::ElementState, event_loop::EventLoop};
 
 use crate::webgpu_host::WebGpuHost;
-use crate::request_animation_frame::FrameHost;
-use wasmtime_wasi::preview2;
-
-mod webgpu_host;
+use wasmtime_wasi::preview2::{self, Table, WasiCtx, WasiCtxBuilder, WasiView};
+mod pointer_events;
 mod request_animation_frame;
+mod webgpu_host;
 
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
@@ -33,15 +33,36 @@ wasmtime::component::bindgen!({
 
 struct HostState {
     pub web_gpu_host: WebGpuHost<'static>,
-    pub frame_host: FrameHost,
+    pub table: Table,
+    pub ctx: WasiCtx,
 }
 
 impl HostState {
-    fn new() -> Self {
+    fn new(event_loop: &EventLoop<()>) -> Self {
         Self {
-            web_gpu_host: WebGpuHost::new(),
-            frame_host: FrameHost::new(),
+            web_gpu_host: WebGpuHost::new(event_loop),
+            table: Table::new(),
+            ctx: WasiCtxBuilder::new().inherit_stdio().build(),
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl WasiView for HostState {
+    fn table(&self) -> &Table {
+        &self.table
+    }
+
+    fn table_mut(&mut self) -> &mut Table {
+        &mut self.table
+    }
+
+    fn ctx(&self) -> &WasiCtx {
+        &self.ctx
+    }
+
+    fn ctx_mut(&mut self) -> &mut WasiCtx {
+        &mut self.ctx
     }
 }
 
@@ -67,16 +88,25 @@ async fn main() -> anyhow::Result<()> {
         &mut state.web_gpu_host
     })?;
 
-    component::webgpu::request_animation_frame::add_to_linker(&mut linker, |state: &mut HostState| {
-        &mut state.frame_host
-    })?;
+    component::webgpu::request_animation_frame::add_to_linker(
+        &mut linker,
+        |state: &mut HostState| state,
+    )?;
 
-    preview2::bindings::io::poll::add_to_linker(&mut linker, |state| &mut state.frame_host)?;
-    preview2::bindings::io::streams::add_to_linker(&mut linker, |state| &mut state.frame_host)?;
+    component::webgpu::pointer_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+
+    // preview2::bindings::io::poll::add_to_linker(&mut linker, |state| &mut state.frame_host)?;
+    // preview2::bindings::io::streams::add_to_linker(&mut linker, |state| &mut state.frame_host)?;
+    // preview2::bindings::io::poll::add_to_linker(&mut linker, |state| &mut state.pointer_events_host)?;
+    // preview2::bindings::io::streams::add_to_linker(&mut linker, |state| &mut state.pointer_events_host)?;
+    preview2::bindings::io::poll::add_to_linker(&mut linker, |state| state)?;
+    preview2::bindings::io::streams::add_to_linker(&mut linker, |state| state)?;
 
     Example::add_root_to_linker(&mut linker, |state: &mut HostState| state)?;
 
-    let webgpu_host = HostState::new();
+    let event = winit::event_loop::EventLoopBuilder::new().build();
+
+    let webgpu_host = HostState::new(&event);
 
     let mut store = Store::new(&engine, webgpu_host);
 
@@ -89,7 +119,55 @@ async fn main() -> anyhow::Result<()> {
         .await
         .unwrap();
 
-    instance.call_start(&mut store).await.unwrap();
+    async_std::task::spawn(async move {
+        instance.call_start(&mut store).await.unwrap();
+    });
+
+    listen_to_events(event);
 
     Ok(())
+}
+
+pub fn listen_to_events(event_loop: EventLoop<()>) {
+    use winit::event::{Event, MouseButton, WindowEvent};
+
+    event_loop.run(move |event, _target, _control_flow| {
+        // *control_flow = ControlFlow::Poll;
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {}
+
+            Event::WindowEvent {
+                event: WindowEvent::Resized(new_size),
+                ..
+            } => {
+                println!("Resized to {:?}", new_size);
+            }
+
+            Event::WindowEvent {
+                event:
+                    WindowEvent::MouseInput {
+                        button: MouseButton::Left,
+                        state: ElementState::Released,
+                        ..
+                    },
+                ..
+            } => {
+                println!("mouse click");
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved { position, .. },
+                ..
+            } => {
+                println!("mouse CursorMoved {position:?}");
+            }
+            // Event::RedrawRequested(_) => {
+            //     window.request_redraw();
+            //     println!("animation frame {:?}", t.elapsed());
+            // },
+            _ => (),
+        }
+    });
 }

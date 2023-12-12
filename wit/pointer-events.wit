@@ -1,0 +1,18 @@
+package component:webgpu;
+
+interface pointer-events {
+    use wasi:io/poll@0.2.0-rc-2023-11-10.{pollable};
+
+    up: func() -> pointer-up;
+
+    resource pointer-up {
+        subscribe: func() -> pollable;
+
+        get: func() -> option<pointer-event>;
+    }
+
+    record pointer-event {
+        x: s32,
+        y: s32,
+    }
+}

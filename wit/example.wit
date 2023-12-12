@@ -4,6 +4,7 @@ package component:webgpu;
 world example {
   import webgpu;
   import request-animation-frame;
+  import pointer-events;
 
   /// main entrypoint
   export start: func();
