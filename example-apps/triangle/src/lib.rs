@@ -14,7 +14,7 @@ impl Guest for ExampleTriangle {
     }
 }
 
-use component::webgpu::{webgpu, request_animation_frame, pointer_events};
+use component::webgpu::{pointer_events, request_animation_frame, webgpu};
 
 const SHADER_CODE: &str = r#"
 @vertex
@@ -36,10 +36,11 @@ fn draw_triangle() {
 
     let displayable_entity = webgpu::get_displayable_entity(adapter.handle(), device.handle());
 
-    let frame = request_animation_frame::get_frame();
-    let pollable_a = frame.subscribe();
     let pointer_up = pointer_events::up();
-    let pollable_b = pointer_up.subscribe();
+    let pointer_up_pollable = pointer_up.subscribe();
+    let frame = request_animation_frame::get_frame();
+    let frame_pollable = frame.subscribe();
+    let pollables = vec![&pointer_up_pollable, &frame_pollable];
     loop {
         let render_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
             vertex: webgpu::GpuVertexState {
@@ -62,49 +63,61 @@ fn draw_triangle() {
             },
         });
 
-        let g = wasi::io::poll::poll(&[
-            &pollable_b,
-            &pollable_a,
-        ]);
-        print(&format!("{:?}", g));
-        // let g = pollable.block();
+        let pollables_res = wasi::io::poll::poll(&pollables);
 
-        // on frame:
+        if pollables_res.contains(&0) {
+            let event = pointer_up.get();
+            print(&format!("pointer_up: {:?}", event));
+        }
 
-        // let frame = surface
-        //     .get_current_texture()
-        //     .expect("Failed to acquire next swap chain texture");
-        // let view = frame
-        //     .texture
-        //     .create_view(&wgpu::TextureViewDescriptor::default());
+        if pollables_res.contains(&1) {
+            frame.get();
+            print(&format!("frame event"));
+            // print(&format!("{:?}", g));
+            // let pointer_up_instance = pointer_up.get();
+            // let frame_instance = frame.get();
 
-        let view = displayable_entity.create_view();
-        // let encoder = device.create_command_encoder();
-        // {
-        //     print("xx");
+            // print(&format!("pointer_up: {:?}", pointer_up_instance));
+            // print(&format!("frame: {:?}", frame_instance));
+            // let g = pollable.block();
 
-        //     let rpass = encoder.begin_render_pass(GpuRenderPassDescriptor {
-        //         label: String::from("fdsa"),
-        //         color_attachments: vec![GpuColorAttachment {
-        //             view,
-        //         }],
-        //     });
-        //     print("xxx");
+            // on frame:
 
-        //     rpass.set_pipeline(render_pipeline);
-        //     rpass.draw(2);
-        // }
-        let encoder = device.do_all(
-            webgpu::GpuRenderPassDescriptor {
-                label: String::from("fdsa"),
-                color_attachments: vec![webgpu::GpuColorAttachment { view }],
-            },
-            render_pipeline,
-            4,
-        );
+            // let frame = surface
+            //     .get_current_texture()
+            //     .expect("Failed to acquire next swap chain texture");
+            // let view = frame
+            //     .texture
+            //     .create_view(&wgpu::TextureViewDescriptor::default());
 
-        device.queue().submit(vec![encoder.finish()])
-        // queue.submit(Some(encoder.finish()));
-        // frame.present();
+            let view = displayable_entity.create_view();
+            // let encoder = device.create_command_encoder();
+            // {
+            //     print("xx");
+
+            //     let rpass = encoder.begin_render_pass(GpuRenderPassDescriptor {
+            //         label: String::from("fdsa"),
+            //         color_attachments: vec![GpuColorAttachment {
+            //             view,
+            //         }],
+            //     });
+            //     print("xxx");
+
+            //     rpass.set_pipeline(render_pipeline);
+            //     rpass.draw(2);
+            // }
+            let encoder = device.do_all(
+                webgpu::GpuRenderPassDescriptor {
+                    label: String::from("fdsa"),
+                    color_attachments: vec![webgpu::GpuColorAttachment { view }],
+                },
+                render_pipeline,
+                4,
+            );
+
+            device.queue().submit(vec![encoder.finish()])
+            // queue.submit(Some(encoder.finish()));
+            // frame.present();
+        }
     }
 }
