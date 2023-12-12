@@ -158,9 +158,7 @@ async fn main() -> anyhow::Result<()> {
     let engine = Engine::new(&config)?;
     let mut linker = Linker::new(&engine);
 
-    component::webgpu::webgpu::add_to_linker(&mut linker, |state: &mut HostState| {
-        &mut state.web_gpu_host
-    })?;
+    component::webgpu::webgpu::add_to_linker(&mut linker, |state: &mut HostState| state)?;
 
     component::webgpu::request_animation_frame::add_to_linker(
         &mut linker,
