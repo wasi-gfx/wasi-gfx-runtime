@@ -36,10 +36,10 @@ fn draw_triangle() {
 
     let displayable_entity = webgpu::get_displayable_entity(adapter.handle(), device.handle());
 
-    // let frame = request_animation_frame::get_frame();
-    // let pollable = frame.subscribe();
+    let frame = request_animation_frame::get_frame();
+    let pollable_a = frame.subscribe();
     let pointer_up = pointer_events::up();
-    let pollable = pointer_up.subscribe();
+    let pollable_b = pointer_up.subscribe();
     loop {
         let render_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
             vertex: webgpu::GpuVertexState {
@@ -62,7 +62,12 @@ fn draw_triangle() {
             },
         });
 
-        let g = pollable.block();
+        let g = wasi::io::poll::poll(&[
+            &pollable_b,
+            &pollable_a,
+        ]);
+        print(&format!("{:?}", g));
+        // let g = pollable.block();
 
         // on frame:
 

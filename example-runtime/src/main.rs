@@ -1,10 +1,8 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
+use tokio::sync::broadcast::Sender;
 use wasmtime::{
     component::{Component, Linker},
     Config, Engine, Store,
@@ -41,83 +39,81 @@ struct HostState {
     pub web_gpu_host: WebGpuHost<'static>,
     pub table: Table,
     pub ctx: WasiCtx,
-    pub events: Arc<HostStateEvents>,
+    pub sender: Sender<HostEvent>,
 }
 
-struct HostStateEvents {
-    pub pointer_up: Mutex<Option<(i32, i32)>>,
-    pub frame: Mutex<Option<()>>,
-}
+pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
+    use winit::event::{Event, MouseButton, WindowEvent};
 
-impl HostStateEvents {
-    pub fn new() -> Self {
-        Self {
-            pointer_up: Mutex::new(None),
-            frame: Mutex::new(None),
+    let sender_2 = sender.clone();
+    tokio::spawn(async move {
+        loop {
+            sender_2.send(HostEvent::Frame).unwrap();
+            tokio::time::sleep(Duration::from_millis(16)).await;
         }
-    }
+    });
 
-    pub fn listen_to_events(self: Arc<Self>, event_loop: EventLoop<()>) {
-        use winit::event::{Event, MouseButton, WindowEvent};
+    event_loop.run(move |event, _target, _control_flow| {
+        // *control_flow = ControlFlow::Poll;
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {}
 
-        let state = Arc::clone(&self);
-        std::thread::spawn(move || loop {
-            let mut frame = state.frame.lock().unwrap();
-            *frame = Some(());
-            drop(frame);
-            std::thread::sleep(Duration::from_millis(16));
-        });
-
-        event_loop.run(move |event, _target, _control_flow| {
-            // *control_flow = ControlFlow::Poll;
-            match event {
-                Event::WindowEvent {
-                    event: WindowEvent::CloseRequested,
-                    ..
-                } => {}
-
-                Event::WindowEvent {
-                    event: WindowEvent::Resized(new_size),
-                    ..
-                } => {
-                    println!("Resized to {:?}", new_size);
-                }
-
-                Event::WindowEvent {
-                    event:
-                        WindowEvent::MouseInput {
-                            button: MouseButton::Left,
-                            state: ElementState::Released,
-                            ..
-                        },
-                    ..
-                } => {
-                    println!("mouse click");
-                }
-                Event::WindowEvent {
-                    event: WindowEvent::CursorMoved { position, .. },
-                    ..
-                } => {
-                    println!("mouse CursorMoved {position:?}");
-                    *self.pointer_up.lock().unwrap() = Some((position.x as i32, position.y as i32));
-                }
-                // Event::RedrawRequested(_) => {
-                //     window.request_redraw();
-                //     println!("animation frame {:?}", t.elapsed());
-                // },
-                _ => (),
+            Event::WindowEvent {
+                event: WindowEvent::Resized(_new_size),
+                ..
+            } => {
+                // println!("Resized to {:?}", new_size);
             }
-        });
-    }
+
+            Event::WindowEvent {
+                event:
+                    WindowEvent::MouseInput {
+                        button: MouseButton::Left,
+                        state: ElementState::Released,
+                        ..
+                    },
+                ..
+            } => {
+                let event = HostEvent::PointerEvent { x: 0, y: 0 };
+                let sender = sender.clone();
+                sender.send(event).unwrap();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved { position: _, .. },
+                ..
+            } => {
+                // // println!("mouse CursorMoved {position:?}");
+                // // *self.pointer_up.lock().unwrap() = Some((position.x as i32, position.y as i32));
+                // let event = HostEvent::PointerEvent {
+                //     x: position.x as i32,
+                //     y: position.y as i32,
+                // };
+                // println!("herer 1");
+                // let sender = sender.clone();
+                // tokio::spawn(async move {
+                //     println!("herer 2");
+                //     sender.send(event).unwrap();
+                // });
+            }
+            // Event::RedrawRequested(_) => {
+            //     window.request_redraw();
+            //     println!("animation frame {:?}", t.elapsed());
+            // },
+            _ => (),
+        }
+    });
 }
 
 impl HostState {
-    fn new(event_loop: &EventLoop<()>) -> Self {
+    fn new(event_loop: &EventLoop<()>, sender: Sender<HostEvent>) -> Self {
         Self {
             web_gpu_host: WebGpuHost::new(event_loop),
             table: Table::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
-            events: Arc::new(HostStateEvents::new()),
+            sender,
         }
     }
 }
@@ -149,8 +145,17 @@ impl ExampleImports for HostState {
     }
 }
 
-#[async_std::main]
+#[derive(Clone, Debug)]
+pub enum HostEvent {
+    PointerEvent { x: i32, y: i32 },
+    Frame,
+}
+
+#[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // can't drop receiver right away, that'll cause panics. No idea why.
+    let (sender, _receiver) = tokio::sync::broadcast::channel::<HostEvent>(10);
+
     let args = RuntimeArgs::parse();
 
     let mut config = Config::default();
@@ -179,9 +184,7 @@ async fn main() -> anyhow::Result<()> {
 
     let event = winit::event_loop::EventLoopBuilder::new().build();
 
-    let host_state = HostState::new(&event);
-
-    let events_state = Arc::clone(&host_state.events);
+    let host_state = HostState::new(&event, sender.clone());
 
     let mut store = Store::new(&engine, host_state);
 
@@ -194,11 +197,11 @@ async fn main() -> anyhow::Result<()> {
         .await
         .unwrap();
 
-    async_std::task::spawn(async move {
+    tokio::spawn(async move {
         instance.call_start(&mut store).await.unwrap();
     });
 
-    events_state.listen_to_events(event);
+    listen_to_events(event, sender);
 
     Ok(())
 }

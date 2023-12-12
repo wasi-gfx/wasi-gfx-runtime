@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-std = { version = "1.12.0", features = ["attributes"] }
 clap = { version = "4.3.19", features = ["derive"] }
 wasmtime = { version = "15.0.0", features = ['component-model'] }
 wasmtime-wasi = "15.0.0"
@@ -16,3 +15,4 @@ wgpu = "0.18.0"
 async-trait = "0.1.74"
 rand = "0.8.5"
 futures = "0.3.29"
+tokio = { version = "1.35.0", features = ["full"] }
