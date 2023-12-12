@@ -7,8 +7,9 @@ use std::time::Duration;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
+#[async_trait::async_trait]
 impl crate::component::webgpu::request_animation_frame::Host for HostState {
-    fn get_frame(&mut self) -> wasmtime::Result<wasmtime::component::Resource<Frame>> {
+    async fn get_frame(&mut self) -> wasmtime::Result<wasmtime::component::Resource<Frame>> {
         println!("in get_frame");
         let g = self.table_mut().push(FrameThis {}).unwrap();
         Ok(Resource::new_own(g.rep()))
@@ -17,11 +18,11 @@ impl crate::component::webgpu::request_animation_frame::Host for HostState {
 
 #[async_trait::async_trait]
 impl HostFrame for HostState {
-    fn subscribe(&mut self, self_: Resource<Frame>) -> wasmtime::Result<Resource<Pollable>> {
+    async fn subscribe(&mut self, self_: Resource<Frame>) -> wasmtime::Result<Resource<Pollable>> {
         let g: Resource<FrameThis> = Resource::new_own(self_.rep());
         preview2::subscribe(self.table_mut(), g)
     }
-    fn get(&mut self, _self_: Resource<Frame>) -> wasmtime::Result<Option<bool>> {
+    async fn get(&mut self, _self_: Resource<Frame>) -> wasmtime::Result<Option<bool>> {
         println!("in get");
         Ok(Some(false))
     }

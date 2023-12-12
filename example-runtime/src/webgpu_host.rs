@@ -66,8 +66,9 @@ pub struct WebGpuHost<'a> {
     window: Window,
 }
 
+#[async_trait::async_trait]
 impl<'a> webgpu::Host for HostState {
-    fn request_adapter(&mut self) -> wasmtime::Result<Resource<webgpu::GpuAdapter>> {
+    async fn request_adapter(&mut self) -> wasmtime::Result<Resource<webgpu::GpuAdapter>> {
         let adapter = block_on(
             self.web_gpu_host
                 .instance
@@ -78,7 +79,7 @@ impl<'a> webgpu::Host for HostState {
         self.web_gpu_host.adapters.insert(id, adapter);
         Ok(Resource::new_own(id))
     }
-    fn get_displayable_entity(
+    async fn get_displayable_entity(
         &mut self,
         _adapter: u32,
         _device: u32,
@@ -128,8 +129,9 @@ impl<'a> webgpu::Host for HostState {
     }
 }
 
+#[async_trait::async_trait]
 impl<'a> webgpu::HostGpuDevice for HostState {
-    fn create_command_encoder(
+    async fn create_command_encoder(
         &mut self,
         self_: Resource<webgpu::GpuDevice>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandEncoder>> {
@@ -144,7 +146,7 @@ impl<'a> webgpu::HostGpuDevice for HostState {
 
         Ok(Resource::new_own(id))
     }
-    fn do_all(
+    async fn do_all(
         &mut self,
         self_: Resource<webgpu::GpuDevice>,
         desc: webgpu::GpuRenderPassDescriptor,
@@ -205,7 +207,7 @@ impl<'a> webgpu::HostGpuDevice for HostState {
         Ok(Resource::new_own(id))
     }
 
-    fn create_shader_module(
+    async fn create_shader_module(
         &mut self,
         self_: Resource<webgpu::GpuDevice>,
         desc: webgpu::GpuShaderModuleDescriptor,
@@ -222,7 +224,7 @@ impl<'a> webgpu::HostGpuDevice for HostState {
         Ok(Resource::new_own(id))
     }
 
-    fn create_render_pipeline(
+    async fn create_render_pipeline(
         &mut self,
         self_: Resource<webgpu::GpuDevice>,
         props: webgpu::GpuRenderPipelineDescriptor,
@@ -283,7 +285,7 @@ impl<'a> webgpu::HostGpuDevice for HostState {
         Ok(Resource::new_own(id))
     }
 
-    fn queue(
+    async fn queue(
         &mut self,
         self_: Resource<webgpu::GpuDevice>,
     ) -> wasmtime::Result<Resource<webgpu::GpuDeviceQueue>> {
@@ -295,8 +297,10 @@ impl<'a> webgpu::HostGpuDevice for HostState {
         Ok(())
     }
 }
+
+#[async_trait::async_trait]
 impl<'a> webgpu::HostDisplayableEntity for HostState {
-    fn create_view(
+    async fn create_view(
         &mut self,
         self_: Resource<webgpu::DisplayableEntity>,
     ) -> wasmtime::Result<Resource<webgpu::DisplayableEntityView>> {
@@ -326,26 +330,34 @@ impl<'a> webgpu::HostDisplayableEntityView for HostState {
     }
 }
 
+
+#[async_trait::async_trait]
 impl<'a> webgpu::HostGpuCommandBuffer for HostState {
     fn drop(&mut self, rep: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<()> {
         self.web_gpu_host.command_buffers.remove(&rep.rep());
         Ok(())
     }
 }
+
+#[async_trait::async_trait]
 impl<'a> webgpu::HostGpuShaderModule for HostState {
     fn drop(&mut self, rep: Resource<webgpu::GpuShaderModule>) -> wasmtime::Result<()> {
         self.web_gpu_host.shaders.remove(&rep.rep());
         Ok(())
     }
 }
+
+#[async_trait::async_trait]
 impl<'a> webgpu::HostGpuRenderPipeline for HostState {
     fn drop(&mut self, _rep: Resource<webgpu::GpuRenderPipeline>) -> wasmtime::Result<()> {
         // TODO:
         Ok(())
     }
 }
+
+#[async_trait::async_trait]
 impl<'a> webgpu::HostGpuAdapter for HostState {
-    fn request_device(
+    async fn request_device(
         &mut self,
         self_: Resource<webgpu::GpuAdapter>,
     ) -> wasmtime::Result<Resource<webgpu::GpuDevice>> {
@@ -364,8 +376,10 @@ impl<'a> webgpu::HostGpuAdapter for HostState {
         Ok(())
     }
 }
+
+#[async_trait::async_trait]
 impl<'a> webgpu::HostGpuDeviceQueue for HostState {
-    fn submit(
+    async fn submit(
         &mut self,
         self_: Resource<webgpu::GpuDeviceQueue>,
         val: Vec<Resource<webgpu::GpuCommandBuffer>>,
@@ -398,8 +412,10 @@ impl<'a> webgpu::HostGpuDeviceQueue for HostState {
         Ok(())
     }
 }
+
+#[async_trait::async_trait]
 impl<'a> webgpu::HostGpuCommandEncoder for HostState {
-    fn begin_render_pass(
+    async fn begin_render_pass(
         &mut self,
         self_: Resource<webgpu::GpuCommandEncoder>,
         desc: webgpu::GpuRenderPassDescriptor,
@@ -438,7 +454,7 @@ impl<'a> webgpu::HostGpuCommandEncoder for HostState {
         Ok(Resource::new_own(self_.rep()))
     }
 
-    fn finish(
+    async fn finish(
         &mut self,
         self_: Resource<webgpu::GpuCommandEncoder>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandBuffer>> {
@@ -454,8 +470,10 @@ impl<'a> webgpu::HostGpuCommandEncoder for HostState {
         Ok(())
     }
 }
+
+#[async_trait::async_trait]
 impl<'a> webgpu::HostGpuRenderPass for HostState {
-    fn set_pipeline(
+    async fn set_pipeline(
         &mut self,
         _self_: Resource<webgpu::GpuRenderPass>,
         _pipeline: Resource<webgpu::GpuRenderPipeline>,
@@ -463,7 +481,7 @@ impl<'a> webgpu::HostGpuRenderPass for HostState {
         anyhow::bail!("")
     }
 
-    fn draw(
+    async fn draw(
         &mut self,
         _self_: Resource<webgpu::GpuRenderPass>,
         _count: u32,
@@ -471,7 +489,7 @@ impl<'a> webgpu::HostGpuRenderPass for HostState {
         anyhow::bail!("")
     }
 
-    fn end(&mut self, _self_: Resource<webgpu::GpuRenderPass>) -> wasmtime::Result<()> {
+    async fn end(&mut self, _self_: Resource<webgpu::GpuRenderPass>) -> wasmtime::Result<()> {
         anyhow::bail!("")
     }
 

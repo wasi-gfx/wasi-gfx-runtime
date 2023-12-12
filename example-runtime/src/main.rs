@@ -28,7 +28,8 @@ wasmtime::component::bindgen!({
     path: "../wit/",
     world: "example",
     async: {
-        only_imports: [],
+        // only_imports: [],
+        except_imports: [],
     },
     with: {
         "wasi:io/poll": preview2::bindings::io::poll,
@@ -142,7 +143,7 @@ impl WasiView for HostState {
 
 #[async_trait::async_trait]
 impl ExampleImports for HostState {
-    fn print(&mut self, s: String) -> wasmtime::Result<()> {
+    async fn print(&mut self, s: String) -> wasmtime::Result<()> {
         println!("{s}");
         Ok(())
     }

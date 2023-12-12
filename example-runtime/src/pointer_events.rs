@@ -9,7 +9,7 @@ use wasmtime_wasi::preview2::{self, WasiView};
 
 #[async_trait::async_trait]
 impl crate::component::webgpu::pointer_events::Host for HostState {
-    fn up(&mut self) -> wasmtime::Result<wasmtime::component::Resource<PointerUp>> {
+    async fn up(&mut self) -> wasmtime::Result<wasmtime::component::Resource<PointerUp>> {
         println!("in pointer_events::up");
         let g = self.table_mut().push(HostPointerEvent {}).unwrap();
         Ok(Resource::new_own(g.rep()))
@@ -18,13 +18,13 @@ impl crate::component::webgpu::pointer_events::Host for HostState {
 
 #[async_trait::async_trait]
 impl HostPointerUp for HostState {
-    fn subscribe(&mut self, self_: Resource<PointerUp>) -> wasmtime::Result<Resource<Pollable>> {
+    async fn subscribe(&mut self, self_: Resource<PointerUp>) -> wasmtime::Result<Resource<Pollable>> {
         println!("in subscribe");
         let g: Resource<HostPointerEvent> = Resource::new_own(self_.rep());
         let gg = preview2::subscribe(self.table_mut(), g).unwrap();
         Ok(gg)
     }
-    fn get(&mut self, _self_: Resource<PointerUp>) -> wasmtime::Result<Option<PointerEvent>> {
+    async fn get(&mut self, _self_: Resource<PointerUp>) -> wasmtime::Result<Option<PointerEvent>> {
         println!("in get");
         Ok(Some(PointerEvent { x: 120, y: 120 }))
     }
