@@ -48,8 +48,8 @@ impl From<&wgpu::PrimitiveTopology> for webgpu::GpuPrimitiveTopology {
 }
 
 pub struct WebGpuHost<'a> {
-    instance: wgpu::Instance,
-    adapters: HashMap<u32, wgpu::Adapter>,
+    // instance: wgpu::Instance,
+    // adapters: HashMap<u32, wgpu::Adapter>,
     devices: HashMap<u32, (wgpu::Device, wgpu::Queue)>,
     displayable_entities: HashMap<u32, wgpu::Surface>,
     views: HashMap<u32, (wgpu::TextureView, wgpu::SurfaceTexture)>,
@@ -68,41 +68,27 @@ pub struct WebGpuHost<'a> {
 
 #[async_trait::async_trait]
 impl<'a> webgpu::Host for HostState {
-    async fn request_adapter(&mut self) -> wasmtime::Result<Resource<webgpu::GpuAdapter>> {
-        let adapter = block_on(
-            self.web_gpu_host
-                .instance
-                .request_adapter(&Default::default()),
-        )
+    async fn request_adapter(&mut self) -> wasmtime::Result<Resource<wgpu::Adapter>> {
+        let adapter = block_on(self.instance.request_adapter(&Default::default()))
         .unwrap();
-        let id = rand::random();
-        self.web_gpu_host.adapters.insert(id, adapter);
-        Ok(Resource::new_own(id))
+        Ok(self.table.push(adapter).unwrap())
     }
     async fn get_displayable_entity(
         &mut self,
-        _adapter: u32,
+        adapter: Resource<webgpu::GpuAdapter>,
         _device: u32,
     ) -> wasmtime::Result<Resource<webgpu::DisplayableEntity>> {
         let device = self.web_gpu_host.devices.keys().into_iter().next().unwrap();
-        let adapter = self
-            .web_gpu_host
-            .adapters
-            .keys()
-            .into_iter()
-            .next()
-            .unwrap();
 
         let (device, _) = self.web_gpu_host.devices.get(&device).unwrap();
-        let adapter = self.web_gpu_host.adapters.get(&adapter).unwrap();
+        let adapter = self.table.get(&adapter).unwrap();
 
         let mut size = self.web_gpu_host.window.inner_size();
         size.width = size.width.max(1);
         size.height = size.height.max(1);
 
         let surface = unsafe {
-            self.web_gpu_host
-                .instance
+            self.instance
                 .create_surface(&self.web_gpu_host.window)
         }
         .unwrap();
@@ -358,9 +344,9 @@ impl<'a> webgpu::HostGpuRenderPipeline for HostState {
 impl<'a> webgpu::HostGpuAdapter for HostState {
     async fn request_device(
         &mut self,
-        self_: Resource<webgpu::GpuAdapter>,
+        adapter: Resource<webgpu::GpuAdapter>,
     ) -> wasmtime::Result<Resource<webgpu::GpuDevice>> {
-        let adapter = self.web_gpu_host.adapters.get(&self_.rep()).unwrap();
+        let adapter = self.table.get(&adapter).unwrap();
 
         let device =
             block_on(adapter.request_device(&Default::default(), Default::default())).unwrap();
@@ -370,8 +356,8 @@ impl<'a> webgpu::HostGpuAdapter for HostState {
         Ok(Resource::new_own(id))
     }
 
-    fn drop(&mut self, rep: Resource<webgpu::GpuAdapter>) -> wasmtime::Result<()> {
-        self.web_gpu_host.adapters.remove(&rep.rep());
+    fn drop(&mut self, adapter: Resource<webgpu::GpuAdapter>) -> wasmtime::Result<()> {
+        self.table.delete(adapter).unwrap();
         Ok(())
     }
 }
@@ -500,8 +486,8 @@ impl<'a> webgpu::HostGpuRenderPass for HostState {
 impl<'a> WebGpuHost<'a> {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
         Self {
-            instance: Default::default(),
-            adapters: HashMap::new(),
+            // instance: Default::default(),
+            // adapters: HashMap::new(),
             devices: HashMap::new(),
             displayable_entities: HashMap::new(),
             shaders: HashMap::new(),

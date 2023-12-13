@@ -22,6 +22,9 @@ struct RuntimeArgs {
     example: String,
 }
 
+// needed for wasmtime::component::bindgen! as it only looks in the current crate.
+pub(crate) use wgpu;
+
 wasmtime::component::bindgen!({
     path: "../wit/",
     world: "example",
@@ -32,7 +35,9 @@ wasmtime::component::bindgen!({
     with: {
         "wasi:io/poll": preview2::bindings::io::poll,
         "wasi:io/streams": preview2::bindings::io::streams,
-     },
+
+        "component:webgpu/webgpu/gpu-adapter": wgpu::Adapter,
+    },
 });
 
 struct HostState {
@@ -40,6 +45,7 @@ struct HostState {
     pub table: Table,
     pub ctx: WasiCtx,
     pub sender: Sender<HostEvent>,
+    pub instance: wgpu::Instance,
 }
 
 pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
@@ -114,6 +120,7 @@ impl HostState {
             table: Table::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
             sender,
+            instance: Default::default(),
         }
     }
 }

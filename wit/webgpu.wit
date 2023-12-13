@@ -94,7 +94,7 @@ interface webgpu {
 
 
 
-  get-displayable-entity: func(adapter: u32, device: u32) -> displayable-entity;
+  get-displayable-entity: func(adapter: borrow<gpu-adapter>, device: u32) -> displayable-entity;
   resource displayable-entity {
     create-view: func() -> displayable-entity-view;
   }
