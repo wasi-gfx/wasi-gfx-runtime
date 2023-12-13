@@ -38,7 +38,7 @@ fn draw_triangle() {
     let adapter = webgpu::request_adapter();
     let device = adapter.request_device();
 
-    let displayable_entity = webgpu::get_displayable_entity(&adapter, device.handle());
+    let displayable_entity = webgpu::get_displayable_entity(&adapter, &device);
 
     let pointer_up = pointer_events::up();
     let pointer_up_pollable = pointer_up.subscribe();

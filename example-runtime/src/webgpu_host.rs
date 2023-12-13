@@ -2,11 +2,14 @@ use futures::executor::block_on;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use wasmtime::component::Resource;
-use winit::event_loop::EventLoop;
-use winit::window::Window;
 
 use crate::component::webgpu::webgpu;
 use crate::HostState;
+
+pub struct DeviceAndQueue {
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+}
 
 impl From<&wgpu::TextureFormat> for webgpu::GpuTextureFormat {
     fn from(value: &wgpu::TextureFormat) -> Self {
@@ -48,12 +51,7 @@ impl From<&wgpu::PrimitiveTopology> for webgpu::GpuPrimitiveTopology {
 }
 
 pub struct WebGpuHost<'a> {
-    // instance: wgpu::Instance,
-    // adapters: HashMap<u32, wgpu::Adapter>,
-    devices: HashMap<u32, (wgpu::Device, wgpu::Queue)>,
-    displayable_entities: HashMap<u32, wgpu::Surface>,
     views: HashMap<u32, (wgpu::TextureView, wgpu::SurfaceTexture)>,
-    shaders: HashMap<u32, wgpu::ShaderModule>,
     encoders: HashMap<
         u32,
         (
@@ -63,35 +61,27 @@ pub struct WebGpuHost<'a> {
     >,
     command_buffers: HashMap<u32, wgpu::CommandBuffer>,
     render_pipelines: HashMap<u32, wgpu::RenderPipeline>,
-    window: Window,
 }
 
 #[async_trait::async_trait]
 impl<'a> webgpu::Host for HostState {
     async fn request_adapter(&mut self) -> wasmtime::Result<Resource<wgpu::Adapter>> {
-        let adapter = block_on(self.instance.request_adapter(&Default::default()))
-        .unwrap();
+        let adapter = block_on(self.instance.request_adapter(&Default::default())).unwrap();
         Ok(self.table.push(adapter).unwrap())
     }
     async fn get_displayable_entity(
         &mut self,
-        adapter: Resource<webgpu::GpuAdapter>,
-        _device: u32,
+        adapter: Resource<wgpu::Adapter>,
+        daq: Resource<DeviceAndQueue>,
     ) -> wasmtime::Result<Resource<webgpu::DisplayableEntity>> {
-        let device = self.web_gpu_host.devices.keys().into_iter().next().unwrap();
-
-        let (device, _) = self.web_gpu_host.devices.get(&device).unwrap();
+        let host_daq = self.table.get(&daq).unwrap();
         let adapter = self.table.get(&adapter).unwrap();
 
-        let mut size = self.web_gpu_host.window.inner_size();
+        let mut size = self.window.inner_size();
         size.width = size.width.max(1);
         size.height = size.height.max(1);
 
-        let surface = unsafe {
-            self.instance
-                .create_surface(&self.web_gpu_host.window)
-        }
-        .unwrap();
+        let surface = unsafe { self.instance.create_surface(&self.window) }.unwrap();
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
@@ -106,12 +96,9 @@ impl<'a> webgpu::Host for HostState {
             view_formats: vec![],
         };
 
-        surface.configure(&device, &config);
+        surface.configure(&host_daq.device, &config);
 
-        let id = rand::random();
-        self.web_gpu_host.displayable_entities.insert(id, surface);
-
-        Ok(Resource::new_own(id))
+        Ok(self.table.push_child(surface, &daq).unwrap())
     }
 }
 
@@ -119,11 +106,12 @@ impl<'a> webgpu::Host for HostState {
 impl<'a> webgpu::HostGpuDevice for HostState {
     async fn create_command_encoder(
         &mut self,
-        self_: Resource<webgpu::GpuDevice>,
+        daq: Resource<DeviceAndQueue>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandEncoder>> {
-        let (device, _) = self.web_gpu_host.devices.get(&self_.rep()).unwrap();
-        let command_encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let daq = self.table.get(&daq).unwrap();
+        let command_encoder = daq
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         let id = rand::random();
         self.web_gpu_host
@@ -134,20 +122,21 @@ impl<'a> webgpu::HostGpuDevice for HostState {
     }
     async fn do_all(
         &mut self,
-        self_: Resource<webgpu::GpuDevice>,
+        daq: Resource<DeviceAndQueue>,
         desc: webgpu::GpuRenderPassDescriptor,
         pipeline: Resource<webgpu::GpuRenderPipeline>,
         _count: u32,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandEncoder>> {
-        let (device, _) = self.web_gpu_host.devices.get(&self_.rep()).unwrap();
+        let daq = self.table.get(&daq).unwrap();
         let render_pipeline = self
             .web_gpu_host
             .render_pipelines
             .get(&pipeline.rep())
             .unwrap();
 
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut encoder = daq
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         let color_attachments = desc
             .color_attachments
@@ -195,31 +184,29 @@ impl<'a> webgpu::HostGpuDevice for HostState {
 
     async fn create_shader_module(
         &mut self,
-        self_: Resource<webgpu::GpuDevice>,
+        daq: Resource<DeviceAndQueue>,
         desc: webgpu::GpuShaderModuleDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuShaderModule>> {
-        let (device, _) = self.web_gpu_host.devices.get(&self_.rep()).unwrap();
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: desc.label.as_deref(),
-            source: wgpu::ShaderSource::Wgsl(Cow::Owned(desc.code)),
-        });
+        let daq = self.table.get(&daq).unwrap();
+        let shader = daq
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: desc.label.as_deref(),
+                source: wgpu::ShaderSource::Wgsl(Cow::Owned(desc.code)),
+            });
 
-        let id = rand::random();
-        self.web_gpu_host.shaders.insert(id, shader);
-
-        Ok(Resource::new_own(id))
+        Ok(self.table.push(shader).unwrap())
     }
 
     async fn create_render_pipeline(
         &mut self,
-        self_: Resource<webgpu::GpuDevice>,
+        daq: Resource<DeviceAndQueue>,
         props: webgpu::GpuRenderPipelineDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuRenderPipeline>> {
         let vertex = wgpu::VertexState {
             module: &self
-                .web_gpu_host
-                .shaders
-                .get(&props.vertex.module.rep())
+                .table
+                .get(&props.vertex.module)
                 .unwrap(),
             entry_point: &props.vertex.entry_point,
             buffers: &[],
@@ -227,9 +214,8 @@ impl<'a> webgpu::HostGpuDevice for HostState {
 
         let fragment = wgpu::FragmentState {
             module: &self
-                .web_gpu_host
-                .shaders
-                .get(&props.fragment.module.rep())
+                .table
+                .get(&props.fragment.module)
                 .unwrap(),
             entry_point: &props.fragment.entry_point,
             targets: &props
@@ -251,18 +237,20 @@ impl<'a> webgpu::HostGpuDevice for HostState {
         //     ..Default::default()
         // };
 
-        let (device, _) = self.web_gpu_host.devices.get(&self_.rep()).unwrap();
+        let daq = self.table.get(&daq).unwrap();
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            vertex,
-            fragment: Some(fragment),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Default::default(),
-            multisample: Default::default(),
-            multiview: Default::default(),
-            label: Default::default(),
-            layout: Default::default(),
-        });
+        let render_pipeline = daq
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                vertex,
+                fragment: Some(fragment),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Default::default(),
+                multisample: Default::default(),
+                multiview: Default::default(),
+                label: Default::default(),
+                layout: Default::default(),
+            });
 
         let id = rand::random();
         self.web_gpu_host
@@ -273,13 +261,13 @@ impl<'a> webgpu::HostGpuDevice for HostState {
 
     async fn queue(
         &mut self,
-        self_: Resource<webgpu::GpuDevice>,
-    ) -> wasmtime::Result<Resource<webgpu::GpuDeviceQueue>> {
-        Ok(Resource::new_own(self_.rep()))
+        daq: Resource<DeviceAndQueue>,
+    ) -> wasmtime::Result<Resource<DeviceAndQueue>> {
+        Ok(Resource::new_own(daq.rep()))
     }
 
-    fn drop(&mut self, rep: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
-        self.web_gpu_host.devices.remove(&rep.rep());
+    fn drop(&mut self, _rep: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
+        // self.web_gpu_host.devices.remove(&rep.rep());
         Ok(())
     }
 }
@@ -288,13 +276,9 @@ impl<'a> webgpu::HostGpuDevice for HostState {
 impl<'a> webgpu::HostDisplayableEntity for HostState {
     async fn create_view(
         &mut self,
-        self_: Resource<webgpu::DisplayableEntity>,
+        displayable_entity: Resource<wgpu::Surface>,
     ) -> wasmtime::Result<Resource<webgpu::DisplayableEntityView>> {
-        let displayable_entity = self
-            .web_gpu_host
-            .displayable_entities
-            .get(&self_.rep())
-            .unwrap();
+        let displayable_entity = self.table.get(&displayable_entity).unwrap();
         let surface = displayable_entity.get_current_texture().unwrap();
         let view = surface.texture.create_view(&Default::default());
 
@@ -303,15 +287,15 @@ impl<'a> webgpu::HostDisplayableEntity for HostState {
         Ok(Resource::new_own(id))
     }
 
-    fn drop(&mut self, rep: Resource<webgpu::DisplayableEntity>) -> wasmtime::Result<()> {
-        self.web_gpu_host.displayable_entities.remove(&rep.rep());
+    fn drop(&mut self, _rep: Resource<webgpu::DisplayableEntity>) -> wasmtime::Result<()> {
+        // self.web_gpu_host.displayable_entities.remove(&rep.rep());
         Ok(())
     }
 }
 
 impl<'a> webgpu::HostDisplayableEntityView for HostState {
-    fn drop(&mut self, rep: Resource<webgpu::DisplayableEntityView>) -> wasmtime::Result<()> {
-        self.web_gpu_host.displayable_entities.remove(&rep.rep());
+    fn drop(&mut self, _rep: Resource<webgpu::DisplayableEntityView>) -> wasmtime::Result<()> {
+        // self.web_gpu_host.displayable_entities.remove(&rep.rep());
         Ok(())
     }
 }
@@ -326,8 +310,8 @@ impl<'a> webgpu::HostGpuCommandBuffer for HostState {
 
 #[async_trait::async_trait]
 impl<'a> webgpu::HostGpuShaderModule for HostState {
-    fn drop(&mut self, rep: Resource<webgpu::GpuShaderModule>) -> wasmtime::Result<()> {
-        self.web_gpu_host.shaders.remove(&rep.rep());
+    fn drop(&mut self, _rep: Resource<webgpu::GpuShaderModule>) -> wasmtime::Result<()> {
+        // self.web_gpu_host.shaders.remove(&rep.rep());
         Ok(())
     }
 }
@@ -344,16 +328,16 @@ impl<'a> webgpu::HostGpuRenderPipeline for HostState {
 impl<'a> webgpu::HostGpuAdapter for HostState {
     async fn request_device(
         &mut self,
-        adapter: Resource<webgpu::GpuAdapter>,
+        adapter: Resource<wgpu::Adapter>,
     ) -> wasmtime::Result<Resource<webgpu::GpuDevice>> {
-        let adapter = self.table.get(&adapter).unwrap();
+        let host_adapter = self.table.get(&adapter).unwrap();
 
-        let device =
-            block_on(adapter.request_device(&Default::default(), Default::default())).unwrap();
+        let (device, queue) =
+            block_on(host_adapter.request_device(&Default::default(), Default::default())).unwrap();
 
-        let id = rand::random();
-        self.web_gpu_host.devices.insert(id, device);
-        Ok(Resource::new_own(id))
+        let daq = self.table.push_child(DeviceAndQueue { device, queue }, &adapter).unwrap();
+
+        Ok(daq)
     }
 
     fn drop(&mut self, adapter: Resource<webgpu::GpuAdapter>) -> wasmtime::Result<()> {
@@ -366,10 +350,10 @@ impl<'a> webgpu::HostGpuAdapter for HostState {
 impl<'a> webgpu::HostGpuDeviceQueue for HostState {
     async fn submit(
         &mut self,
-        self_: Resource<webgpu::GpuDeviceQueue>,
+        daq: Resource<DeviceAndQueue>,
         val: Vec<Resource<webgpu::GpuCommandBuffer>>,
     ) -> wasmtime::Result<()> {
-        let (_, queue) = self.web_gpu_host.devices.get(&self_.rep()).unwrap();
+        let daq = self.table.get(&daq).unwrap();
         let command_buffers = val
             .iter()
             .map(|buffer| {
@@ -385,7 +369,7 @@ impl<'a> webgpu::HostGpuDeviceQueue for HostState {
         };
 
         let (_, surface_texture) = self.web_gpu_host.views.remove(&id).unwrap();
-        queue.submit(command_buffers);
+        daq.queue.submit(command_buffers);
 
         surface_texture.present();
 
@@ -484,18 +468,12 @@ impl<'a> webgpu::HostGpuRenderPass for HostState {
 }
 
 impl<'a> WebGpuHost<'a> {
-    pub fn new(event_loop: &EventLoop<()>) -> Self {
+    pub fn new() -> Self {
         Self {
-            // instance: Default::default(),
-            // adapters: HashMap::new(),
-            devices: HashMap::new(),
-            displayable_entities: HashMap::new(),
-            shaders: HashMap::new(),
             encoders: HashMap::new(),
             command_buffers: HashMap::new(),
             render_pipelines: HashMap::new(),
             views: HashMap::new(),
-            window: winit::window::Window::new(event_loop).unwrap(),
         }
     }
 }

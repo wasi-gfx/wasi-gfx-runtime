@@ -7,7 +7,7 @@ use wasmtime::{
     component::{Component, Linker},
     Config, Engine, Store,
 };
-use winit::{event::ElementState, event_loop::EventLoop};
+use winit::{event::ElementState, event_loop::EventLoop, window::Window};
 
 use crate::webgpu_host::WebGpuHost;
 use wasmtime_wasi::preview2::{self, Table, WasiCtx, WasiCtxBuilder, WasiView};
@@ -37,6 +37,10 @@ wasmtime::component::bindgen!({
         "wasi:io/streams": preview2::bindings::io::streams,
 
         "component:webgpu/webgpu/gpu-adapter": wgpu::Adapter,
+        "component:webgpu/webgpu/gpu-device": webgpu_host::DeviceAndQueue,
+        "component:webgpu/webgpu/gpu-device-queue": webgpu_host::DeviceAndQueue,
+        "component:webgpu/webgpu/displayable-entity": wgpu::Surface,
+        "component:webgpu/webgpu/gpu-shader-module": wgpu::ShaderModule,
     },
 });
 
@@ -46,6 +50,7 @@ struct HostState {
     pub ctx: WasiCtx,
     pub sender: Sender<HostEvent>,
     pub instance: wgpu::Instance,
+    pub window: Window,
 }
 
 pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
@@ -116,11 +121,12 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
 impl HostState {
     fn new(event_loop: &EventLoop<()>, sender: Sender<HostEvent>) -> Self {
         Self {
-            web_gpu_host: WebGpuHost::new(event_loop),
+            web_gpu_host: WebGpuHost::new(),
             table: Table::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
             sender,
             instance: Default::default(),
+            window: Window::new(event_loop).unwrap(),
         }
     }
 }
