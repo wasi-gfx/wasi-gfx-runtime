@@ -59,8 +59,7 @@ pub struct WebGpuHost<'a> {
             Option<Vec<Option<wgpu::RenderPassColorAttachment<'a>>>>,
         ),
     >,
-    command_buffers: HashMap<u32, wgpu::CommandBuffer>,
-    render_pipelines: HashMap<u32, wgpu::RenderPipeline>,
+    // command_buffers: HashMap<u32, wgpu::CommandBuffer>,
 }
 
 #[async_trait::async_trait]
@@ -128,11 +127,8 @@ impl<'a> webgpu::HostGpuDevice for HostState {
         _count: u32,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandEncoder>> {
         let daq = self.table.get(&daq).unwrap();
-        let render_pipeline = self
-            .web_gpu_host
-            .render_pipelines
-            .get(&pipeline.rep())
-            .unwrap();
+
+        let render_pipeline = self.table.get(&pipeline).unwrap();
 
         let mut encoder = daq
             .device
@@ -237,9 +233,9 @@ impl<'a> webgpu::HostGpuDevice for HostState {
         //     ..Default::default()
         // };
 
-        let daq = self.table.get(&daq).unwrap();
+        let host_daq = self.table.get(&daq).unwrap();
 
-        let render_pipeline = daq
+        let render_pipeline = host_daq
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 vertex,
@@ -252,11 +248,7 @@ impl<'a> webgpu::HostGpuDevice for HostState {
                 layout: Default::default(),
             });
 
-        let id = rand::random();
-        self.web_gpu_host
-            .render_pipelines
-            .insert(id, render_pipeline);
-        Ok(Resource::new_own(id))
+        Ok(self.table.push_child(render_pipeline, &daq).unwrap())
     }
 
     async fn queue(
@@ -302,8 +294,8 @@ impl<'a> webgpu::HostDisplayableEntityView for HostState {
 
 #[async_trait::async_trait]
 impl<'a> webgpu::HostGpuCommandBuffer for HostState {
-    fn drop(&mut self, rep: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<()> {
-        self.web_gpu_host.command_buffers.remove(&rep.rep());
+    fn drop(&mut self, _rep: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<()> {
+        // self.web_gpu_host.command_buffers.remove(&rep.rep());
         Ok(())
     }
 }
@@ -353,13 +345,11 @@ impl<'a> webgpu::HostGpuDeviceQueue for HostState {
         daq: Resource<DeviceAndQueue>,
         val: Vec<Resource<webgpu::GpuCommandBuffer>>,
     ) -> wasmtime::Result<()> {
-        let daq = self.table.get(&daq).unwrap();
         let command_buffers = val
-            .iter()
+            .into_iter()
             .map(|buffer| {
-                self.web_gpu_host
-                    .command_buffers
-                    .remove(&buffer.rep())
+                self.table
+                    .delete(buffer)
                     .unwrap()
             })
             .collect::<Vec<_>>();
@@ -369,6 +359,7 @@ impl<'a> webgpu::HostGpuDeviceQueue for HostState {
         };
 
         let (_, surface_texture) = self.web_gpu_host.views.remove(&id).unwrap();
+        let daq = self.table.get(&daq).unwrap();
         daq.queue.submit(command_buffers);
 
         surface_texture.present();
@@ -425,13 +416,14 @@ impl<'a> webgpu::HostGpuCommandEncoder for HostState {
 
     async fn finish(
         &mut self,
-        self_: Resource<webgpu::GpuCommandEncoder>,
+        command_encoder: Resource<webgpu::GpuCommandEncoder>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandBuffer>> {
-        let encoder = self.web_gpu_host.encoders.remove(&self_.rep()).unwrap().0;
+        let encoder = self.web_gpu_host.encoders.remove(&command_encoder.rep()).unwrap().0;
         let command_buffer = encoder.finish();
-        let id = rand::random();
-        self.web_gpu_host.command_buffers.insert(id, command_buffer);
-        Ok(Resource::new_own(id))
+        // let id = rand::random();
+        // self.web_gpu_host.command_buffers.insert(id, command_buffer);
+        // Ok(Resource::new_own(id))
+        Ok(self.table.push(command_buffer).unwrap())
     }
 
     fn drop(&mut self, rep: Resource<webgpu::GpuCommandEncoder>) -> wasmtime::Result<()> {
@@ -471,8 +463,7 @@ impl<'a> WebGpuHost<'a> {
     pub fn new() -> Self {
         Self {
             encoders: HashMap::new(),
-            command_buffers: HashMap::new(),
-            render_pipelines: HashMap::new(),
+            // command_buffers: HashMap::new(),
             views: HashMap::new(),
         }
     }

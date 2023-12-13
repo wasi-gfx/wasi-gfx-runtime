@@ -40,7 +40,11 @@ wasmtime::component::bindgen!({
         "component:webgpu/webgpu/gpu-device": webgpu_host::DeviceAndQueue,
         "component:webgpu/webgpu/gpu-device-queue": webgpu_host::DeviceAndQueue,
         "component:webgpu/webgpu/displayable-entity": wgpu::Surface,
+        "component:webgpu/webgpu/gpu-command-encoder": wgpu::CommandEncoder,
         "component:webgpu/webgpu/gpu-shader-module": wgpu::ShaderModule,
+        // "component:webgpu/webgpu/gpu-render-pass": wgpu::RenderPass,
+        "component:webgpu/webgpu/gpu-render-pipeline": wgpu::RenderPipeline,
+        "component:webgpu/webgpu/gpu-command-buffer": wgpu::CommandBuffer,
     },
 });
 
