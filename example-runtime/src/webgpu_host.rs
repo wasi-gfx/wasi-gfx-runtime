@@ -181,7 +181,7 @@ impl<'a> webgpu::HostGpuDevice for HostState {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: 0.0,
                             g: 0.0,
-                            b: rand::random(),
+                            b: 0.1,
                             a: 0.0,
                         }),
                         store: wgpu::StoreOp::Store,

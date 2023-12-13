@@ -28,6 +28,10 @@ fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) ve
 fn fs_main() -> @location(0) vec4<f32> {
     return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 }
+@fragment
+fn fs_green() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+}
 "#;
 
 fn draw_triangle() {
@@ -41,6 +45,7 @@ fn draw_triangle() {
     let frame = request_animation_frame::get_frame();
     let frame_pollable = frame.subscribe();
     let pollables = vec![&pointer_up_pollable, &frame_pollable];
+    let mut green = false;
     loop {
         let render_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
             vertex: webgpu::GpuVertexState {
@@ -55,7 +60,14 @@ fn draw_triangle() {
                     code: SHADER_CODE.to_string(),
                     label: None,
                 }),
-                entry_point: "fs_main".to_string(),
+                entry_point: {
+                    if green {
+                        "fs_green"
+                    } else {
+                        "fs_main"
+                    }
+                }
+                .to_string(),
                 targets: vec![webgpu::GpuTextureFormat::Bgra8UnormSrgb],
             },
             primitive: webgpu::GpuPrimitiveState {
@@ -68,6 +80,7 @@ fn draw_triangle() {
         if pollables_res.contains(&0) {
             let event = pointer_up.get();
             print(&format!("pointer_up: {:?}", event));
+            green = !green;
         }
 
         if pollables_res.contains(&1) {
