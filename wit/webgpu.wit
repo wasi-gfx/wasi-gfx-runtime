@@ -69,7 +69,7 @@ interface webgpu {
   }
 
   record gpu-color-attachment {
-    view: displayable-entity-view,
+    view: borrow<displayable-entity-view>,
   }
   record gpu-render-pass-descriptor {
     label: string,
@@ -98,7 +98,10 @@ interface webgpu {
   resource displayable-entity {
     create-view: func() -> displayable-entity-view;
   }
-  resource displayable-entity-view {}
+  resource displayable-entity-view {
+    // https://github.com/WebAssembly/component-model/issues/226#issuecomment-1751966154
+    non-standard-present: static func(this: displayable-entity-view);
+  }
 
 
 }

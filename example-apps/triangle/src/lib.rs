@@ -122,13 +122,14 @@ fn draw_triangle() {
             let encoder = device.do_all(
                 webgpu::GpuRenderPassDescriptor {
                     label: String::from("fdsa"),
-                    color_attachments: vec![webgpu::GpuColorAttachment { view }],
+                    color_attachments: vec![webgpu::GpuColorAttachment { view: &view }],
                 },
                 render_pipeline,
                 4,
             );
 
-            device.queue().submit(vec![encoder.finish()])
+            device.queue().submit(vec![encoder.finish()]);
+            webgpu::DisplayableEntityView::non_standard_present(view);
             // queue.submit(Some(encoder.finish()));
             // frame.present();
         }

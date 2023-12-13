@@ -45,6 +45,7 @@ wasmtime::component::bindgen!({
         // "component:webgpu/webgpu/gpu-render-pass": wgpu::RenderPass,
         "component:webgpu/webgpu/gpu-render-pipeline": wgpu::RenderPipeline,
         "component:webgpu/webgpu/gpu-command-buffer": wgpu::CommandBuffer,
+        "component:webgpu/webgpu/displayable-entity-view": webgpu_host::DisplayableEntityView,
     },
 });
 
