@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use crate::{
-    component::webgpu::animation_frame::{HostFrameListener, FrameEvent, Pollable},
+    component::webgpu::animation_frame::{FrameEvent, HostFrameListener, Pollable},
     HostEvent, HostState,
 };
 use tokio::sync::broadcast::Receiver;
@@ -10,7 +10,7 @@ use wasmtime_wasi::preview2::{self, WasiView};
 
 #[async_trait::async_trait]
 impl crate::component::webgpu::animation_frame::Host for HostState {
-    async fn listener(&mut self) -> wasmtime::Result<wasmtime::component::Resource<AnimationFrameListener>> {
+    async fn listener(&mut self) -> wasmtime::Result<Resource<AnimationFrameListener>> {
         let receiver = self.sender.subscribe();
 
         Ok(self
@@ -31,7 +31,10 @@ impl HostFrameListener for HostState {
     ) -> wasmtime::Result<Resource<Pollable>> {
         preview2::subscribe(self.table_mut(), frame_listener)
     }
-    async fn get(&mut self, frame_listener: Resource<AnimationFrameListener>) -> wasmtime::Result<Option<FrameEvent>> {
+    async fn get(
+        &mut self,
+        frame_listener: Resource<AnimationFrameListener>,
+    ) -> wasmtime::Result<Option<FrameEvent>> {
         let frame_listener = self.table.get(&frame_listener).unwrap();
         Ok(frame_listener.data.lock().unwrap().take())
     }

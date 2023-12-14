@@ -14,7 +14,7 @@ impl Guest for ExampleTriangle {
     }
 }
 
-use component::webgpu::{pointer_events, animation_frame, webgpu};
+use component::webgpu::{animation_frame, key_events, pointer_events, webgpu};
 
 const SHADER_CODE: &str = r#"
 @vertex
@@ -42,9 +42,24 @@ fn draw_triangle() {
 
     let pointer_up_listener = pointer_events::up_listener();
     let pointer_up_pollable = pointer_up_listener.subscribe();
+    let pointer_down_listener = pointer_events::down_listener();
+    let pointer_down_pollable = pointer_down_listener.subscribe();
+    let pointer_move_listener = pointer_events::move_listener();
+    let pointer_move_pollable = pointer_move_listener.subscribe();
+    let key_up_listener = key_events::up_listener();
+    let key_up_pollable = key_up_listener.subscribe();
+    let key_down_listener = key_events::down_listener();
+    let key_down_pollable = key_down_listener.subscribe();
     let frame_listener = animation_frame::listener();
     let frame_pollable = frame_listener.subscribe();
-    let pollables = vec![&pointer_up_pollable, &frame_pollable];
+    let pollables = vec![
+        &pointer_up_pollable,
+        &pointer_down_pollable,
+        &pointer_move_pollable,
+        &key_up_pollable,
+        &key_down_pollable,
+        &frame_pollable,
+    ];
     let mut green = false;
     loop {
         let render_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
@@ -82,8 +97,24 @@ fn draw_triangle() {
             print(&format!("pointer_up: {:?}", event));
             green = !green;
         }
-
         if pollables_res.contains(&1) {
+            let event = pointer_down_listener.get();
+            print(&format!("pointer_down: {:?}", event));
+        }
+        if pollables_res.contains(&2) {
+            let event = pointer_move_listener.get();
+            print(&format!("pointer_move: {:?}", event));
+        }
+        if pollables_res.contains(&3) {
+            let event = key_up_listener.get();
+            print(&format!("key_up: {:?}", event));
+        }
+        if pollables_res.contains(&4) {
+            let event = key_down_listener.get();
+            print(&format!("key_down: {:?}", event));
+        }
+
+        if pollables_res.contains(&5) {
             frame_listener.get();
             print(&format!("frame event"));
             // print(&format!("{:?}", g));

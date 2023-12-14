@@ -5,6 +5,7 @@ world example {
   import webgpu;
   import animation-frame;
   import pointer-events;
+  import key-events;
 
   /// main entrypoint
   export start: func();

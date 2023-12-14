@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use crate::{
-    component::webgpu::pointer_events::{HostPointerUpListener, PointerEvent, Pollable},
+    component::webgpu::pointer_events::{PointerEvent, Pollable},
     HostEvent, HostState,
 };
 use tokio::sync::broadcast::Receiver;
@@ -10,7 +10,7 @@ use wasmtime_wasi::preview2::{self, WasiView};
 
 #[async_trait::async_trait]
 impl crate::component::webgpu::pointer_events::Host for HostState {
-    async fn up_listener(&mut self) -> wasmtime::Result<wasmtime::component::Resource<PointerUpListener>> {
+    async fn up_listener(&mut self) -> wasmtime::Result<Resource<PointerUpListener>> {
         let receiver = self.sender.subscribe();
         Ok(self
             .table_mut()
@@ -20,10 +20,32 @@ impl crate::component::webgpu::pointer_events::Host for HostState {
             })
             .unwrap())
     }
+
+    async fn down_listener(&mut self) -> wasmtime::Result<Resource<PointerDownListener>> {
+        let receiver = self.sender.subscribe();
+        Ok(self
+            .table_mut()
+            .push(PointerDownListener {
+                receiver,
+                data: Default::default(),
+            })
+            .unwrap())
+    }
+
+    async fn move_listener(&mut self) -> wasmtime::Result<Resource<PointerMoveListener>> {
+        let receiver = self.sender.subscribe();
+        Ok(self
+            .table_mut()
+            .push(PointerMoveListener {
+                receiver,
+                data: Default::default(),
+            })
+            .unwrap())
+    }
 }
 
 #[async_trait::async_trait]
-impl HostPointerUpListener for HostState {
+impl crate::component::webgpu::pointer_events::HostPointerUpListener for HostState {
     async fn subscribe(
         &mut self,
         pointer_up: Resource<PointerUpListener>,
@@ -53,8 +75,86 @@ impl preview2::Subscribe for PointerUpListener {
     async fn ready(&mut self) {
         loop {
             let event = self.receiver.recv().await.unwrap();
-            if let HostEvent::PointerEvent { x, y } = event {
-                *self.data.lock().unwrap() = Some(PointerEvent { x, y });
+            if let HostEvent::PointerUpEvent(event) = event {
+                *self.data.lock().unwrap() = Some(event);
+                return;
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::component::webgpu::pointer_events::HostPointerDownListener for HostState {
+    async fn subscribe(
+        &mut self,
+        pointer_down: Resource<PointerDownListener>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        Ok(preview2::subscribe(self.table_mut(), pointer_down).unwrap())
+    }
+    async fn get(
+        &mut self,
+        pointer_down: Resource<PointerDownListener>,
+    ) -> wasmtime::Result<Option<PointerEvent>> {
+        let pointer_down = self.table.get(&pointer_down).unwrap();
+        Ok(pointer_down.data.lock().unwrap().take())
+    }
+    fn drop(&mut self, _self_: Resource<PointerDownListener>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct PointerDownListener {
+    receiver: Receiver<HostEvent>,
+    data: Mutex<Option<PointerEvent>>,
+}
+
+#[async_trait::async_trait]
+impl preview2::Subscribe for PointerDownListener {
+    async fn ready(&mut self) {
+        loop {
+            let event = self.receiver.recv().await.unwrap();
+            if let HostEvent::PointerDownEvent(event) = event {
+                *self.data.lock().unwrap() = Some(event);
+                return;
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::component::webgpu::pointer_events::HostPointerMoveListener for HostState {
+    async fn subscribe(
+        &mut self,
+        pointer_move: Resource<PointerMoveListener>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        Ok(preview2::subscribe(self.table_mut(), pointer_move).unwrap())
+    }
+    async fn get(
+        &mut self,
+        pointer_move: Resource<PointerMoveListener>,
+    ) -> wasmtime::Result<Option<PointerEvent>> {
+        let pointer_move = self.table.get(&pointer_move).unwrap();
+        Ok(pointer_move.data.lock().unwrap().take())
+    }
+    fn drop(&mut self, _self_: Resource<PointerMoveListener>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct PointerMoveListener {
+    receiver: Receiver<HostEvent>,
+    data: Mutex<Option<PointerEvent>>,
+}
+
+#[async_trait::async_trait]
+impl preview2::Subscribe for PointerMoveListener {
+    async fn ready(&mut self) {
+        loop {
+            let event = self.receiver.recv().await.unwrap();
+            if let HostEvent::PointerMoveEvent(event) = event {
+                *self.data.lock().unwrap() = Some(event);
                 return;
             }
         }

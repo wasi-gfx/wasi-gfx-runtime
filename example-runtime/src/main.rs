@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
+use component::webgpu::{key_events::KeyEvent, pointer_events::PointerEvent};
 use tokio::sync::broadcast::Sender;
 use wasmtime::{
     component::{Component, Linker},
@@ -10,8 +11,9 @@ use wasmtime::{
 use winit::{event::ElementState, event_loop::EventLoop, window::Window};
 
 use wasmtime_wasi::preview2::{self, Table, WasiCtx, WasiCtxBuilder, WasiView};
-mod pointer_events;
 mod animation_frame;
+mod key_events;
+mod pointer_events;
 mod webgpu;
 
 #[derive(clap::Parser, Debug)]
@@ -44,6 +46,10 @@ wasmtime::component::bindgen!({
         "component:webgpu/webgpu/gpu-command-buffer": wgpu::CommandBuffer,
         "component:webgpu/webgpu/displayable-entity-view": webgpu::DisplayableEntityView,
         "component:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
+        "component:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
+        "component:webgpu/pointer-events/pointer-move-listener": pointer_events::PointerMoveListener,
+        "component:webgpu/key-events/key-up-listener": key_events::KeyUpListener,
+        "component:webgpu/key-events/key-down-listener": key_events::KeyDownListener,
         "component:webgpu/animation-frame/frame-listener": animation_frame::AnimationFrameListener,
     },
 });
@@ -68,6 +74,9 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
         }
     });
 
+    let mut pointer_x: f64 = 0.0;
+    let mut pointer_y: f64 = 0.0;
+
     event_loop.run(move |event, _target, _control_flow| {
         // *control_flow = ControlFlow::Poll;
         match event {
@@ -87,36 +96,69 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
                 event:
                     WindowEvent::MouseInput {
                         button: MouseButton::Left,
-                        state: ElementState::Released,
+                        state,
                         ..
                     },
                 ..
             } => {
-                let event = HostEvent::PointerEvent { x: 0, y: 0 };
+                let event = match state {
+                    ElementState::Pressed => HostEvent::PointerDownEvent(PointerEvent {
+                        x: pointer_x,
+                        y: pointer_y,
+                    }),
+                    ElementState::Released => HostEvent::PointerUpEvent(PointerEvent {
+                        x: pointer_x,
+                        y: pointer_y,
+                    }),
+                };
                 let sender = sender.clone();
                 sender.send(event).unwrap();
             }
             Event::WindowEvent {
-                event: WindowEvent::CursorMoved { position: _, .. },
+                event: WindowEvent::KeyboardInput { input, .. },
                 ..
             } => {
-                // // println!("mouse CursorMoved {position:?}");
-                // // *self.pointer_up.lock().unwrap() = Some((position.x as i32, position.y as i32));
-                // let event = HostEvent::PointerEvent {
-                //     x: position.x as i32,
-                //     y: position.y as i32,
-                // };
-                // println!("herer 1");
-                // let sender = sender.clone();
-                // tokio::spawn(async move {
-                //     println!("herer 2");
-                //     sender.send(event).unwrap();
-                // });
+                #[allow(deprecated)]
+                let event = match input.state {
+                    ElementState::Pressed => HostEvent::KeyDownEvent(KeyEvent {
+                        code: input
+                            .virtual_keycode
+                            .map(|k| format!("{k:?}"))
+                            .unwrap_or_default(),
+                        key: input.scancode.to_string(),
+                        alt_key: input.modifiers.shift(),
+                        ctrl_key: input.modifiers.ctrl(),
+                        meta_key: input.modifiers.logo(),
+                        shift_key: input.modifiers.shift(),
+                    }),
+                    ElementState::Released => HostEvent::KeyUpEvent(KeyEvent {
+                        code: input
+                            .virtual_keycode
+                            .map(|k| format!("{k:?}"))
+                            .unwrap_or_default(),
+                        key: input.scancode.to_string(),
+                        alt_key: input.modifiers.shift(),
+                        ctrl_key: input.modifiers.ctrl(),
+                        meta_key: input.modifiers.logo(),
+                        shift_key: input.modifiers.shift(),
+                    }),
+                };
+                let sender = sender.clone();
+                sender.send(event).unwrap();
             }
-            // Event::RedrawRequested(_) => {
-            //     window.request_redraw();
-            //     println!("animation frame {:?}", t.elapsed());
-            // },
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved { position, .. },
+                ..
+            } => {
+                pointer_x = position.x;
+                pointer_y = position.y;
+                let event = HostEvent::PointerMoveEvent(PointerEvent {
+                    x: pointer_x,
+                    y: pointer_y,
+                });
+                let sender = sender.clone();
+                sender.send(event).unwrap();
+            }
             _ => (),
         }
     });
@@ -163,7 +205,11 @@ impl ExampleImports for HostState {
 
 #[derive(Clone, Debug)]
 pub enum HostEvent {
-    PointerEvent { x: i32, y: i32 },
+    PointerUpEvent(PointerEvent),
+    PointerDownEvent(PointerEvent),
+    PointerMoveEvent(PointerEvent),
+    KeyUpEvent(KeyEvent),
+    KeyDownEvent(KeyEvent),
     Frame,
 }
 
@@ -182,17 +228,12 @@ async fn main() -> anyhow::Result<()> {
 
     component::webgpu::webgpu::add_to_linker(&mut linker, |state: &mut HostState| state)?;
 
-    component::webgpu::animation_frame::add_to_linker(
-        &mut linker,
-        |state: &mut HostState| state,
-    )?;
+    component::webgpu::animation_frame::add_to_linker(&mut linker, |state: &mut HostState| state)?;
 
     component::webgpu::pointer_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
 
-    // preview2::bindings::io::poll::add_to_linker(&mut linker, |state| &mut state.frame_host)?;
-    // preview2::bindings::io::streams::add_to_linker(&mut linker, |state| &mut state.frame_host)?;
-    // preview2::bindings::io::poll::add_to_linker(&mut linker, |state| &mut state.pointer_events_host)?;
-    // preview2::bindings::io::streams::add_to_linker(&mut linker, |state| &mut state.pointer_events_host)?;
+    component::webgpu::key_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+
     preview2::bindings::io::poll::add_to_linker(&mut linker, |state| state)?;
     preview2::bindings::io::streams::add_to_linker(&mut linker, |state| state)?;
 
