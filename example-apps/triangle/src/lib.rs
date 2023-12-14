@@ -14,7 +14,7 @@ impl Guest for ExampleTriangle {
     }
 }
 
-use component::webgpu::{pointer_events, request_animation_frame, webgpu};
+use component::webgpu::{pointer_events, animation_frame, webgpu};
 
 const SHADER_CODE: &str = r#"
 @vertex
@@ -40,10 +40,10 @@ fn draw_triangle() {
 
     let displayable_entity = webgpu::get_displayable_entity(&adapter, &device);
 
-    let pointer_up = pointer_events::up();
-    let pointer_up_pollable = pointer_up.subscribe();
-    let frame = request_animation_frame::get_frame();
-    let frame_pollable = frame.subscribe();
+    let pointer_up_listener = pointer_events::up_listener();
+    let pointer_up_pollable = pointer_up_listener.subscribe();
+    let frame_listener = animation_frame::listener();
+    let frame_pollable = frame_listener.subscribe();
     let pollables = vec![&pointer_up_pollable, &frame_pollable];
     let mut green = false;
     loop {
@@ -78,13 +78,13 @@ fn draw_triangle() {
         let pollables_res = wasi::io::poll::poll(&pollables);
 
         if pollables_res.contains(&0) {
-            let event = pointer_up.get();
+            let event = pointer_up_listener.get();
             print(&format!("pointer_up: {:?}", event));
             green = !green;
         }
 
         if pollables_res.contains(&1) {
-            frame.get();
+            frame_listener.get();
             print(&format!("frame event"));
             // print(&format!("{:?}", g));
             // let pointer_up_instance = pointer_up.get();

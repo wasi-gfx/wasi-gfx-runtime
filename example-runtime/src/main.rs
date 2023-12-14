@@ -11,8 +11,8 @@ use winit::{event::ElementState, event_loop::EventLoop, window::Window};
 
 use wasmtime_wasi::preview2::{self, Table, WasiCtx, WasiCtxBuilder, WasiView};
 mod pointer_events;
-mod request_animation_frame;
-mod webgpu_host;
+mod animation_frame;
+mod webgpu;
 
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
@@ -28,25 +28,23 @@ wasmtime::component::bindgen!({
     path: "../wit/",
     world: "example",
     async: {
-        // only_imports: [],
         except_imports: [],
     },
     with: {
         "wasi:io/poll": preview2::bindings::io::poll,
         "wasi:io/streams": preview2::bindings::io::streams,
-
         "component:webgpu/webgpu/gpu-adapter": wgpu::Adapter,
-        "component:webgpu/webgpu/gpu-device": webgpu_host::DeviceAndQueue,
-        "component:webgpu/webgpu/gpu-device-queue": webgpu_host::DeviceAndQueue,
+        "component:webgpu/webgpu/gpu-device": webgpu::DeviceAndQueue,
+        "component:webgpu/webgpu/gpu-device-queue": webgpu::DeviceAndQueue,
         "component:webgpu/webgpu/displayable-entity": wgpu::Surface,
         "component:webgpu/webgpu/gpu-command-encoder": wgpu::CommandEncoder,
         "component:webgpu/webgpu/gpu-shader-module": wgpu::ShaderModule,
         // "component:webgpu/webgpu/gpu-render-pass": wgpu::RenderPass,
         "component:webgpu/webgpu/gpu-render-pipeline": wgpu::RenderPipeline,
         "component:webgpu/webgpu/gpu-command-buffer": wgpu::CommandBuffer,
-        "component:webgpu/webgpu/displayable-entity-view": webgpu_host::DisplayableEntityView,
-        "component:webgpu/pointer-events/pointer-up": pointer_events::HostPointerEvent,
-        "component:webgpu/request-animation-frame/frame": request_animation_frame::FrameThis,
+        "component:webgpu/webgpu/displayable-entity-view": webgpu::DisplayableEntityView,
+        "component:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
+        "component:webgpu/animation-frame/frame-listener": animation_frame::AnimationFrameListener,
     },
 });
 
@@ -64,6 +62,7 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
     let sender_2 = sender.clone();
     tokio::spawn(async move {
         loop {
+            // winit doesn't have frame callbacks.
             sender_2.send(HostEvent::Frame).unwrap();
             tokio::time::sleep(Duration::from_millis(16)).await;
         }
@@ -183,7 +182,7 @@ async fn main() -> anyhow::Result<()> {
 
     component::webgpu::webgpu::add_to_linker(&mut linker, |state: &mut HostState| state)?;
 
-    component::webgpu::request_animation_frame::add_to_linker(
+    component::webgpu::animation_frame::add_to_linker(
         &mut linker,
         |state: &mut HostState| state,
     )?;
