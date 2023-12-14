@@ -128,7 +128,9 @@ fn draw_triangle() {
                 4,
             );
 
-            device.queue().submit(vec![encoder.finish()]);
+            device
+                .queue()
+                .submit(vec![webgpu::GpuCommandEncoder::finish(encoder)]);
             webgpu::DisplayableEntityView::non_standard_present(view);
             // queue.submit(Some(encoder.finish()));
             // frame.present();

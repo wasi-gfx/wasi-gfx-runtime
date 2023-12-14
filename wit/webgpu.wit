@@ -77,7 +77,8 @@ interface webgpu {
   }
   resource gpu-command-encoder {
     begin-render-pass: func(desc: gpu-render-pass-descriptor) -> gpu-render-pass;
-    finish: func() -> gpu-command-buffer;
+    // https://github.com/WebAssembly/component-model/issues/226#issuecomment-1751966154
+    finish: static func(self: gpu-command-encoder) -> gpu-command-buffer;
   }
   resource gpu-render-pass {
     set-pipeline: func(pipeline: gpu-render-pipeline);

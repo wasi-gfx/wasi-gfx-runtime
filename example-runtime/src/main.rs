@@ -9,7 +9,6 @@ use wasmtime::{
 };
 use winit::{event::ElementState, event_loop::EventLoop, window::Window};
 
-use crate::webgpu_host::WebGpuHost;
 use wasmtime_wasi::preview2::{self, Table, WasiCtx, WasiCtxBuilder, WasiView};
 mod pointer_events;
 mod request_animation_frame;
@@ -50,7 +49,6 @@ wasmtime::component::bindgen!({
 });
 
 struct HostState {
-    pub web_gpu_host: WebGpuHost<'static>,
     pub table: Table,
     pub ctx: WasiCtx,
     pub sender: Sender<HostEvent>,
@@ -126,7 +124,6 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
 impl HostState {
     fn new(event_loop: &EventLoop<()>, sender: Sender<HostEvent>) -> Self {
         Self {
-            web_gpu_host: WebGpuHost::new(),
             table: Table::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
             sender,
