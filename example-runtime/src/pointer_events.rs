@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use crate::{
-    component::webgpu::pointer_events::{HostPointerUp, PointerEvent, PointerUp, Pollable},
+    component::webgpu::pointer_events::{HostPointerUp, PointerEvent, Pollable},
     HostEvent, HostState,
 };
 use tokio::sync::broadcast::Receiver;
@@ -10,16 +10,15 @@ use wasmtime_wasi::preview2::{self, WasiView};
 
 #[async_trait::async_trait]
 impl crate::component::webgpu::pointer_events::Host for HostState {
-    async fn up(&mut self) -> wasmtime::Result<wasmtime::component::Resource<PointerUp>> {
+    async fn up(&mut self) -> wasmtime::Result<wasmtime::component::Resource<HostPointerEvent>> {
         let receiver = self.sender.subscribe();
-        let g = self
+        Ok(self
             .table_mut()
             .push(HostPointerEvent {
                 receiver,
                 data: Default::default(),
             })
-            .unwrap();
-        Ok(Resource::new_own(g.rep()))
+            .unwrap())
     }
 }
 
@@ -27,19 +26,19 @@ impl crate::component::webgpu::pointer_events::Host for HostState {
 impl HostPointerUp for HostState {
     async fn subscribe(
         &mut self,
-        self_: Resource<PointerUp>,
+        pointer_up: Resource<HostPointerEvent>,
     ) -> wasmtime::Result<Resource<Pollable>> {
-        let g: Resource<HostPointerEvent> = Resource::new_own(self_.rep());
-        let gg = preview2::subscribe(self.table_mut(), g).unwrap();
-        Ok(gg)
+        Ok(preview2::subscribe(self.table_mut(), pointer_up).unwrap())
     }
-    async fn get(&mut self, self_: Resource<PointerUp>) -> wasmtime::Result<Option<PointerEvent>> {
-        let g: Resource<HostPointerEvent> = Resource::new_own(self_.rep());
-        let ddd = self.table.get(&g).unwrap();
+    async fn get(
+        &mut self,
+        pointer_up: Resource<HostPointerEvent>,
+    ) -> wasmtime::Result<Option<PointerEvent>> {
+        let ddd = self.table.get(&pointer_up).unwrap();
         let res = ddd.data.lock().unwrap().take();
         Ok(res)
     }
-    fn drop(&mut self, _self_: Resource<PointerUp>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _self_: Resource<HostPointerEvent>) -> wasmtime::Result<()> {
         Ok(())
     }
 }

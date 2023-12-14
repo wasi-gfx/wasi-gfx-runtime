@@ -27,13 +27,14 @@ impl crate::component::webgpu::request_animation_frame::Host for HostState {
 
 #[async_trait::async_trait]
 impl HostFrame for HostState {
-    async fn subscribe(&mut self, self_: Resource<Frame>) -> wasmtime::Result<Resource<Pollable>> {
-        let g: Resource<FrameThis> = Resource::new_own(self_.rep());
-        preview2::subscribe(self.table_mut(), g)
+    async fn subscribe(
+        &mut self,
+        self_: Resource<FrameThis>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        preview2::subscribe(self.table_mut(), self_)
     }
     async fn get(&mut self, self_: Resource<Frame>) -> wasmtime::Result<Option<bool>> {
-        let g: Resource<FrameThis> = Resource::new_own(self_.rep());
-        let ddd = self.table.get(&g).unwrap();
+        let ddd = self.table.get(&self_).unwrap();
         let res = ddd.data.lock().unwrap().take();
         Ok(res.map(|_| true))
     }
@@ -43,7 +44,7 @@ impl HostFrame for HostState {
     }
 }
 
-struct FrameThis {
+pub struct FrameThis {
     receiver: Receiver<HostEvent>,
     data: Mutex<Option<()>>,
 }

@@ -45,6 +45,8 @@ wasmtime::component::bindgen!({
         "component:webgpu/webgpu/gpu-render-pipeline": wgpu::RenderPipeline,
         "component:webgpu/webgpu/gpu-command-buffer": wgpu::CommandBuffer,
         "component:webgpu/webgpu/displayable-entity-view": webgpu_host::DisplayableEntityView,
+        "component:webgpu/pointer-events/pointer-up": pointer_events::HostPointerEvent,
+        "component:webgpu/request-animation-frame/frame": request_animation_frame::FrameThis,
     },
 });
 
