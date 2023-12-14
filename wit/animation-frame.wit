@@ -1,6 +1,6 @@
 package component:webgpu;
 
-/// This is similar to requestAnimationFrame in JavaScript, or wl_callback in Wayland.
+/// This is similar to requestAnimationFrame in JavaScript, or wl_surface::frame in Wayland.
 /// Should update as fast as the users display can, but not faster.
 interface animation-frame {
     use wasi:io/poll@0.2.0-rc-2023-11-10.{pollable};
