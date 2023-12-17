@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
-use component::webgpu::{key_events::KeyEvent, pointer_events::PointerEvent};
+use component::webgpu::{
+    key_events::KeyEvent, mini_canvas::ResizeEvent, pointer_events::PointerEvent,
+};
 use tokio::sync::broadcast::Sender;
 use wasmtime::{
     component::{Component, Linker},
@@ -12,7 +14,9 @@ use winit::{event::ElementState, event_loop::EventLoop, window::Window};
 
 use wasmtime_wasi::preview2::{self, Table, WasiCtx, WasiCtxBuilder, WasiView};
 mod animation_frame;
+mod graphics_context;
 mod key_events;
+mod mini_canvas;
 mod pointer_events;
 mod webgpu;
 
@@ -38,19 +42,23 @@ wasmtime::component::bindgen!({
         "component:webgpu/webgpu/gpu-adapter": wgpu::Adapter,
         "component:webgpu/webgpu/gpu-device": webgpu::DeviceAndQueue,
         "component:webgpu/webgpu/gpu-device-queue": webgpu::DeviceAndQueue,
-        "component:webgpu/webgpu/displayable-entity": wgpu::Surface,
         "component:webgpu/webgpu/gpu-command-encoder": wgpu::CommandEncoder,
         "component:webgpu/webgpu/gpu-shader-module": wgpu::ShaderModule,
         // "component:webgpu/webgpu/gpu-render-pass": wgpu::RenderPass,
         "component:webgpu/webgpu/gpu-render-pipeline": wgpu::RenderPipeline,
         "component:webgpu/webgpu/gpu-command-buffer": wgpu::CommandBuffer,
-        "component:webgpu/webgpu/displayable-entity-view": webgpu::DisplayableEntityView,
+        "component:webgpu/webgpu/gpu-texture": wgpu::SurfaceTexture,
+        "component:webgpu/webgpu/gpu-texture-view": wgpu::TextureView,
         "component:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
         "component:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
         "component:webgpu/pointer-events/pointer-move-listener": pointer_events::PointerMoveListener,
         "component:webgpu/key-events/key-up-listener": key_events::KeyUpListener,
         "component:webgpu/key-events/key-down-listener": key_events::KeyDownListener,
         "component:webgpu/animation-frame/frame-listener": animation_frame::AnimationFrameListener,
+        "component:webgpu/graphics-context/graphics-context": graphics_context::GraphicsContext,
+        "component:webgpu/graphics-context/buffer": graphics_context::GraphicsBuffer,
+        "component:webgpu/mini-canvas/mini-canvas": mini_canvas::MiniCanvas,
+        "component:webgpu/mini-canvas/resize-listener": mini_canvas::ResizeListener,
     },
 });
 
@@ -68,7 +76,7 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
     let sender_2 = sender.clone();
     tokio::spawn(async move {
         loop {
-            // winit doesn't have frame callbacks.
+            // winit doesn't provide frame callbacks.
             sender_2.send(HostEvent::Frame).unwrap();
             tokio::time::sleep(Duration::from_millis(16)).await;
         }
@@ -84,14 +92,17 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {}
-
             Event::WindowEvent {
-                event: WindowEvent::Resized(_new_size),
+                event: WindowEvent::Resized(new_size),
                 ..
             } => {
-                // println!("Resized to {:?}", new_size);
+                sender
+                    .send(HostEvent::CanvasResizeEvent(ResizeEvent {
+                        height: new_size.height,
+                        width: new_size.width,
+                    }))
+                    .unwrap();
             }
-
             Event::WindowEvent {
                 event:
                     WindowEvent::MouseInput {
@@ -111,7 +122,6 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
                         y: pointer_y,
                     }),
                 };
-                let sender = sender.clone();
                 sender.send(event).unwrap();
             }
             Event::WindowEvent {
@@ -143,7 +153,6 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
                         shift_key: input.modifiers.shift(),
                     }),
                 };
-                let sender = sender.clone();
                 sender.send(event).unwrap();
             }
             Event::WindowEvent {
@@ -156,7 +165,6 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
                     x: pointer_x,
                     y: pointer_y,
                 });
-                let sender = sender.clone();
                 sender.send(event).unwrap();
             }
             _ => (),
@@ -210,6 +218,7 @@ pub enum HostEvent {
     PointerMoveEvent(PointerEvent),
     KeyUpEvent(KeyEvent),
     KeyDownEvent(KeyEvent),
+    CanvasResizeEvent(ResizeEvent),
     Frame,
 }
 
@@ -227,12 +236,11 @@ async fn main() -> anyhow::Result<()> {
     let mut linker = Linker::new(&engine);
 
     component::webgpu::webgpu::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-
     component::webgpu::animation_frame::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-
     component::webgpu::pointer_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-
     component::webgpu::key_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    component::webgpu::graphics_context::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    component::webgpu::mini_canvas::add_to_linker(&mut linker, |state: &mut HostState| state)?;
 
     preview2::bindings::io::poll::add_to_linker(&mut linker, |state| state)?;
     preview2::bindings::io::streams::add_to_linker(&mut linker, |state| state)?;

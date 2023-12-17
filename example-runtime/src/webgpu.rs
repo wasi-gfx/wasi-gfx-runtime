@@ -4,17 +4,15 @@ use std::collections::HashMap;
 use wasmtime::component::Resource;
 
 use crate::component::webgpu::webgpu;
+use crate::graphics_context::{GraphicsBuffer, GraphicsContext, GraphicsContextKind};
 use crate::HostState;
 
 pub struct DeviceAndQueue {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-}
 
-// Don't think this should exist, at least not in this form.
-pub struct DisplayableEntityView {
-    texture_view: wgpu::TextureView,
-    surface_texture: wgpu::SurfaceTexture,
+    // only needed when calling surface.get_capabilities in connect_graphics_context. If table would have a way to get parent from child, we could get it from device.
+    pub _adapter: Resource<wgpu::Adapter>,
 }
 
 impl From<&wgpu::TextureFormat> for webgpu::GpuTextureFormat {
@@ -62,19 +60,25 @@ impl<'a> webgpu::Host for HostState {
         let adapter = block_on(self.instance.request_adapter(&Default::default())).unwrap();
         Ok(self.table.push(adapter).unwrap())
     }
-    async fn get_displayable_entity(
+}
+
+#[async_trait::async_trait]
+impl<'a> webgpu::HostGpuDevice for HostState {
+    async fn connect_graphics_context(
         &mut self,
-        adapter: Resource<wgpu::Adapter>,
         daq: Resource<DeviceAndQueue>,
-    ) -> wasmtime::Result<Resource<webgpu::DisplayableEntity>> {
+        context: Resource<GraphicsContext>,
+    ) -> wasmtime::Result<()> {
+        let surface = unsafe { self.instance.create_surface(&self.window) }.unwrap();
+
         let host_daq = self.table.get(&daq).unwrap();
-        let adapter = self.table.get(&adapter).unwrap();
+
+        // think the table should have a way to get parent so that we can get adapter from device.
+        let adapter = self.table.get(&host_daq._adapter).unwrap();
 
         let mut size = self.window.inner_size();
         size.width = size.width.max(1);
         size.height = size.height.max(1);
-
-        let surface = unsafe { self.instance.create_surface(&self.window) }.unwrap();
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
@@ -91,12 +95,13 @@ impl<'a> webgpu::Host for HostState {
 
         surface.configure(&host_daq.device, &config);
 
-        Ok(self.table.push_child(surface, &daq).unwrap())
-    }
-}
+        let context = self.table.get_mut(&context).unwrap();
 
-#[async_trait::async_trait]
-impl<'a> webgpu::HostGpuDevice for HostState {
+        context.kind = Some(GraphicsContextKind::Webgpu(surface));
+
+        Ok(())
+    }
+
     async fn create_command_encoder(
         &mut self,
         daq: Resource<DeviceAndQueue>,
@@ -130,7 +135,7 @@ impl<'a> webgpu::HostGpuDevice for HostState {
                 let view = self.table.get(&color_attachment.view).unwrap();
 
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &view.texture_view,
+                    view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         // load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
@@ -241,45 +246,46 @@ impl<'a> webgpu::HostGpuDevice for HostState {
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostDisplayableEntity for HostState {
-    async fn create_view(
+impl<'a> webgpu::HostGpuTexture for HostState {
+    async fn from_graphics_buffer(
         &mut self,
-        displayable_entity: Resource<wgpu::Surface>,
-    ) -> wasmtime::Result<Resource<webgpu::DisplayableEntityView>> {
-        let displayable_entity = self.table.get(&displayable_entity).unwrap();
-        let surface_texture = displayable_entity.get_current_texture().unwrap();
-        let texture_view = surface_texture.texture.create_view(&Default::default());
-
-        let displayable_entity_view = self
-            .table
-            .push(DisplayableEntityView {
-                texture_view,
-                surface_texture,
-            })
-            .unwrap();
-
-        Ok(displayable_entity_view)
+        buffer: Resource<GraphicsBuffer>,
+    ) -> wasmtime::Result<Resource<wgpu::SurfaceTexture>> {
+        let host_buffer = self.table.delete(buffer).unwrap();
+        if let GraphicsBuffer::Webgpu(host_buffer) = host_buffer {
+            Ok(self.table.push(host_buffer).unwrap())
+        } else {
+            panic!("Context not connected to webgpu");
+        }
     }
 
-    fn drop(&mut self, _rep: Resource<webgpu::DisplayableEntity>) -> wasmtime::Result<()> {
-        // self.web_gpu_host.displayable_entities.remove(&rep.rep());
+    async fn create_view(
+        &mut self,
+        texture: Resource<wgpu::SurfaceTexture>,
+    ) -> wasmtime::Result<Resource<wgpu::TextureView>> {
+        let host_texture = self.table.get(&texture).unwrap();
+        let texture_view = host_texture.texture.create_view(&Default::default());
+
+        Ok(self.table.push(texture_view).unwrap())
+    }
+
+    async fn non_standard_present(
+        &mut self,
+        texture: Resource<wgpu::SurfaceTexture>,
+    ) -> wasmtime::Result<()> {
+        let texture = self.table.delete(texture).unwrap();
+        texture.present();
+        Ok(())
+    }
+
+    fn drop(&mut self, _rep: Resource<wgpu::SurfaceTexture>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostDisplayableEntityView for HostState {
-    async fn non_standard_present(
-        &mut self,
-        displayable_entity_view: Resource<webgpu::DisplayableEntityView>,
-    ) -> wasmtime::Result<()> {
-        let displayable_entity_view = self.table.delete(displayable_entity_view).unwrap();
-
-        displayable_entity_view.surface_texture.present();
-        Ok(())
-    }
-    fn drop(&mut self, _rep: Resource<webgpu::DisplayableEntityView>) -> wasmtime::Result<()> {
-        // self.web_gpu_host.displayable_entities.remove(&rep.rep());
+impl<'a> webgpu::HostGpuTextureView for HostState {
+    fn drop(&mut self, _rep: Resource<wgpu::TextureView>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
@@ -321,7 +327,14 @@ impl<'a> webgpu::HostGpuAdapter for HostState {
 
         let daq = self
             .table
-            .push_child(DeviceAndQueue { device, queue }, &adapter)
+            .push_child(
+                DeviceAndQueue {
+                    device,
+                    queue,
+                    _adapter: Resource::new_own(adapter.rep()),
+                },
+                &adapter,
+            )
             .unwrap();
 
         Ok(daq)
@@ -382,7 +395,7 @@ impl<'a> webgpu::HostGpuCommandEncoder for HostState {
 
         let mut color_attachments = vec![];
         for _color_attachment in desc.color_attachments {
-            let view: &DisplayableEntityView = command_encoder_and_views
+            let view: &wgpu::TextureView = command_encoder_and_views
                 .next()
                 .unwrap()
                 .0
@@ -391,7 +404,7 @@ impl<'a> webgpu::HostGpuCommandEncoder for HostState {
                 .unwrap();
 
             color_attachments.push(Some(wgpu::RenderPassColorAttachment {
-                view: &view.texture_view,
+                view: &view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::RED),

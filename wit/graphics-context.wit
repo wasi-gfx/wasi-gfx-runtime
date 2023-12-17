@@ -1,0 +1,33 @@
+package component:webgpu;
+
+interface graphics-context {
+
+  resource graphics-context {
+    create: static func() -> graphics-context;
+
+    configure: func(desc: configure-context-desc);
+
+    get-current-buffer: func() -> buffer;
+  }
+
+  record configure-context-desc {
+    alpha-mode: composite-alpha-mode,
+    // colorSpace
+    // device?
+    // usage?
+    // format?
+    // viewFormats?
+    // getPreferredCanvasFormat?
+  }
+
+  resource buffer {
+  }
+
+  enum composite-alpha-mode {
+    auto,
+    opaque,
+    pre-multiplied,
+    post-multiplied,
+    inherit,
+  }
+}

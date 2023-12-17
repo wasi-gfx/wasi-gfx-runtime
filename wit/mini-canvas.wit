@@ -1,0 +1,32 @@
+package component:webgpu;
+
+interface mini-canvas {
+  use graphics-context.{graphics-context};
+  use wasi:io/poll@0.2.0-rc-2023-11-10.{pollable};
+
+  record create-desc {
+    height: u32,
+    width: u32,
+    offscreen: bool,
+  }
+
+  resource mini-canvas {
+    create: static func(desc: create-desc) -> mini-canvas;
+
+    connect-graphics-context: func(context: borrow<graphics-context>);
+
+    resize-listener: func() -> resize-listener;
+  }
+
+  resource resize-listener {
+    subscribe: func() -> pollable;
+
+    get: func() -> option<resize-event>;
+  }
+
+  record resize-event {
+    height: u32,
+    width: u32,
+  }
+
+}

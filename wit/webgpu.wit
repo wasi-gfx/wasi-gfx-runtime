@@ -1,14 +1,9 @@
 package component:webgpu;
 
 
-interface gpu {
-  // static async request-adapter(): gpu-adapter;
-  // static getpreferredcanvasformat(): string; // return enum? todo:
-}
-
 interface webgpu {
+  use graphics-context.{graphics-context, buffer};
 
-  // async request-adapter(): gpu-adapter;
   request-adapter: func() -> gpu-adapter;
 
   record gpu-shader-module-descriptor {
@@ -46,7 +41,6 @@ interface webgpu {
   }
   resource gpu-render-pipeline {}
   resource gpu-adapter {
-    // async request-device(): gpu-device; TODO:
     request-device: func() -> gpu-device;
   }
   resource gpu-command-buffer {
@@ -57,19 +51,16 @@ interface webgpu {
   }
 
   resource gpu-device {
+    connect-graphics-context: func(context: borrow<graphics-context>);
     create-command-encoder: func() -> gpu-command-encoder;
     create-shader-module: func(desc: gpu-shader-module-descriptor) -> gpu-shader-module;
     create-render-pipeline: func(props: gpu-render-pipeline-descriptor) -> gpu-render-pipeline;
     queue: func() -> gpu-device-queue;
-
-
-
-
     do-all: func(desc: gpu-render-pass-descriptor, pipeline: gpu-render-pipeline, count: u32) -> gpu-command-encoder;
   }
 
   record gpu-color-attachment {
-    view: borrow<displayable-entity-view>,
+    view: borrow<gpu-texture-view>,
   }
   record gpu-render-pass-descriptor {
     label: string,
@@ -86,23 +77,11 @@ interface webgpu {
     end: func();
   }
 
-
-
-
-
-
-
-
-
-
-  get-displayable-entity: func(adapter: borrow<gpu-adapter>, device: borrow<gpu-device>) -> displayable-entity;
-  resource displayable-entity {
-    create-view: func() -> displayable-entity-view;
+  resource gpu-texture {
+    from-graphics-buffer: static func(buffer: buffer) -> gpu-texture;
+    create-view: func() -> gpu-texture-view;
+    non-standard-present: static func(this: gpu-texture);
   }
-  resource displayable-entity-view {
-    // https://github.com/WebAssembly/component-model/issues/226#issuecomment-1751966154
-    non-standard-present: static func(this: displayable-entity-view);
+  resource gpu-texture-view {
   }
-
-
 }

@@ -14,7 +14,9 @@ impl Guest for ExampleTriangle {
     }
 }
 
-use component::webgpu::{animation_frame, key_events, pointer_events, webgpu};
+use component::webgpu::{
+    animation_frame, graphics_context, key_events, mini_canvas, pointer_events, webgpu,
+};
 
 const SHADER_CODE: &str = r#"
 @vertex
@@ -38,7 +40,14 @@ fn draw_triangle() {
     let adapter = webgpu::request_adapter();
     let device = adapter.request_device();
 
-    let displayable_entity = webgpu::get_displayable_entity(&adapter, &device);
+    let canvas = mini_canvas::MiniCanvas::create(mini_canvas::CreateDesc {
+        height: 100,
+        width: 100,
+        offscreen: false,
+    });
+    let graphics_context = graphics_context::GraphicsContext::create();
+    canvas.connect_graphics_context(&graphics_context);
+    device.connect_graphics_context(&graphics_context);
 
     let pointer_up_listener = pointer_events::up_listener();
     let pointer_up_pollable = pointer_up_listener.subscribe();
@@ -50,6 +59,8 @@ fn draw_triangle() {
     let key_up_pollable = key_up_listener.subscribe();
     let key_down_listener = key_events::down_listener();
     let key_down_pollable = key_down_listener.subscribe();
+    let resize_listener = canvas.resize_listener();
+    let resize_pollable = resize_listener.subscribe();
     let frame_listener = animation_frame::listener();
     let frame_pollable = frame_listener.subscribe();
     let pollables = vec![
@@ -58,6 +69,7 @@ fn draw_triangle() {
         &pointer_move_pollable,
         &key_up_pollable,
         &key_down_pollable,
+        &resize_pollable,
         &frame_pollable,
     ];
     let mut green = false;
@@ -113,8 +125,12 @@ fn draw_triangle() {
             let event = key_down_listener.get();
             print(&format!("key_down: {:?}", event));
         }
-
         if pollables_res.contains(&5) {
+            let event = resize_listener.get();
+            print(&format!("resize: {:?}", event));
+        }
+
+        if pollables_res.contains(&6) {
             frame_listener.get();
             print(&format!("frame event"));
             // print(&format!("{:?}", g));
@@ -134,7 +150,9 @@ fn draw_triangle() {
             //     .texture
             //     .create_view(&wgpu::TextureViewDescriptor::default());
 
-            let view = displayable_entity.create_view();
+            let graphics_buffer = graphics_context.get_current_buffer();
+            let texture = webgpu::GpuTexture::from_graphics_buffer(graphics_buffer);
+            let view = texture.create_view();
             // let encoder = device.create_command_encoder();
             // {
             //     print("xx");
@@ -162,7 +180,7 @@ fn draw_triangle() {
             device
                 .queue()
                 .submit(vec![webgpu::GpuCommandEncoder::finish(encoder)]);
-            webgpu::DisplayableEntityView::non_standard_present(view);
+            webgpu::GpuTexture::non_standard_present(texture);
             // queue.submit(Some(encoder.finish()));
             // frame.present();
         }
