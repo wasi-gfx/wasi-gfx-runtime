@@ -1,3 +1,5 @@
+// TODO: Move this into mini-canvas.
+
 package component:webgpu;
 
 interface key-events {

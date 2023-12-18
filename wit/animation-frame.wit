@@ -1,3 +1,5 @@
+// TODO: Move this into mini-canvas.
+
 package component:webgpu;
 
 /// This is similar to requestAnimationFrame in JavaScript, or wl_surface::frame in Wayland.
