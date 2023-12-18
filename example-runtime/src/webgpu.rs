@@ -15,45 +15,6 @@ pub struct DeviceAndQueue {
     pub _adapter: Resource<wgpu::Adapter>,
 }
 
-impl From<&wgpu::TextureFormat> for webgpu::GpuTextureFormat {
-    fn from(value: &wgpu::TextureFormat) -> Self {
-        match value {
-            wgpu::TextureFormat::Bgra8UnormSrgb => webgpu::GpuTextureFormat::Bgra8UnormSrgb,
-            _ => todo!(),
-        }
-    }
-}
-impl From<&webgpu::GpuTextureFormat> for wgpu::TextureFormat {
-    fn from(value: &webgpu::GpuTextureFormat) -> Self {
-        match value {
-            webgpu::GpuTextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Bgra8UnormSrgb,
-        }
-    }
-}
-
-impl From<&webgpu::GpuPrimitiveTopology> for wgpu::PrimitiveTopology {
-    fn from(value: &webgpu::GpuPrimitiveTopology) -> Self {
-        match value {
-            webgpu::GpuPrimitiveTopology::PointList => wgpu::PrimitiveTopology::PointList,
-            webgpu::GpuPrimitiveTopology::LineList => wgpu::PrimitiveTopology::LineList,
-            webgpu::GpuPrimitiveTopology::LineStrip => wgpu::PrimitiveTopology::LineStrip,
-            webgpu::GpuPrimitiveTopology::TriangleList => wgpu::PrimitiveTopology::TriangleList,
-            webgpu::GpuPrimitiveTopology::TriangleStrip => wgpu::PrimitiveTopology::TriangleStrip,
-        }
-    }
-}
-impl From<&wgpu::PrimitiveTopology> for webgpu::GpuPrimitiveTopology {
-    fn from(value: &wgpu::PrimitiveTopology) -> Self {
-        match value {
-            wgpu::PrimitiveTopology::PointList => webgpu::GpuPrimitiveTopology::PointList,
-            wgpu::PrimitiveTopology::LineList => webgpu::GpuPrimitiveTopology::LineList,
-            wgpu::PrimitiveTopology::LineStrip => webgpu::GpuPrimitiveTopology::LineStrip,
-            wgpu::PrimitiveTopology::TriangleList => webgpu::GpuPrimitiveTopology::TriangleList,
-            wgpu::PrimitiveTopology::TriangleStrip => webgpu::GpuPrimitiveTopology::TriangleStrip,
-        }
-    }
-}
-
 #[async_trait::async_trait]
 impl<'a> webgpu::Host for HostState {
     async fn request_adapter(&mut self) -> wasmtime::Result<Resource<wgpu::Adapter>> {
@@ -464,5 +425,44 @@ impl<'a> webgpu::HostGpuRenderPass for HostState {
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuRenderPass>) -> wasmtime::Result<()> {
         anyhow::bail!("")
+    }
+}
+
+impl From<&wgpu::TextureFormat> for webgpu::GpuTextureFormat {
+    fn from(value: &wgpu::TextureFormat) -> Self {
+        match value {
+            wgpu::TextureFormat::Bgra8UnormSrgb => webgpu::GpuTextureFormat::Bgra8UnormSrgb,
+            _ => todo!(),
+        }
+    }
+}
+impl From<&webgpu::GpuTextureFormat> for wgpu::TextureFormat {
+    fn from(value: &webgpu::GpuTextureFormat) -> Self {
+        match value {
+            webgpu::GpuTextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Bgra8UnormSrgb,
+        }
+    }
+}
+
+impl From<&webgpu::GpuPrimitiveTopology> for wgpu::PrimitiveTopology {
+    fn from(value: &webgpu::GpuPrimitiveTopology) -> Self {
+        match value {
+            webgpu::GpuPrimitiveTopology::PointList => wgpu::PrimitiveTopology::PointList,
+            webgpu::GpuPrimitiveTopology::LineList => wgpu::PrimitiveTopology::LineList,
+            webgpu::GpuPrimitiveTopology::LineStrip => wgpu::PrimitiveTopology::LineStrip,
+            webgpu::GpuPrimitiveTopology::TriangleList => wgpu::PrimitiveTopology::TriangleList,
+            webgpu::GpuPrimitiveTopology::TriangleStrip => wgpu::PrimitiveTopology::TriangleStrip,
+        }
+    }
+}
+impl From<&wgpu::PrimitiveTopology> for webgpu::GpuPrimitiveTopology {
+    fn from(value: &wgpu::PrimitiveTopology) -> Self {
+        match value {
+            wgpu::PrimitiveTopology::PointList => webgpu::GpuPrimitiveTopology::PointList,
+            wgpu::PrimitiveTopology::LineList => webgpu::GpuPrimitiveTopology::LineList,
+            wgpu::PrimitiveTopology::LineStrip => webgpu::GpuPrimitiveTopology::LineStrip,
+            wgpu::PrimitiveTopology::TriangleList => webgpu::GpuPrimitiveTopology::TriangleList,
+            wgpu::PrimitiveTopology::TriangleStrip => webgpu::GpuPrimitiveTopology::TriangleStrip,
+        }
     }
 }
