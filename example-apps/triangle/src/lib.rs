@@ -133,49 +133,22 @@ fn draw_triangle() {
         if pollables_res.contains(&6) {
             frame_listener.get();
             print(&format!("frame event"));
-            // print(&format!("{:?}", g));
-            // let pointer_up_instance = pointer_up.get();
-            // let frame_instance = frame.get();
-
-            // print(&format!("pointer_up: {:?}", pointer_up_instance));
-            // print(&format!("frame: {:?}", frame_instance));
-            // let g = pollable.block();
-
-            // on frame:
-
-            // let frame = surface
-            //     .get_current_texture()
-            //     .expect("Failed to acquire next swap chain texture");
-            // let view = frame
-            //     .texture
-            //     .create_view(&wgpu::TextureViewDescriptor::default());
 
             let graphics_buffer = graphics_context.get_current_buffer();
             let texture = webgpu::GpuTexture::from_graphics_buffer(graphics_buffer);
             let view = texture.create_view();
-            // let encoder = device.create_command_encoder();
-            // {
-            //     print("xx");
-
-            //     let rpass = encoder.begin_render_pass(GpuRenderPassDescriptor {
-            //         label: String::from("fdsa"),
-            //         color_attachments: vec![GpuColorAttachment {
-            //             view,
-            //         }],
-            //     });
-            //     print("xxx");
-
-            //     rpass.set_pipeline(render_pipeline);
-            //     rpass.draw(2);
-            // }
-            let encoder = device.do_all(
-                webgpu::GpuRenderPassDescriptor {
+            let encoder = device.create_command_encoder();
+            {
+                let rpass = encoder.begin_render_pass(webgpu::GpuRenderPassDescriptor {
                     label: String::from("fdsa"),
-                    color_attachments: vec![webgpu::GpuColorAttachment { view: &view }],
-                },
-                render_pipeline,
-                4,
-            );
+                    color_attachments: vec![webgpu::GpuColorAttachment {
+                        view: &view,
+                    }],
+                });
+
+                rpass.set_pipeline(render_pipeline);
+                rpass.draw(3);
+            }
 
             device
                 .queue()

@@ -1,6 +1,8 @@
 use futures::executor::block_on;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::marker::PhantomPinned;
+use std::pin::Pin;
 use wasmtime::component::Resource;
 
 use crate::component::webgpu::webgpu;
@@ -16,7 +18,7 @@ pub struct DeviceAndQueue {
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::Host for HostState {
+impl webgpu::Host for HostState {
     async fn request_adapter(&mut self) -> wasmtime::Result<Resource<wgpu::Adapter>> {
         let adapter = block_on(self.instance.request_adapter(&Default::default())).unwrap();
         Ok(self.table.push(adapter).unwrap())
@@ -24,7 +26,7 @@ impl<'a> webgpu::Host for HostState {
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuDevice for HostState {
+impl webgpu::HostGpuDevice for HostState {
     async fn connect_graphics_context(
         &mut self,
         daq: Resource<DeviceAndQueue>,
@@ -66,61 +68,13 @@ impl<'a> webgpu::HostGpuDevice for HostState {
     async fn create_command_encoder(
         &mut self,
         daq: Resource<DeviceAndQueue>,
-    ) -> wasmtime::Result<Resource<webgpu::GpuCommandEncoder>> {
+    ) -> wasmtime::Result<Resource<CommandEncoderWithRenderPass>> {
         let host_daq = self.table.get(&daq).unwrap();
         let command_encoder = host_daq
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        Ok(self.table.push_child(command_encoder, &daq).unwrap())
-    }
-    async fn do_all(
-        &mut self,
-        daq: Resource<DeviceAndQueue>,
-        desc: webgpu::GpuRenderPassDescriptor,
-        pipeline: Resource<webgpu::GpuRenderPipeline>,
-        _count: u32,
-    ) -> wasmtime::Result<Resource<webgpu::GpuCommandEncoder>> {
-        let host_daq = self.table.get(&daq).unwrap();
-
-        let render_pipeline = self.table.get(&pipeline).unwrap();
-
-        let mut command_encoder = host_daq
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        let color_attachments = desc
-            .color_attachments
-            .iter()
-            .map(|color_attachment| {
-                let view = self.table.get(&color_attachment.view).unwrap();
-
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        // load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.1,
-                            a: 0.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
-            color_attachments: &color_attachments,
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        render_pass.set_pipeline(&render_pipeline);
-        render_pass.draw(0..3, 0..1);
-        drop(render_pass);
+        let command_encoder = CommandEncoderWithRenderPass::new(command_encoder);
 
         Ok(self.table.push_child(command_encoder, &daq).unwrap())
     }
@@ -207,7 +161,7 @@ impl<'a> webgpu::HostGpuDevice for HostState {
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuTexture for HostState {
+impl webgpu::HostGpuTexture for HostState {
     async fn from_graphics_buffer(
         &mut self,
         buffer: Resource<GraphicsBuffer>,
@@ -245,14 +199,14 @@ impl<'a> webgpu::HostGpuTexture for HostState {
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuTextureView for HostState {
+impl webgpu::HostGpuTextureView for HostState {
     fn drop(&mut self, _rep: Resource<wgpu::TextureView>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuCommandBuffer for HostState {
+impl webgpu::HostGpuCommandBuffer for HostState {
     fn drop(&mut self, _rep: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<()> {
         // self.web_gpu_host.command_buffers.remove(&rep.rep());
         Ok(())
@@ -260,7 +214,7 @@ impl<'a> webgpu::HostGpuCommandBuffer for HostState {
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuShaderModule for HostState {
+impl webgpu::HostGpuShaderModule for HostState {
     fn drop(&mut self, _rep: Resource<webgpu::GpuShaderModule>) -> wasmtime::Result<()> {
         // self.web_gpu_host.shaders.remove(&rep.rep());
         Ok(())
@@ -268,7 +222,7 @@ impl<'a> webgpu::HostGpuShaderModule for HostState {
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuRenderPipeline for HostState {
+impl webgpu::HostGpuRenderPipeline for HostState {
     fn drop(&mut self, _rep: Resource<webgpu::GpuRenderPipeline>) -> wasmtime::Result<()> {
         // TODO:
         Ok(())
@@ -276,7 +230,7 @@ impl<'a> webgpu::HostGpuRenderPipeline for HostState {
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuAdapter for HostState {
+impl webgpu::HostGpuAdapter for HostState {
     async fn request_device(
         &mut self,
         adapter: Resource<wgpu::Adapter>,
@@ -308,7 +262,7 @@ impl<'a> webgpu::HostGpuAdapter for HostState {
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuDeviceQueue for HostState {
+impl webgpu::HostGpuDeviceQueue for HostState {
     async fn submit(
         &mut self,
         daq: Resource<DeviceAndQueue>,
@@ -331,50 +285,150 @@ impl<'a> webgpu::HostGpuDeviceQueue for HostState {
     }
 }
 
+pub struct CommandEncoderWithRenderPassRaw {
+    // Never None.
+    command_encoder: Option<wgpu::CommandEncoder>,
+    render_pass: Option<wgpu::RenderPass<'static>>,
+    _pin: PhantomPinned,
+}
+
+pub struct CommandEncoderWithRenderPass {
+    raw: Pin<Box<CommandEncoderWithRenderPassRaw>>,
+}
+
+impl CommandEncoderWithRenderPass {
+    fn new(command_encoder: wgpu::CommandEncoder) -> Self {
+        Self {
+            raw: Box::pin(CommandEncoderWithRenderPassRaw {
+                command_encoder: Some(command_encoder),
+                // render_pass: std::ptr::NonNull::dangling(),
+                render_pass: None,
+                _pin: PhantomPinned,
+            }),
+        }
+    }
+
+    fn _command_encoder(&self) -> &wgpu::CommandEncoder {
+        self.raw.command_encoder.as_ref().unwrap()
+    }
+
+    fn command_encoder_mut(&mut self) -> &mut wgpu::CommandEncoder {
+        let raw = self._get_raw_mut();
+        raw.command_encoder.as_mut().unwrap()
+    }
+
+    fn _render_pass<'a>(&'a self) -> Option<&wgpu::RenderPass<'a>> {
+        self.raw.render_pass.as_ref()
+    }
+
+    // fn render_pass_mut<'a>(&'a mut self) -> Option<&'a mut wgpu::RenderPass<'static>> {
+    //     let raw = self._get_raw_mut();
+    //     raw.render_pass.as_mut()
+    // }
+
+    fn render_pass_mut<'a>(&'a mut self) -> Option<&'a mut wgpu::RenderPass<'a>> {
+        let raw = self._get_raw_mut();
+        let render_pass = raw.render_pass.as_mut();
+
+        let render_pass: Option<&mut wgpu::RenderPass<'a>> =
+            unsafe { std::mem::transmute(render_pass) };
+
+        render_pass
+    }
+
+    // fn render_pass_mut<'a>(&'a mut self) -> Option<&'a mut wgpu::RenderPass<'a>> {
+    //     // let g: Option<&mut wgpu::RenderPass<'static>> = self.render_pass.as_mut();
+    //     // g
+    //     // todo!()
+
+    //     let raw = self._get_raw_mut();
+    //     raw.render_pass.as_mut()
+    // }
+
+    fn begin_render_pass(&mut self, desc: &wgpu::RenderPassDescriptor) {
+        let render_pass = self.command_encoder_mut().begin_render_pass(desc);
+        let render_pass: wgpu::RenderPass<'static> = unsafe { std::mem::transmute(render_pass) };
+
+        let raw = self._get_raw_mut();
+        raw.render_pass = Some(render_pass);
+        // mut_host_command_encoder.render_pass = Some(render_pass);
+    }
+
+    fn _get_raw_mut<'a>(&'a mut self) -> &'a mut CommandEncoderWithRenderPassRaw {
+        unsafe {
+            let raw: Pin<&mut CommandEncoderWithRenderPassRaw> = Pin::as_mut(&mut self.raw);
+            let raw = Pin::get_unchecked_mut(raw);
+            raw
+        }
+    }
+
+    fn take_render_pass<'a>(&'a mut self) -> Option<wgpu::RenderPass<'a>> {
+        let raw = self._get_raw_mut();
+        raw.render_pass.take()
+    }
+
+    fn take_command_encoder(mut self) -> wgpu::CommandEncoder {
+        let raw = self._get_raw_mut();
+        raw.command_encoder.take().unwrap()
+    }
+}
+
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuCommandEncoder for HostState {
+impl webgpu::HostGpuCommandEncoder for HostState {
     async fn begin_render_pass(
         &mut self,
-        command_encoder: Resource<webgpu::GpuCommandEncoder>,
+        cwr: Resource<CommandEncoderWithRenderPass>,
         desc: webgpu::GpuRenderPassDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuRenderPass>> {
-        let mut command_encoder_and_views = self.table.iter_entries({
+        let cwr_rep = cwr.rep();
+        let cwr_and_views = self.table.iter_entries({
             let mut m = HashMap::new();
-            m.insert(command_encoder.rep(), command_encoder.rep());
-            for color_attachment in &desc.color_attachments {
-                m.insert(color_attachment.view.rep(), color_attachment.view.rep());
+            m.insert(cwr.rep(), 0);
+            for (i, color_attachment) in desc.color_attachments.iter().enumerate() {
+                m.insert(color_attachment.view.rep(), i + 1);
             }
             m
         });
-        let host_command_encoder: &mut wgpu::CommandEncoder = command_encoder_and_views
-            .next()
-            .unwrap()
-            .0
-            .unwrap()
-            .downcast_mut()
-            .unwrap();
+
+        let mut cwr: Option<&mut CommandEncoderWithRenderPass> = None;
+        let mut views: Vec<Option<&wgpu::TextureView>> = vec![None; desc.color_attachments.len()];
+
+        for (cwr_or_view, rep) in cwr_and_views {
+            let cwr_or_view = cwr_or_view.unwrap();
+
+            if rep == 0 {
+                let val = cwr_or_view
+                    .downcast_mut::<CommandEncoderWithRenderPass>()
+                    .unwrap();
+                cwr = Some(val);
+            } else {
+                let val = cwr_or_view.downcast_ref::<wgpu::TextureView>().unwrap();
+                views[rep - 1] = Some(val);
+            }
+        }
+
+        let cwr = cwr.unwrap();
+        let views: Vec<&wgpu::TextureView> = views.into_iter().map(|v| v.unwrap()).collect();
 
         let mut color_attachments = vec![];
-        for _color_attachment in desc.color_attachments {
-            let view: &wgpu::TextureView = command_encoder_and_views
-                .next()
-                .unwrap()
-                .0
-                .unwrap()
-                .downcast_ref()
-                .unwrap();
-
+        for (i, _color_attachment) in desc.color_attachments.iter().enumerate() {
             color_attachments.push(Some(wgpu::RenderPassColorAttachment {
-                view: &view,
+                view: &views[i],
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::RED),
+                    // load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.1,
+                        a: 0.0,
+                    }),
                     store: wgpu::StoreOp::Store,
                 },
             }));
         }
 
-        let _render_pass = host_command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        cwr.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &color_attachments,
             label: None,
             depth_stencil_attachment: None,
@@ -382,49 +436,88 @@ impl<'a> webgpu::HostGpuCommandEncoder for HostState {
             occlusion_query_set: None,
         });
 
-        Ok(Resource::new_own(command_encoder.rep()))
+        Ok(Resource::new_own(cwr_rep))
     }
 
     async fn finish(
         &mut self,
-        command_encoder: Resource<webgpu::GpuCommandEncoder>,
+        command_encoder: Resource<CommandEncoderWithRenderPass>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandBuffer>> {
-        // let encoder = self.web_gpu_host.encoders.remove(&command_encoder.rep()).unwrap().0;
         let command_encoder = self.table.delete(command_encoder).unwrap();
+        let command_encoder = command_encoder.take_command_encoder();
         let command_buffer = command_encoder.finish();
         Ok(self.table.push(command_buffer).unwrap())
     }
 
-    fn drop(&mut self, _rep: Resource<webgpu::GpuCommandEncoder>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _rep: Resource<CommandEncoderWithRenderPass>) -> wasmtime::Result<()> {
         // self.web_gpu_host.encoders.remove(&rep.rep());
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl<'a> webgpu::HostGpuRenderPass for HostState {
+impl webgpu::HostGpuRenderPass for HostState {
     async fn set_pipeline(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderPass>,
-        _pipeline: Resource<webgpu::GpuRenderPipeline>,
+        cwr: Resource<CommandEncoderWithRenderPass>,
+        pipeline: Resource<webgpu::GpuRenderPipeline>,
     ) -> wasmtime::Result<()> {
-        anyhow::bail!("")
+        let cwr_rep = cwr.rep();
+        let pipeline_rep = pipeline.rep();
+        let cwr_and_pipeline = self.table.iter_entries({
+            let mut m = HashMap::new();
+            m.insert(cwr_rep, cwr_rep);
+            m.insert(pipeline_rep, pipeline_rep);
+            m
+        });
+
+        let mut cwr: Option<&mut CommandEncoderWithRenderPass> = None;
+        let mut pipeline: Option<&webgpu::GpuRenderPipeline> = None;
+
+        for (cwr_or_pipeline, rep) in cwr_and_pipeline {
+            let cwr_or_pipeline = cwr_or_pipeline.unwrap();
+
+            if rep == cwr_rep {
+                let val = cwr_or_pipeline
+                    .downcast_mut::<CommandEncoderWithRenderPass>()
+                    .unwrap();
+                cwr = Some(val);
+            } else if rep == pipeline_rep {
+                let val = cwr_or_pipeline
+                    .downcast_ref::<webgpu::GpuRenderPipeline>()
+                    .unwrap();
+                pipeline = Some(val);
+            }
+        }
+
+        let cwr = cwr.unwrap();
+        let pipeline = pipeline.unwrap();
+
+        cwr.render_pass_mut().unwrap().set_pipeline(&pipeline);
+
+        Ok(())
     }
 
     async fn draw(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderPass>,
-        _count: u32,
+        cwr: Resource<CommandEncoderWithRenderPass>,
+        count: u32,
     ) -> wasmtime::Result<()> {
-        anyhow::bail!("")
+        let cwr = self.table.get_mut(&cwr).unwrap();
+
+        cwr.render_pass_mut().unwrap().draw(0..count, 0..1);
+
+        Ok(())
     }
 
-    async fn end(&mut self, _self_: Resource<webgpu::GpuRenderPass>) -> wasmtime::Result<()> {
-        anyhow::bail!("")
+    async fn end(&mut self, _cwr: Resource<CommandEncoderWithRenderPass>) -> wasmtime::Result<()> {
+        todo!()
     }
 
-    fn drop(&mut self, _rep: Resource<webgpu::GpuRenderPass>) -> wasmtime::Result<()> {
-        anyhow::bail!("")
+    fn drop(&mut self, cwr: Resource<CommandEncoderWithRenderPass>) -> wasmtime::Result<()> {
+        let cwr = self.table.get_mut(&cwr).unwrap();
+        cwr.take_render_pass();
+        Ok(())
     }
 }
 

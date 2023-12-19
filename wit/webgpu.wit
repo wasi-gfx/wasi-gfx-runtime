@@ -56,7 +56,6 @@ interface webgpu {
     create-shader-module: func(desc: gpu-shader-module-descriptor) -> gpu-shader-module;
     create-render-pipeline: func(props: gpu-render-pipeline-descriptor) -> gpu-render-pipeline;
     queue: func() -> gpu-device-queue;
-    do-all: func(desc: gpu-render-pass-descriptor, pipeline: gpu-render-pipeline, count: u32) -> gpu-command-encoder;
   }
 
   record gpu-color-attachment {
