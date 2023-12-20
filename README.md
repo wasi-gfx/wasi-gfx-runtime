@@ -1,8 +1,15 @@
-# Webgpu:
+# wasi-webgpu
+This is an attempt to get a wasi-webgpu spec proposal going. Everything here is subject to change. If you have thoughts about how this proposal can be better, please share them!
+
+The main goal here is to get the webgpu spec into wasi, but there are other GUI related stuff here as well. 
+
+## Webgpu parts:
 
 The webgpu parts should be based on the official webgpu spec.
 
-We might end up deviating slightly from the spec in cases where it's deemed to be better, but the spec is definitely the starting point for this api.
+We might end up deviating slightly from the spec in cases where it's deemed to be better, but the spec should definitely be the starting point for this api.
+
+This is super early, only a fraction of the webgpu spec can currently be found in the wit here.
 
 ## Building graphical user applications:
 
@@ -12,7 +19,9 @@ Since these things are necessary for most graphical applications, we should try 
 
 ### Screen rendering / canvas:
 
-There's a simple canvas spec in [`/wit/canvas.wit`](/wit/canvas.wit). It can't really do much, but can do basic rendering. See later section on how to connect the canvas with webgpu.
+There's a simple canvas spec in [`/wit/mini-canvas.wit`](/wit/mini-canvas.wit). It can't really do much, but can do basic rendering.
+
+See later sections on how to connect the mini-canvas with webgpu.
 
 ### User input:
 
@@ -26,53 +35,55 @@ The only drawback I can think of is 3D, I'm not sure if pointer events can be ma
 
 ##### Keyboard events:
 
-Most applications expect keyboard events in one way or another. We can do something similar to pointer events where we define something similar to what the web offers with [`KeyboardEvent`](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent).
+Most applications expect keyboard events in one way or another. We can do something similar to what we do for pointer events, where we define something similar to what the web offers with [`KeyboardEvent`](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent).
 
-##### Other use input:
+##### Other user input:
 
 Other user input, like scroll wheel, clipboard, drag-over, device motion, device orientation, gamepad input, etc. Are all useful in lot's of applications, but since they're a bit less common, I didn't want to get bogged down with them. But they should be added eventually.
 
 ### Windowing:
 
-Defining a full windowing interface is going to take a lot of time, so it's out of scope for this project.
+Defining a full windowing interface is going to take a lot of time and work, so it's out of scope for this project.
 
-For now, creating a new canvas should be enough. The runtime can figure out how to deal with windowing.
+For now, creating simple canvases will have to suffice. The runtime will have to figure out how to do the windowing.
 
 ### Frame callbacks:
 On the web, this is achieved by [`requestAnimationFrame`](https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame). 
 
-Here we're using a `wasi-io` `pollable`. You can find the wit for this in /wit/animation-frame.wit
+Here we're doing something similar using a `wasi-io` `pollable`. You can find the wit for this in [`/wit/animation-frame.wit`](/wit/animation-frame.wit).
 
 
 ## Connecting canvas to webgpu
 
-I didn't want webgpu and canvas to rely on each other, as I'd like one to be usable without the other.
+I didn't want webgpu and mini-canvas to rely on each other, as I'd like one to be usable without the other.
+
+On the web, canvas and webgpu are actually tied to each other. e.g. you get a `GPUContext` from `canvas.getContext("webgpu")`. But I'd like them to be separated in wasi if possible, since unlike the web, wasi expects that some parts might not be accessible by some applications.
+
+Maybe y'all will tell me that separating them is a stupid idea, in which case I'll bow down and build a time machine fueled by pure awkwardness, traveling back to the moment before I even suggested this.
 
 #### Potential use cases where canvas might make sense without webgpu include:
 - Vulken, if it ever becomes truly cross platform.
 - OpenGL might make sense for some use cases.
 - Future gpu api's that will almost certainly come eventually.
-- Using simple arrays as buffers for simple drawings, especially useful in embedded. E.g. https://github.com/rust-windowing/softbuffer.
+- Using simple arrays as buffers for simple drawings, especially useful in embedded. E.g. https://github.com/rust-windowing/softbuffer. See later section tackling this.
 
 #### Potential use cases where webgpu might make sense without canvas include:
 - Using gpu for compute only. (the web actually allows this, even though webgpu is tied into canvas on web.)
 - Potential full wasi-windowing spec that does away with this simple mini-canvas.
 
-On the web, canvas and webgpu are actually tied to each other. e.g. you get a `GPUContext` from `canvas.getContext("webgpu")`. But I'd like them to be separated in wasi if possible.
-
-Maybe y'all will tell me that separating them is a stupid idea, in which case I'll bow down and build a time machine fueled by pure awkwardness, traveling back to the moment before I even suggested this.
-
 ### Common dependency:
-If we wanna seperate them we'll need a common dependency that both can connect to. I have a few ideas that I thought of.
+If we wanna seperate them we'll need a common dependency that both sides can connect to. There are multiple routes we can take for this.
 
-#### Context:
-In webgpu on the web, the point of connection between webgpu and canvas is the `GPUCanvasContext`. Maybe we can have something similar, but as an abstract without connection between canvas and gpu.
+#### Graphics Context:
+This is how it works now. Very much subject to change.
 
-I'm thinking of a context that can be connected to any current or future graphics api (webgpu, opengl, etc.) on one side, and can be connected to any current or future canvas on the other side.
+In webgpu on the web, the point of connection between webgpu and canvas is the `GPUCanvasContext`. Here we do something similar, but as an abstract resource that can work with any graphics api, and with any canvas/surface.
 
-It should have a way to get the next frame as a buffer, but not necessarily as a buffer whose contents can be read. Rather, the graphics api in question should be able to turn that buffer into something it can make use of. E.g. webgpu would be able to turn the buffer into a GPUTexture. The runtime can easily, in the background, represent the buffer as a GPUTexture, and the conversion would just be a noop.
+The graphics-context can be connected to any current or future graphics api (webgpu, opengl, etc.) on one side, and can be connected to any current or future canvas on the other side.
 
-This would look something like this:
+It has a way to get the next frame as a buffer, but not as a buffer whose contents can be read. Rather, the graphics api in question can turn that buffer into something it can make use of. E.g. webgpu is able to turn the buffer into a `GPUTexture`. The runtime can easily, in the background, represent the buffer as a GPUTexture, and the conversion would just be a noop.
+
+This looks something like this:
 
 ```wit
 interface graphics {
@@ -103,10 +114,13 @@ interface canvas {
 }
 ```
 
-There's another option that I put in issue #1, but I think this one would be better as it's closer to how webgpu does things, but still let's us keep canvas and webgpu separated.
+The wit for graphics-context can be found in [`/wit/graphics-context.wit`](/wit/graphics-context.wit).
 
-If the runtime sees that the they're both connected to the same common dependency, it can do some magic internally to optimize the connection in the background.
+#### Other options.
+There's another option in issue #1, but I think this one would be better as it's closer to how webgpu does things, while it still let's us keep canvas and webgpu separated.
 
 ## Simple frame buffer rendering:
 
-Since it's so simple, and can be used as a proof of concept for multiple ways to render to the canvas, we're adding a simple frame buffer api as well. /wit/frame??.wit
+I'm also currently working on a simple readable buffer that can be written to, and then displayed. Similar to https://github.com/rust-windowing/softbuffer.
+
+This should be very simple, and can be used as a proof of concept for multiple ways to render to the canvas.
