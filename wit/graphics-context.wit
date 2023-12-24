@@ -3,7 +3,7 @@ package component:webgpu;
 interface graphics-context {
 
   resource graphics-context {
-    create: static func() -> graphics-context;
+    constructor();
 
     configure: func(desc: configure-context-desc);
 

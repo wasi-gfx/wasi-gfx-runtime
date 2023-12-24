@@ -11,7 +11,7 @@ interface mini-canvas {
   }
 
   resource mini-canvas {
-    create: static func(desc: create-desc) -> mini-canvas;
+    constructor(desc: create-desc);
 
     connect-graphics-context: func(context: borrow<graphics-context>);
 

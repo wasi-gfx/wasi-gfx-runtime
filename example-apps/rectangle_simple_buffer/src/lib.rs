@@ -20,12 +20,12 @@ use component::webgpu::{
 use std::cmp::min;
 
 fn draw_rectangle() {
-    let canvas = mini_canvas::MiniCanvas::create(mini_canvas::CreateDesc {
+    let canvas = mini_canvas::MiniCanvas::new(mini_canvas::CreateDesc {
         height: 100,
         width: 100,
         offscreen: false,
     });
-    let graphics_context = graphics_context::GraphicsContext::create();
+    let graphics_context = graphics_context::GraphicsContext::new();
     canvas.connect_graphics_context(&graphics_context);
 
     simple_buffer::connect_graphics_context(&graphics_context);

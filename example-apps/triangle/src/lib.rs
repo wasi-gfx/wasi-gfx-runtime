@@ -40,12 +40,12 @@ fn draw_triangle() {
     let adapter = webgpu::request_adapter();
     let device = adapter.request_device();
 
-    let canvas = mini_canvas::MiniCanvas::create(mini_canvas::CreateDesc {
+    let canvas = mini_canvas::MiniCanvas::new(mini_canvas::CreateDesc {
         height: 100,
         width: 100,
         offscreen: false,
     });
-    let graphics_context = graphics_context::GraphicsContext::create();
+    let graphics_context = graphics_context::GraphicsContext::new();
     canvas.connect_graphics_context(&graphics_context);
     device.connect_graphics_context(&graphics_context);
 
@@ -101,7 +101,6 @@ fn draw_triangle() {
                 topology: webgpu::GpuPrimitiveTopology::PointList,
             },
         });
-
         let pollables_res = wasi::io::poll::poll(&pollables);
 
         if pollables_res.contains(&0) {
@@ -141,9 +140,7 @@ fn draw_triangle() {
             {
                 let rpass = encoder.begin_render_pass(webgpu::GpuRenderPassDescriptor {
                     label: String::from("fdsa"),
-                    color_attachments: vec![webgpu::GpuColorAttachment {
-                        view: &view,
-                    }],
+                    color_attachments: vec![webgpu::GpuColorAttachment { view: &view }],
                 });
 
                 rpass.set_pipeline(render_pipeline);
@@ -154,8 +151,6 @@ fn draw_triangle() {
                 .queue()
                 .submit(vec![webgpu::GpuCommandEncoder::finish(encoder)]);
             webgpu::GpuTexture::non_standard_present(texture);
-            // queue.submit(Some(encoder.finish()));
-            // frame.present();
         }
     }
 }
