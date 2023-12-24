@@ -52,10 +52,11 @@ pub struct AnimationFrameListener {
 impl preview2::Subscribe for AnimationFrameListener {
     async fn ready(&mut self) {
         loop {
-            let event = self.receiver.recv().await.unwrap();
-            if let HostEvent::Frame = event {
-                *self.data.lock().unwrap() = Some(FrameEvent { nothing: false });
-                return;
+            if let Ok(event) = self.receiver.recv().await {
+                if let HostEvent::Frame = event {
+                    *self.data.lock().unwrap() = Some(FrameEvent { nothing: false });
+                    return;
+                }
             }
         }
     }

@@ -6,13 +6,16 @@ use wasmtime::component::Resource;
 pub struct GraphicsContext {
     pub kind: Option<GraphicsContextKind>,
 }
+
 pub enum GraphicsContextKind {
     Webgpu(wgpu::Surface),
+    SimpleBuffer(crate::simple_buffer::Surface),
 }
 
 #[non_exhaustive]
 pub enum GraphicsBuffer {
     Webgpu(wgpu::SurfaceTexture),
+    SimpleBuffer(crate::simple_buffer::SimpleBuffer),
 }
 
 impl crate::component::webgpu::graphics_context::Host for HostState {}
@@ -37,10 +40,13 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
         &mut self,
         context: Resource<GraphicsContext>,
     ) -> wasmtime::Result<Resource<GraphicsBuffer>> {
-        let context_kind = self.table.get(&context).unwrap().kind.as_ref().unwrap();
+        let context_kind = self.table.get_mut(&context).unwrap().kind.as_mut().unwrap();
         let next_frame = match context_kind {
             GraphicsContextKind::Webgpu(surface) => {
                 GraphicsBuffer::Webgpu(surface.get_current_texture().unwrap())
+            }
+            GraphicsContextKind::SimpleBuffer(surface) => {
+                GraphicsBuffer::SimpleBuffer(surface.buffer_mut())
             }
         };
         Ok(self.table.push_child(next_frame, &context).unwrap())

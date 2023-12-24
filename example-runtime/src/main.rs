@@ -18,6 +18,7 @@ mod graphics_context;
 mod key_events;
 mod mini_canvas;
 mod pointer_events;
+mod simple_buffer;
 mod webgpu;
 
 #[derive(clap::Parser, Debug)]
@@ -49,6 +50,7 @@ wasmtime::component::bindgen!({
         "component:webgpu/webgpu/gpu-command-buffer": wgpu::CommandBuffer,
         "component:webgpu/webgpu/gpu-texture": wgpu::SurfaceTexture,
         "component:webgpu/webgpu/gpu-texture-view": wgpu::TextureView,
+        "component:webgpu/simple-buffer/simple-buffer": simple_buffer::SimpleBuffer,
         "component:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
         "component:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
         "component:webgpu/pointer-events/pointer-move-listener": pointer_events::PointerMoveListener,
@@ -236,6 +238,7 @@ async fn main() -> anyhow::Result<()> {
     let mut linker = Linker::new(&engine);
 
     component::webgpu::webgpu::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    component::webgpu::simple_buffer::add_to_linker(&mut linker, |state: &mut HostState| state)?;
     component::webgpu::animation_frame::add_to_linker(&mut linker, |state: &mut HostState| state)?;
     component::webgpu::pointer_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
     component::webgpu::key_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;

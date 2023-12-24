@@ -16,6 +16,9 @@ interface mini-canvas {
     connect-graphics-context: func(context: borrow<graphics-context>);
 
     resize-listener: func() -> resize-listener;
+
+    height: func() -> u32;
+    width: func() -> u32;
   }
 
   resource resize-listener {

@@ -8,6 +8,7 @@ world example {
   import animation-frame;
   import pointer-events;
   import key-events;
+  import simple-buffer;
 
   /// main entrypoint
   export start: func();

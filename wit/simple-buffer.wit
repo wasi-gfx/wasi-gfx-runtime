@@ -1,0 +1,19 @@
+package component:webgpu;
+
+interface simple-buffer {
+  use graphics-context.{graphics-context, buffer};
+
+  connect-graphics-context: func(context: borrow<graphics-context>);
+
+  resource simple-buffer {
+    from-graphics-buffer: static func(buffer: buffer) -> simple-buffer;
+
+    present: static func(this: simple-buffer);
+
+    length: func() -> u32;
+
+    get: func(i: u32) -> u32;
+
+    set: func(i: u32, val: u32);
+  }
+}
