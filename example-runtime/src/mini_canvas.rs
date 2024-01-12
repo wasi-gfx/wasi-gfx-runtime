@@ -20,7 +20,7 @@ impl crate::component::webgpu::mini_canvas::Host for HostState {}
 
 #[async_trait::async_trait]
 impl crate::component::webgpu::mini_canvas::HostMiniCanvas for HostState {
-    async fn create(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvas>> {
+    async fn new(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvas>> {
         Ok(self
             .table
             .push(MiniCanvas {

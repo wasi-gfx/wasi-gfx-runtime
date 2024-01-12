@@ -22,7 +22,7 @@ impl crate::component::webgpu::graphics_context::Host for HostState {}
 
 #[async_trait::async_trait]
 impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostState {
-    async fn create(&mut self) -> wasmtime::Result<Resource<GraphicsContext>> {
+    async fn new(&mut self) -> wasmtime::Result<Resource<GraphicsContext>> {
         // let surface = unsafe { self.instance.create_surface(&self.window) }.unwrap();
         Ok(self.table.push(GraphicsContext { kind: None }).unwrap())
     }
