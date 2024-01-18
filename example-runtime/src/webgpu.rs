@@ -1,12 +1,11 @@
 use futures::executor::block_on;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::marker::PhantomPinned;
-use std::pin::Pin;
 use wasmtime::component::Resource;
 
 use crate::component::webgpu::webgpu;
 use crate::graphics_context::{GraphicsBuffer, GraphicsContext, GraphicsContextKind};
+use crate::ltpc::Ltpc;
 use crate::HostState;
 
 pub struct DeviceAndQueue {
@@ -74,9 +73,12 @@ impl webgpu::HostGpuDevice for HostState {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let command_encoder = CommandEncoderWithRenderPass::new(command_encoder);
+        let command_encoder_with_render_pass = Ltpc::new(command_encoder);
 
-        Ok(self.table.push_child(command_encoder, &daq).unwrap())
+        Ok(self
+            .table
+            .push_child(command_encoder_with_render_pass, &daq)
+            .unwrap())
     }
 
     async fn create_shader_module(
@@ -285,93 +287,8 @@ impl webgpu::HostGpuDeviceQueue for HostState {
     }
 }
 
-pub struct CommandEncoderWithRenderPassRaw {
-    // Never None.
-    command_encoder: Option<wgpu::CommandEncoder>,
-    render_pass: Option<wgpu::RenderPass<'static>>,
-    _pin: PhantomPinned,
-}
-
-pub struct CommandEncoderWithRenderPass {
-    raw: Pin<Box<CommandEncoderWithRenderPassRaw>>,
-}
-
-impl CommandEncoderWithRenderPass {
-    fn new(command_encoder: wgpu::CommandEncoder) -> Self {
-        Self {
-            raw: Box::pin(CommandEncoderWithRenderPassRaw {
-                command_encoder: Some(command_encoder),
-                // render_pass: std::ptr::NonNull::dangling(),
-                render_pass: None,
-                _pin: PhantomPinned,
-            }),
-        }
-    }
-
-    fn _command_encoder(&self) -> &wgpu::CommandEncoder {
-        self.raw.command_encoder.as_ref().unwrap()
-    }
-
-    fn command_encoder_mut(&mut self) -> &mut wgpu::CommandEncoder {
-        let raw = self._get_raw_mut();
-        raw.command_encoder.as_mut().unwrap()
-    }
-
-    fn _render_pass<'a>(&'a self) -> Option<&wgpu::RenderPass<'a>> {
-        self.raw.render_pass.as_ref()
-    }
-
-    // fn render_pass_mut<'a>(&'a mut self) -> Option<&'a mut wgpu::RenderPass<'static>> {
-    //     let raw = self._get_raw_mut();
-    //     raw.render_pass.as_mut()
-    // }
-
-    fn render_pass_mut<'a>(&'a mut self) -> Option<&'a mut wgpu::RenderPass<'a>> {
-        let raw = self._get_raw_mut();
-        let render_pass = raw.render_pass.as_mut();
-
-        let render_pass: Option<&mut wgpu::RenderPass<'a>> =
-            unsafe { std::mem::transmute(render_pass) };
-
-        render_pass
-    }
-
-    // fn render_pass_mut<'a>(&'a mut self) -> Option<&'a mut wgpu::RenderPass<'a>> {
-    //     // let g: Option<&mut wgpu::RenderPass<'static>> = self.render_pass.as_mut();
-    //     // g
-    //     // todo!()
-
-    //     let raw = self._get_raw_mut();
-    //     raw.render_pass.as_mut()
-    // }
-
-    fn begin_render_pass(&mut self, desc: &wgpu::RenderPassDescriptor) {
-        let render_pass = self.command_encoder_mut().begin_render_pass(desc);
-        let render_pass: wgpu::RenderPass<'static> = unsafe { std::mem::transmute(render_pass) };
-
-        let raw = self._get_raw_mut();
-        raw.render_pass = Some(render_pass);
-        // mut_host_command_encoder.render_pass = Some(render_pass);
-    }
-
-    fn _get_raw_mut<'a>(&'a mut self) -> &'a mut CommandEncoderWithRenderPassRaw {
-        unsafe {
-            let raw: Pin<&mut CommandEncoderWithRenderPassRaw> = Pin::as_mut(&mut self.raw);
-            let raw = Pin::get_unchecked_mut(raw);
-            raw
-        }
-    }
-
-    fn take_render_pass<'a>(&'a mut self) -> Option<wgpu::RenderPass<'a>> {
-        let raw = self._get_raw_mut();
-        raw.render_pass.take()
-    }
-
-    fn take_command_encoder(mut self) -> wgpu::CommandEncoder {
-        let raw = self._get_raw_mut();
-        raw.command_encoder.take().unwrap()
-    }
-}
+// hopefully can get rid of this soon. https://github.com/gfx-rs/wgpu/issues/1453#issuecomment-1644162720
+pub type CommandEncoderWithRenderPass = Ltpc<wgpu::CommandEncoder, wgpu::RenderPass<'static>>;
 
 #[async_trait::async_trait]
 impl webgpu::HostGpuCommandEncoder for HostState {
@@ -428,12 +345,17 @@ impl webgpu::HostGpuCommandEncoder for HostState {
             }));
         }
 
-        cwr.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &color_attachments,
-            label: None,
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
+        let color_attachments: Vec<Option<wgpu::RenderPassColorAttachment<'static>>> =
+            unsafe { std::mem::transmute(color_attachments) };
+
+        cwr.set_child(move |command_encoder: &mut wgpu::CommandEncoder| {
+            command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &color_attachments,
+                label: None,
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            })
         });
 
         Ok(Resource::new_own(cwr_rep))
@@ -444,7 +366,7 @@ impl webgpu::HostGpuCommandEncoder for HostState {
         command_encoder: Resource<CommandEncoderWithRenderPass>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandBuffer>> {
         let command_encoder = self.table.delete(command_encoder).unwrap();
-        let command_encoder = command_encoder.take_command_encoder();
+        let command_encoder = command_encoder.take_parent();
         let command_buffer = command_encoder.finish();
         Ok(self.table.push(command_buffer).unwrap())
     }
@@ -492,8 +414,9 @@ impl webgpu::HostGpuRenderPass for HostState {
 
         let cwr = cwr.unwrap();
         let pipeline = pipeline.unwrap();
+        let pipeline: &wgpu::RenderPipeline = unsafe { std::mem::transmute(pipeline) };
 
-        cwr.render_pass_mut().unwrap().set_pipeline(&pipeline);
+        cwr.child_mut().unwrap().set_pipeline(&pipeline);
 
         Ok(())
     }
@@ -505,7 +428,7 @@ impl webgpu::HostGpuRenderPass for HostState {
     ) -> wasmtime::Result<()> {
         let cwr = self.table.get_mut(&cwr).unwrap();
 
-        cwr.render_pass_mut().unwrap().draw(0..count, 0..1);
+        cwr.child_mut().unwrap().draw(0..count, 0..1);
 
         Ok(())
     }
@@ -516,7 +439,7 @@ impl webgpu::HostGpuRenderPass for HostState {
 
     fn drop(&mut self, cwr: Resource<CommandEncoderWithRenderPass>) -> wasmtime::Result<()> {
         let cwr = self.table.get_mut(&cwr).unwrap();
-        cwr.take_render_pass();
+        cwr.take_child();
         Ok(())
     }
 }

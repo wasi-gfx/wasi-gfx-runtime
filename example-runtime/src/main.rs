@@ -16,6 +16,7 @@ use wasmtime_wasi::preview2::{self, Table, WasiCtx, WasiCtxBuilder, WasiView};
 mod animation_frame;
 mod graphics_context;
 mod key_events;
+mod ltpc;
 mod mini_canvas;
 mod pointer_events;
 mod simple_buffer;
