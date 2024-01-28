@@ -37,8 +37,9 @@ fn fs_green() -> @location(0) vec4<f32> {
 "#;
 
 fn draw_triangle() {
-    let adapter = webgpu::request_adapter();
-    let device = adapter.request_device();
+    let gpu = webgpu::get_gpu();
+    let adapter = gpu.request_adapter(None);
+    let device = adapter.request_device(None);
 
     let canvas = mini_canvas::MiniCanvas::new(mini_canvas::CreateDesc {
         height: 100,
@@ -74,34 +75,50 @@ fn draw_triangle() {
     ];
     let mut green = false;
     loop {
-        let pipeline_desc = webgpu::GpuRenderPipelineDescriptor {
-            vertex: webgpu::GpuVertexState {
-                module: device.create_shader_module(&webgpu::GpuShaderModuleDescriptor {
-                    code: SHADER_CODE.to_string(),
-                    label: None,
-                }),
-                entry_point: "vs_main".to_string(),
-            },
-            fragment: Some(webgpu::GpuFragmentState {
-                module: device.create_shader_module(&webgpu::GpuShaderModuleDescriptor {
-                    code: SHADER_CODE.to_string(),
-                    label: None,
-                }),
-                entry_point: {
-                    if green {
-                        "fs_green"
-                    } else {
-                        "fs_main"
-                    }
-                }
-                .to_string(),
-                targets: vec![webgpu::GpuTextureFormat::Bgra8UnormSrgb],
+        let vertex = webgpu::GpuVertexState {
+            module: device.create_shader_module(webgpu::GpuShaderModuleDescriptor {
+                code: SHADER_CODE.to_string(),
+                label: None,
+                compilation_hints: None,
             }),
-            primitive: webgpu::GpuPrimitiveState {
-                topology: webgpu::GpuPrimitiveTopology::PointList,
-            },
+            entry_point: "vs_main".to_string(),
+            buffers: None,
         };
-        let render_pipeline = device.create_render_pipeline(pipeline_desc);
+        let fragment = webgpu::GpuFragmentState {
+            module: device.create_shader_module(webgpu::GpuShaderModuleDescriptor {
+                code: SHADER_CODE.to_string(),
+                label: None,
+                compilation_hints: None,
+            }),
+            entry_point: {
+                if green {
+                    "fs_green"
+                } else {
+                    "fs_main"
+                }
+            }
+            .to_string(),
+            // targets: vec![webgpu::GpuColorTargetState {
+            //     format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
+            //     blend: None,
+            //     write_mask: None,
+            // }],
+        };
+        let pipeline_description = webgpu::GpuRenderPipelineDescriptor {
+            vertex,
+            fragment: Some(fragment),
+            primitive: Some(webgpu::GpuPrimitiveState {
+                topology: Some(webgpu::GpuPrimitiveTopology::PointList),
+                strip_index_format: None,
+                front_face: None,
+                cull_mode: None,
+                unclipped_depth: None,
+            }),
+            depth_stencil: None,
+            multisample: None,
+        };
+        let render_pipeline = device.create_render_pipeline(pipeline_description);
+        // let render_pipeline = device.create_render_pipeline();
         let pollables_res = wasi::io::poll::poll(&pollables);
 
         if pollables_res.contains(&0) {
@@ -136,22 +153,32 @@ fn draw_triangle() {
 
             let graphics_buffer = graphics_context.get_current_buffer();
             let texture = webgpu::GpuTexture::from_graphics_buffer(graphics_buffer);
-            let view = texture.create_view();
-            let encoder = device.create_command_encoder();
-            {
-                let rpass = encoder.begin_render_pass(webgpu::GpuRenderPassDescriptor {
-                    label: String::from("fdsa"),
-                    color_attachments: vec![webgpu::GpuColorAttachment { view: &view }],
-                });
+            let view = texture.create_view(None);
+            let encoder = device.create_command_encoder(None);
+            let render_pass_description = webgpu::GpuRenderPassDescriptor {
+                label: Some(String::from("fdsa")),
+                color_attachments: vec![webgpu::GpuRenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    clear_value: None,
+                    load_op: webgpu::GpuLoadOp::Load,
+                    store_op: webgpu::GpuStoreOp::Store,
+                }],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                max_draw_count: None,
+            };
+            let render_pass = encoder.begin_render_pass(render_pass_description);
 
-                rpass.set_pipeline(render_pipeline);
-                rpass.draw(3, 1, 0, 0);
-                webgpu::GpuRenderPassEncoder::end(rpass, &encoder);
-            }
+            render_pass.set_pipeline(render_pipeline);
+            render_pass.draw(3, 1, 0, 0);
+            webgpu::GpuRenderPassEncoder::end(render_pass, &encoder);
 
             device
                 .queue()
-                .submit(vec![webgpu::GpuCommandEncoder::finish(encoder)]);
+                .submit(vec![webgpu::GpuCommandEncoder::finish(encoder, None)]);
             webgpu::GpuTexture::non_standard_present(texture);
         }
     }
