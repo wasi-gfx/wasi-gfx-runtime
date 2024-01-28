@@ -48,7 +48,7 @@ impl webgpu::HostGpuDevice for HostState {
 
         let swapchain_capabilities = self
             .instance
-            .surface_get_capabilities::<wgpu_core::api::Vulkan>(surface, *adapter)
+            .surface_get_capabilities::<crate::Backend>(surface, *adapter)
             .unwrap();
         let swapchain_format = swapchain_capabilities.formats[0];
 
@@ -62,11 +62,8 @@ impl webgpu::HostGpuDevice for HostState {
             view_formats: vec![],
         };
 
-        self.instance.surface_configure::<wgpu_core::api::Vulkan>(
-            surface,
-            host_daq.device,
-            &config,
-        );
+        self.instance
+            .surface_configure::<crate::Backend>(surface, host_daq.device, &config);
 
         let context = self.table.get_mut(&context).unwrap();
 
@@ -83,7 +80,7 @@ impl webgpu::HostGpuDevice for HostState {
 
         let command_encoder = core_result(
             self.instance
-                .device_create_command_encoder::<wgpu_core::api::Vulkan>(
+                .device_create_command_encoder::<crate::Backend>(
                     host_daq.device,
                     &wgpu_types::CommandEncoderDescriptor { label: None },
                     (),
@@ -101,18 +98,15 @@ impl webgpu::HostGpuDevice for HostState {
     ) -> wasmtime::Result<Resource<webgpu::GpuShaderModule>> {
         let device = self.table.get(&device).unwrap();
 
-        let shader = core_result(
-            self.instance
-                .device_create_shader_module::<wgpu_core::api::Vulkan>(
-                    device.device,
-                    &wgpu_core::pipeline::ShaderModuleDescriptor {
-                        label: desc.label.map(|label| label.into()),
-                        shader_bound_checks: Default::default(),
-                    },
-                    wgpu_core::pipeline::ShaderModuleSource::Wgsl(Cow::Owned(desc.code)),
-                    (),
-                ),
-        )
+        let shader = core_result(self.instance.device_create_shader_module::<crate::Backend>(
+            device.device,
+            &wgpu_core::pipeline::ShaderModuleDescriptor {
+                label: desc.label.map(|label| label.into()),
+                shader_bound_checks: Default::default(),
+            },
+            wgpu_core::pipeline::ShaderModuleSource::Wgsl(Cow::Owned(desc.code)),
+            (),
+        ))
         .unwrap();
 
         Ok(self.table.push(shader).unwrap())
@@ -176,7 +170,7 @@ impl webgpu::HostGpuDevice for HostState {
         };
         let render_pipeline = core_result(
             self.instance
-                .device_create_render_pipeline::<wgpu_core::api::Vulkan>(
+                .device_create_render_pipeline::<crate::Backend>(
                     host_daq.device,
                     desc,
                     (),
@@ -215,13 +209,12 @@ impl webgpu::HostGpuTexture for HostState {
         texture: Resource<crate::graphics_context::WebgpuTexture>,
     ) -> wasmtime::Result<Resource<wgpu_core::id::TextureViewId>> {
         let texture_id = self.table.get(&texture).unwrap();
-        let texture_view =
-            core_result(self.instance.texture_create_view::<wgpu_core::api::Vulkan>(
-                texture_id.texture,
-                &Default::default(),
-                (),
-            ))
-            .unwrap();
+        let texture_view = core_result(self.instance.texture_create_view::<crate::Backend>(
+            texture_id.texture,
+            &Default::default(),
+            (),
+        ))
+        .unwrap();
         Ok(self.table.push(texture_view).unwrap())
     }
 
@@ -232,7 +225,7 @@ impl webgpu::HostGpuTexture for HostState {
         let texture = self.table.delete(texture).unwrap();
 
         self.instance
-            .surface_present::<wgpu_core::api::Vulkan>(texture.surface)
+            .surface_present::<crate::Backend>(texture.surface)
             .unwrap();
         Ok(())
     }
@@ -279,15 +272,12 @@ impl webgpu::HostGpuAdapter for HostState {
     ) -> wasmtime::Result<Resource<webgpu::GpuDevice>> {
         let adapter_id = self.table.get(&adapter).unwrap();
 
-        let device_id = core_result(
-            self.instance
-                .adapter_request_device::<wgpu_core::api::Vulkan>(
-                    *adapter_id,
-                    &Default::default(),
-                    None,
-                    Default::default(),
-                ),
-        )
+        let device_id = core_result(self.instance.adapter_request_device::<crate::Backend>(
+            *adapter_id,
+            &Default::default(),
+            None,
+            Default::default(),
+        ))
         .unwrap();
 
         let daq = self
@@ -322,7 +312,7 @@ impl webgpu::HostGpuQueue for HostState {
 
         let daq = self.table.get(&daq).unwrap();
         self.instance
-            .queue_submit::<wgpu_core::api::Vulkan>(daq.device, &command_buffers)
+            .queue_submit::<crate::Backend>(daq.device, &command_buffers)
             .unwrap();
 
         Ok(())
@@ -387,10 +377,7 @@ impl webgpu::HostGpuCommandEncoder for HostState {
         let command_encoder = self.table.delete(command_encoder).unwrap();
         let command_buffer = core_result(
             self.instance
-                .command_encoder_finish::<wgpu_core::api::Vulkan>(
-                    command_encoder,
-                    &Default::default(),
-                ),
+                .command_encoder_finish::<crate::Backend>(command_encoder, &Default::default()),
         )
         .unwrap();
         Ok(self.table.push(command_buffer).unwrap())
@@ -444,7 +431,7 @@ impl webgpu::HostGpuRenderPassEncoder for HostState {
         let rpass = self.table.delete(rpass).unwrap();
         let encoder = self.table.get(&non_standard_encoder).unwrap();
         self.instance
-            .command_encoder_run_render_pass::<wgpu_core::api::Vulkan>(*encoder, &rpass)
+            .command_encoder_run_render_pass::<crate::Backend>(*encoder, &rpass)
             .unwrap();
         Ok(())
     }

@@ -48,7 +48,7 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
             GraphicsContextKind::Webgpu(surface) => {
                 let texture = self
                     .instance
-                    .surface_get_current_texture::<wgpu_core::api::Vulkan>(*surface, ())
+                    .surface_get_current_texture::<crate::Backend>(*surface, ())
                     .unwrap()
                     .texture_id
                     .unwrap();

@@ -11,7 +11,6 @@ wasmtime = { version = "15.0.0", features = ['component-model'] }
 wasmtime-wasi = "15.0.0"
 anyhow = "1.0.72"
 winit = { version = "0.28", features = [ "android-native-activity" ] }
-wgpu-core = { version = "0.18", features = ["gles", "raw-window-handle", "wgsl", "vulkan"] }
 wgpu-types = "0.18"
 raw-window-handle = "0.5"
 async-trait = "0.1.74"
@@ -20,3 +19,19 @@ futures = "0.3.29"
 tokio = { version = "1.35.0", features = ["full"] }
 softbuffer = "0.3.0"
 env_logger = "0.11.0"
+
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
+version = "0.18"
+features = ["wgsl", "raw-window-handle", "vulkan"]
+
+[target.'cfg(target_os = "windows")'.dependencies.wgpu-core]
+version = "0.18"
+features = ["wgsl", "raw-window-handle", "dx12"]
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies.wgpu-core]
+version = "0.18"
+features = ["wgsl", "raw-window-handle", "metal"]
+
+[target.'cfg(all(not(target_os = "linux"), not(target_os = "android"), not(target_os = "windows"), not(target_os = "macos"), not(target_os = "ios")))'.dependencies.wgpu-core]
+version = "0.18"
+features = ["wgsl", "raw-window-handle", "gles"]

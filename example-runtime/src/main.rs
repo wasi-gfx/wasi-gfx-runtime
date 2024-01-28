@@ -21,6 +21,24 @@ mod pointer_events;
 mod simple_buffer;
 mod webgpu;
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(crate) type Backend = wgpu_core::api::Vulkan;
+
+#[cfg(target_os = "windows")]
+pub(crate) type Backend = wgpu_core::api::Dx12;
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub(crate) type Backend = wgpu_core::api::Metal;
+
+#[cfg(all(
+    not(target_os = "linux"),
+    not(target_os = "android"),
+    not(target_os = "windows"),
+    not(target_os = "macos"),
+    not(target_os = "ios"),
+))]
+pub(crate) type Backend = wgpu_core::api::Gl;
+
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
     /// The example name
