@@ -16,7 +16,6 @@ use wasmtime_wasi::preview2::{self, Table, WasiCtx, WasiCtxBuilder, WasiView};
 mod animation_frame;
 mod graphics_context;
 mod key_events;
-mod ltpc;
 mod mini_canvas;
 mod pointer_events;
 mod simple_buffer;
@@ -30,7 +29,7 @@ struct RuntimeArgs {
 }
 
 // needed for wasmtime::component::bindgen! as it only looks in the current crate.
-pub(crate) use wgpu;
+pub(crate) use wgpu_core;
 
 wasmtime::component::bindgen!({
     path: "../wit/",
@@ -41,16 +40,18 @@ wasmtime::component::bindgen!({
     with: {
         "wasi:io/poll": preview2::bindings::io::poll,
         "wasi:io/streams": preview2::bindings::io::streams,
-        "component:webgpu/webgpu/gpu-adapter": wgpu::Adapter,
-        "component:webgpu/webgpu/gpu-device": webgpu::DeviceAndQueue,
-        "component:webgpu/webgpu/gpu-device-queue": webgpu::DeviceAndQueue,
-        "component:webgpu/webgpu/gpu-command-encoder": webgpu::CommandEncoderWithRenderPass,
-        "component:webgpu/webgpu/gpu-render-pass": webgpu::CommandEncoderWithRenderPass,
-        "component:webgpu/webgpu/gpu-shader-module": wgpu::ShaderModule,
-        "component:webgpu/webgpu/gpu-render-pipeline": wgpu::RenderPipeline,
-        "component:webgpu/webgpu/gpu-command-buffer": wgpu::CommandBuffer,
-        "component:webgpu/webgpu/gpu-texture": wgpu::SurfaceTexture,
-        "component:webgpu/webgpu/gpu-texture-view": wgpu::TextureView,
+        "component:webgpu/webgpu/gpu-adapter": wgpu_core::id::AdapterId,
+        "component:webgpu/webgpu/gpu-device": webgpu::Device,
+        // queue is same as device
+        "component:webgpu/webgpu/gpu-queue": webgpu::Device,
+        "component:webgpu/webgpu/gpu-command-encoder": wgpu_core::id::CommandEncoderId,
+        "component:webgpu/webgpu/gpu-render-pass-encoder": wgpu_core::command::RenderPass,
+        "component:webgpu/webgpu/gpu-shader-module": wgpu_core::id::ShaderModuleId,
+        "component:webgpu/webgpu/gpu-render-pipeline": wgpu_core::id::RenderPipelineId,
+        "component:webgpu/webgpu/gpu-command-buffer": wgpu_core::id::CommandBufferId,
+        "component:webgpu/webgpu/gpu-texture": wgpu_core::id::TextureId,
+        "component:webgpu/webgpu/gpu-texture": graphics_context::WebgpuTexture,
+        "component:webgpu/webgpu/gpu-texture-view": wgpu_core::id::TextureViewId,
         "component:webgpu/simple-buffer/simple-buffer": simple_buffer::SimpleBuffer,
         "component:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
         "component:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
@@ -69,7 +70,7 @@ struct HostState {
     pub table: Table,
     pub ctx: WasiCtx,
     pub sender: Sender<HostEvent>,
-    pub instance: wgpu::Instance,
+    pub instance: wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>,
     pub window: Window,
 }
 
@@ -181,7 +182,16 @@ impl HostState {
             table: Table::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
             sender,
-            instance: Default::default(),
+            instance: wgpu_core::global::Global::new(
+                "webgpu",
+                wgpu_core::identity::IdentityManagerFactory,
+                wgpu_types::InstanceDescriptor {
+                    backends: wgpu_types::Backends::all(),
+                    flags: wgpu_types::InstanceFlags::from_build_config(),
+                    dx12_shader_compiler: wgpu_types::Dx12Compiler::Fxc,
+                    gles_minor_version: wgpu_types::Gles3MinorVersion::default(),
+                },
+            ),
             window: Window::new(event_loop).unwrap(),
         }
     }
@@ -227,6 +237,8 @@ pub enum HostEvent {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     // can't drop receiver right away, that'll cause panics. No idea why.
     let (sender, _receiver) = tokio::sync::broadcast::channel::<HostEvent>(10);
 

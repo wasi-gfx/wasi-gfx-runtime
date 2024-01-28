@@ -74,7 +74,7 @@ fn draw_triangle() {
     ];
     let mut green = false;
     loop {
-        let render_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
+        let pipeline_desc = webgpu::GpuRenderPipelineDescriptor {
             vertex: webgpu::GpuVertexState {
                 module: device.create_shader_module(&webgpu::GpuShaderModuleDescriptor {
                     code: SHADER_CODE.to_string(),
@@ -82,7 +82,7 @@ fn draw_triangle() {
                 }),
                 entry_point: "vs_main".to_string(),
             },
-            fragment: webgpu::GpuFragmentState {
+            fragment: Some(webgpu::GpuFragmentState {
                 module: device.create_shader_module(&webgpu::GpuShaderModuleDescriptor {
                     code: SHADER_CODE.to_string(),
                     label: None,
@@ -96,11 +96,12 @@ fn draw_triangle() {
                 }
                 .to_string(),
                 targets: vec![webgpu::GpuTextureFormat::Bgra8UnormSrgb],
-            },
+            }),
             primitive: webgpu::GpuPrimitiveState {
                 topology: webgpu::GpuPrimitiveTopology::PointList,
             },
-        });
+        };
+        let render_pipeline = device.create_render_pipeline(pipeline_desc);
         let pollables_res = wasi::io::poll::poll(&pollables);
 
         if pollables_res.contains(&0) {
@@ -144,7 +145,8 @@ fn draw_triangle() {
                 });
 
                 rpass.set_pipeline(render_pipeline);
-                rpass.draw(3);
+                rpass.draw(3, 1, 0, 0);
+                webgpu::GpuRenderPassEncoder::end(rpass, &encoder);
             }
 
             device

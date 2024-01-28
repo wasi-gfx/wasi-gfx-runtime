@@ -36,7 +36,7 @@ interface webgpu {
   record gpu-render-pipeline-descriptor {
     // layout: some(&pipeline_layout),
     vertex: gpu-vertex-state,
-    fragment: gpu-fragment-state,
+    fragment: option<gpu-fragment-state>,
     primitive: gpu-primitive-state,
   }
   resource gpu-render-pipeline {}
@@ -46,7 +46,7 @@ interface webgpu {
   resource gpu-command-buffer {
 
   }
-  resource gpu-device-queue {
+  resource gpu-queue {
     submit: func(val: list<gpu-command-buffer>);
   }
 
@@ -55,8 +55,10 @@ interface webgpu {
     create-command-encoder: func() -> gpu-command-encoder;
     create-shader-module: func(desc: gpu-shader-module-descriptor) -> gpu-shader-module;
     create-render-pipeline: func(props: gpu-render-pipeline-descriptor) -> gpu-render-pipeline;
-    queue: func() -> gpu-device-queue;
+    queue: func() -> gpu-queue;
   }
+
+  type gpu-size32 = u32;
 
   record gpu-color-attachment {
     view: borrow<gpu-texture-view>,
@@ -66,14 +68,14 @@ interface webgpu {
     color-attachments: list<gpu-color-attachment>,
   }
   resource gpu-command-encoder {
-    begin-render-pass: func(desc: gpu-render-pass-descriptor) -> gpu-render-pass;
+    begin-render-pass: func(desc: gpu-render-pass-descriptor) -> gpu-render-pass-encoder;
     // https://github.com/WebAssembly/component-model/issues/226#issuecomment-1751966154
     finish: static func(self: gpu-command-encoder) -> gpu-command-buffer;
   }
-  resource gpu-render-pass {
+  resource gpu-render-pass-encoder {
     set-pipeline: func(pipeline: gpu-render-pipeline);
-    draw: func(count: u32);
-    end: func();
+    draw: func(vertex-count: gpu-size32, instance-count: gpu-size32, first-vertex: gpu-size32, first-instance: gpu-size32);
+    end: static func(self: gpu-render-pass-encoder, non-standard-encoder: borrow<gpu-command-encoder>);
   }
 
   resource gpu-texture {

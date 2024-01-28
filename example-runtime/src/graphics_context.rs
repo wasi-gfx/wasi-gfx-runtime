@@ -8,14 +8,19 @@ pub struct GraphicsContext {
 }
 
 pub enum GraphicsContextKind {
-    Webgpu(wgpu::Surface),
+    Webgpu(wgpu_core::id::SurfaceId),
     SimpleBuffer(crate::simple_buffer::Surface),
 }
 
 #[non_exhaustive]
 pub enum GraphicsBuffer {
-    Webgpu(wgpu::SurfaceTexture),
+    Webgpu(WebgpuTexture),
     SimpleBuffer(crate::simple_buffer::SimpleBuffer),
+}
+
+pub struct WebgpuTexture {
+    pub texture: wgpu_core::id::TextureId,
+    pub surface: wgpu_core::id::SurfaceId,
 }
 
 impl crate::component::webgpu::graphics_context::Host for HostState {}
@@ -23,7 +28,6 @@ impl crate::component::webgpu::graphics_context::Host for HostState {}
 #[async_trait::async_trait]
 impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostState {
     async fn new(&mut self) -> wasmtime::Result<Resource<GraphicsContext>> {
-        // let surface = unsafe { self.instance.create_surface(&self.window) }.unwrap();
         Ok(self.table.push(GraphicsContext { kind: None }).unwrap())
     }
 
@@ -43,7 +47,16 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
         let context_kind = self.table.get_mut(&context).unwrap().kind.as_mut().unwrap();
         let next_frame = match context_kind {
             GraphicsContextKind::Webgpu(surface) => {
-                GraphicsBuffer::Webgpu(surface.get_current_texture().unwrap())
+                let texture = self
+                    .instance
+                    .surface_get_current_texture::<wgpu_core::api::Vulkan>(*surface, ())
+                    .unwrap()
+                    .texture_id
+                    .unwrap();
+                GraphicsBuffer::Webgpu(WebgpuTexture {
+                    texture,
+                    surface: *surface,
+                })
             }
             GraphicsContextKind::SimpleBuffer(surface) => {
                 GraphicsBuffer::SimpleBuffer(surface.buffer_mut())
@@ -52,7 +65,7 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
         Ok(self.table.push_child(next_frame, &context).unwrap())
     }
 
-    fn drop(&mut self, _context: Resource<GraphicsContext>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _graphics_context: Resource<GraphicsContext>) -> wasmtime::Result<()> {
         todo!()
     }
 }

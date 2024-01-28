@@ -1,25 +1,27 @@
-use futures::executor::block_on;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use wasmtime::component::Resource;
 
 use crate::component::webgpu::webgpu;
 use crate::graphics_context::{GraphicsBuffer, GraphicsContext, GraphicsContextKind};
-use crate::ltpc::Ltpc;
 use crate::HostState;
 
-pub struct DeviceAndQueue {
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-
+pub struct Device {
+    pub device: wgpu_core::id::DeviceId,
     // only needed when calling surface.get_capabilities in connect_graphics_context. If table would have a way to get parent from child, we could get it from device.
-    pub _adapter: Resource<wgpu::Adapter>,
+    pub adapter: Resource<wgpu_core::id::AdapterId>,
 }
 
 #[async_trait::async_trait]
 impl webgpu::Host for HostState {
-    async fn request_adapter(&mut self) -> wasmtime::Result<Resource<wgpu::Adapter>> {
-        let adapter = block_on(self.instance.request_adapter(&Default::default())).unwrap();
+    async fn request_adapter(&mut self) -> wasmtime::Result<Resource<wgpu_core::id::AdapterId>> {
+        let adapter = self
+            .instance
+            .request_adapter(
+                &Default::default(),
+                wgpu_core::instance::AdapterInputs::Mask(wgpu_types::Backends::all(), |_| ()),
+            )
+            .unwrap();
         Ok(self.table.push(adapter).unwrap())
     }
 }
@@ -28,34 +30,45 @@ impl webgpu::Host for HostState {
 impl webgpu::HostGpuDevice for HostState {
     async fn connect_graphics_context(
         &mut self,
-        daq: Resource<DeviceAndQueue>,
+        device: Resource<Device>,
         context: Resource<GraphicsContext>,
     ) -> wasmtime::Result<()> {
-        let surface = unsafe { self.instance.create_surface(&self.window) }.unwrap();
+        let surface = self.instance.instance_create_surface(
+            self.window.raw_display_handle(),
+            self.window.raw_window_handle(),
+            (),
+        );
 
-        let host_daq = self.table.get(&daq).unwrap();
+        let host_daq = self.table.get(&device).unwrap();
 
         // think the table should have a way to get parent so that we can get adapter from device.
-        let adapter = self.table.get(&host_daq._adapter).unwrap();
+        let adapter = self.table.get(&host_daq.adapter).unwrap();
 
         let mut size = self.window.inner_size();
         size.width = size.width.max(1);
         size.height = size.height.max(1);
 
-        let swapchain_capabilities = surface.get_capabilities(&adapter);
+        let swapchain_capabilities = self
+            .instance
+            .surface_get_capabilities::<wgpu_core::api::Vulkan>(surface, *adapter)
+            .unwrap();
         let swapchain_format = swapchain_capabilities.formats[0];
 
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        let config = wgpu_types::SurfaceConfiguration {
+            usage: wgpu_types::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu_types::PresentMode::Fifo,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
         };
 
-        surface.configure(&host_daq.device, &config);
+        self.instance.surface_configure::<wgpu_core::api::Vulkan>(
+            surface,
+            host_daq.device,
+            &config,
+        );
 
         let context = self.table.get_mut(&context).unwrap();
 
@@ -66,98 +79,122 @@ impl webgpu::HostGpuDevice for HostState {
 
     async fn create_command_encoder(
         &mut self,
-        daq: Resource<DeviceAndQueue>,
-    ) -> wasmtime::Result<Resource<CommandEncoderWithRenderPass>> {
-        let host_daq = self.table.get(&daq).unwrap();
-        let command_encoder = host_daq
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        device: Resource<Device>,
+    ) -> wasmtime::Result<Resource<wgpu_core::id::CommandEncoderId>> {
+        let host_daq = self.table.get(&device).unwrap();
 
-        let command_encoder_with_render_pass = Ltpc::new(command_encoder);
+        let command_encoder = core_result(
+            self.instance
+                .device_create_command_encoder::<wgpu_core::api::Vulkan>(
+                    host_daq.device,
+                    &wgpu_types::CommandEncoderDescriptor { label: None },
+                    (),
+                ),
+        )
+        .unwrap();
 
-        Ok(self
-            .table
-            .push_child(command_encoder_with_render_pass, &daq)
-            .unwrap())
+        Ok(self.table.push_child(command_encoder, &device).unwrap())
     }
 
     async fn create_shader_module(
         &mut self,
-        daq: Resource<DeviceAndQueue>,
+        device: Resource<Device>,
         desc: webgpu::GpuShaderModuleDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuShaderModule>> {
-        let daq = self.table.get(&daq).unwrap();
-        let shader = daq
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: desc.label.as_deref(),
-                source: wgpu::ShaderSource::Wgsl(Cow::Owned(desc.code)),
-            });
+        let device = self.table.get(&device).unwrap();
+
+        let shader = core_result(
+            self.instance
+                .device_create_shader_module::<wgpu_core::api::Vulkan>(
+                    device.device,
+                    &wgpu_core::pipeline::ShaderModuleDescriptor {
+                        label: desc.label.map(|label| label.into()),
+                        shader_bound_checks: Default::default(),
+                    },
+                    wgpu_core::pipeline::ShaderModuleSource::Wgsl(Cow::Owned(desc.code)),
+                    (),
+                ),
+        )
+        .unwrap();
 
         Ok(self.table.push(shader).unwrap())
     }
 
     async fn create_render_pipeline(
         &mut self,
-        daq: Resource<DeviceAndQueue>,
+        device: Resource<Device>,
         props: webgpu::GpuRenderPipelineDescriptor,
-    ) -> wasmtime::Result<Resource<webgpu::GpuRenderPipeline>> {
-        let vertex = wgpu::VertexState {
-            module: &self.table.get(&props.vertex.module).unwrap(),
-            entry_point: &props.vertex.entry_point,
-            buffers: &[],
+    ) -> wasmtime::Result<Resource<wgpu_core::id::RenderPipelineId>> {
+        let vertex_module = self.table.get(&props.vertex.module).unwrap();
+        let vertex = wgpu_core::pipeline::VertexState {
+            stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
+                module: *vertex_module,
+                entry_point: props.vertex.entry_point.into(),
+            },
+            buffers: Cow::Borrowed(&[]),
         };
 
-        let fragment = wgpu::FragmentState {
-            module: &self.table.get(&props.fragment.module).unwrap(),
-            entry_point: &props.fragment.entry_point,
-            targets: &props
-                .fragment
-                .targets
-                .iter()
-                .map(|target| {
-                    Some(wgpu::ColorTargetState {
-                        format: target.into(),
-                        blend: None,
-                        write_mask: Default::default(),
+        let fragment = props.fragment.map(|fragment| {
+            let fragment_module = self.table.get(&fragment.module).unwrap();
+            wgpu_core::pipeline::FragmentState {
+                stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
+                    module: *fragment_module,
+                    entry_point: fragment.entry_point.into(),
+                },
+                targets: fragment
+                    .targets
+                    .iter()
+                    .map(|target| {
+                        Some(wgpu_types::ColorTargetState {
+                            format: target.into(),
+                            blend: None,
+                            write_mask: Default::default(),
+                        })
                     })
-                })
-                .collect::<Vec<_>>(),
+                    .collect::<Vec<_>>()
+                    .into(),
+            }
+        });
+
+        let host_daq = self.table.get(&device).unwrap();
+
+        let desc = &wgpu_core::pipeline::RenderPipelineDescriptor {
+            vertex,
+            fragment,
+            primitive: wgpu_types::PrimitiveState::default(),
+            depth_stencil: Default::default(),
+            multisample: Default::default(),
+            multiview: Default::default(),
+            label: Default::default(),
+            layout: Default::default(),
         };
 
-        // let primitive = wgpu::PrimitiveState {
-        //     topology: (&props.primitive.topology).into(),
-        //     ..Default::default()
-        // };
+        let implicit_pipeline_ids = match desc.layout {
+            Some(_) => None,
+            None => Some(wgpu_core::device::ImplicitPipelineIds {
+                root_id: (),
+                group_ids: &[(); wgpu_core::MAX_BIND_GROUPS],
+            }),
+        };
+        let render_pipeline = core_result(
+            self.instance
+                .device_create_render_pipeline::<wgpu_core::api::Vulkan>(
+                    host_daq.device,
+                    desc,
+                    (),
+                    implicit_pipeline_ids,
+                ),
+        )
+        .unwrap();
 
-        let host_daq = self.table.get(&daq).unwrap();
-
-        let render_pipeline =
-            host_daq
-                .device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    vertex,
-                    fragment: Some(fragment),
-                    primitive: wgpu::PrimitiveState::default(),
-                    depth_stencil: Default::default(),
-                    multisample: Default::default(),
-                    multiview: Default::default(),
-                    label: Default::default(),
-                    layout: Default::default(),
-                });
-
-        Ok(self.table.push_child(render_pipeline, &daq).unwrap())
+        Ok(self.table.push_child(render_pipeline, &device).unwrap())
     }
 
-    async fn queue(
-        &mut self,
-        daq: Resource<DeviceAndQueue>,
-    ) -> wasmtime::Result<Resource<DeviceAndQueue>> {
-        Ok(Resource::new_own(daq.rep()))
+    async fn queue(&mut self, device: Resource<Device>) -> wasmtime::Result<Resource<Device>> {
+        Ok(Resource::new_own(device.rep()))
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
-        // self.web_gpu_host.devices.remove(&rep.rep());
         Ok(())
     }
 }
@@ -167,7 +204,7 @@ impl webgpu::HostGpuTexture for HostState {
     async fn from_graphics_buffer(
         &mut self,
         buffer: Resource<GraphicsBuffer>,
-    ) -> wasmtime::Result<Resource<wgpu::SurfaceTexture>> {
+    ) -> wasmtime::Result<Resource<crate::graphics_context::WebgpuTexture>> {
         let host_buffer = self.table.delete(buffer).unwrap();
         if let GraphicsBuffer::Webgpu(host_buffer) = host_buffer {
             Ok(self.table.push(host_buffer).unwrap())
@@ -178,31 +215,42 @@ impl webgpu::HostGpuTexture for HostState {
 
     async fn create_view(
         &mut self,
-        texture: Resource<wgpu::SurfaceTexture>,
-    ) -> wasmtime::Result<Resource<wgpu::TextureView>> {
-        let host_texture = self.table.get(&texture).unwrap();
-        let texture_view = host_texture.texture.create_view(&Default::default());
-
+        texture: Resource<crate::graphics_context::WebgpuTexture>,
+    ) -> wasmtime::Result<Resource<wgpu_core::id::TextureViewId>> {
+        let texture_id = self.table.get(&texture).unwrap();
+        let texture_view =
+            core_result(self.instance.texture_create_view::<wgpu_core::api::Vulkan>(
+                texture_id.texture,
+                &Default::default(),
+                (),
+            ))
+            .unwrap();
         Ok(self.table.push(texture_view).unwrap())
     }
 
     async fn non_standard_present(
         &mut self,
-        texture: Resource<wgpu::SurfaceTexture>,
+        texture: Resource<crate::graphics_context::WebgpuTexture>,
     ) -> wasmtime::Result<()> {
         let texture = self.table.delete(texture).unwrap();
-        texture.present();
+
+        self.instance
+            .surface_present::<wgpu_core::api::Vulkan>(texture.surface)
+            .unwrap();
         Ok(())
     }
 
-    fn drop(&mut self, _rep: Resource<wgpu::SurfaceTexture>) -> wasmtime::Result<()> {
-        Ok(())
+    fn drop(
+        &mut self,
+        _rep: Resource<crate::graphics_context::WebgpuTexture>,
+    ) -> wasmtime::Result<()> {
+        todo!();
     }
 }
 
 #[async_trait::async_trait]
 impl webgpu::HostGpuTextureView for HostState {
-    fn drop(&mut self, _rep: Resource<wgpu::TextureView>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _rep: Resource<wgpu_core::id::TextureViewId>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
@@ -235,20 +283,27 @@ impl webgpu::HostGpuRenderPipeline for HostState {
 impl webgpu::HostGpuAdapter for HostState {
     async fn request_device(
         &mut self,
-        adapter: Resource<wgpu::Adapter>,
+        adapter: Resource<wgpu_core::id::AdapterId>,
     ) -> wasmtime::Result<Resource<webgpu::GpuDevice>> {
-        let host_adapter = self.table.get(&adapter).unwrap();
+        let adapter_id = self.table.get(&adapter).unwrap();
 
-        let (device, queue) =
-            block_on(host_adapter.request_device(&Default::default(), Default::default())).unwrap();
+        let device_id = core_result(
+            self.instance
+                .adapter_request_device::<wgpu_core::api::Vulkan>(
+                    *adapter_id,
+                    &Default::default(),
+                    None,
+                    Default::default(),
+                ),
+        )
+        .unwrap();
 
         let daq = self
             .table
             .push_child(
-                DeviceAndQueue {
-                    device,
-                    queue,
-                    _adapter: Resource::new_own(adapter.rep()),
+                Device {
+                    device: device_id,
+                    adapter: Resource::new_own(adapter.rep()),
                 },
                 &adapter,
             )
@@ -257,17 +312,16 @@ impl webgpu::HostGpuAdapter for HostState {
         Ok(daq)
     }
 
-    fn drop(&mut self, adapter: Resource<webgpu::GpuAdapter>) -> wasmtime::Result<()> {
-        self.table.delete(adapter).unwrap();
+    fn drop(&mut self, _adapter: Resource<webgpu::GpuAdapter>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl webgpu::HostGpuDeviceQueue for HostState {
+impl webgpu::HostGpuQueue for HostState {
     async fn submit(
         &mut self,
-        daq: Resource<DeviceAndQueue>,
+        daq: Resource<Device>,
         val: Vec<Resource<webgpu::GpuCommandBuffer>>,
     ) -> wasmtime::Result<()> {
         let command_buffers = val
@@ -276,209 +330,194 @@ impl webgpu::HostGpuDeviceQueue for HostState {
             .collect::<Vec<_>>();
 
         let daq = self.table.get(&daq).unwrap();
-        daq.queue.submit(command_buffers);
+        self.instance
+            .queue_submit::<wgpu_core::api::Vulkan>(daq.device, &command_buffers)
+            .unwrap();
 
         Ok(())
     }
 
-    fn drop(&mut self, _rep: Resource<webgpu::GpuDeviceQueue>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _rep: Resource<webgpu::GpuQueue>) -> wasmtime::Result<()> {
         // todo!()
         Ok(())
     }
 }
 
-// hopefully can get rid of this soon. https://github.com/gfx-rs/wgpu/issues/1453#issuecomment-1644162720
-pub type CommandEncoderWithRenderPass = Ltpc<wgpu::CommandEncoder, wgpu::RenderPass<'static>>;
-
 #[async_trait::async_trait]
 impl webgpu::HostGpuCommandEncoder for HostState {
     async fn begin_render_pass(
         &mut self,
-        cwr: Resource<CommandEncoderWithRenderPass>,
-        desc: webgpu::GpuRenderPassDescriptor,
-    ) -> wasmtime::Result<Resource<webgpu::GpuRenderPass>> {
-        let cwr_rep = cwr.rep();
-        let cwr_and_views = self.table.iter_entries({
-            let mut m = HashMap::new();
-            m.insert(cwr.rep(), 0);
-            for (i, color_attachment) in desc.color_attachments.iter().enumerate() {
-                m.insert(color_attachment.view.rep(), i + 1);
-            }
-            m
-        });
-
-        let mut cwr: Option<&mut CommandEncoderWithRenderPass> = None;
-        let mut views: Vec<Option<&wgpu::TextureView>> = vec![None; desc.color_attachments.len()];
-
-        for (cwr_or_view, rep) in cwr_and_views {
-            let cwr_or_view = cwr_or_view.unwrap();
-
-            if rep == 0 {
-                let val = cwr_or_view
-                    .downcast_mut::<CommandEncoderWithRenderPass>()
-                    .unwrap();
-                cwr = Some(val);
-            } else {
-                let val = cwr_or_view.downcast_ref::<wgpu::TextureView>().unwrap();
-                views[rep - 1] = Some(val);
-            }
-        }
-
-        let cwr = cwr.unwrap();
-        let views: Vec<&wgpu::TextureView> = views.into_iter().map(|v| v.unwrap()).collect();
+        command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
+        descriptor: webgpu::GpuRenderPassDescriptor,
+    ) -> wasmtime::Result<Resource<webgpu::GpuRenderPassEncoder>> {
+        let command_encoder = self.table.get(&command_encoder).unwrap();
+        let views = descriptor
+            .color_attachments
+            .iter()
+            .map(|color_attachment| *self.table.get(&color_attachment.view).unwrap())
+            .collect::<Vec<_>>();
 
         let mut color_attachments = vec![];
-        for (i, _color_attachment) in desc.color_attachments.iter().enumerate() {
-            color_attachments.push(Some(wgpu::RenderPassColorAttachment {
-                view: &views[i],
+        for (i, _color_attachment) in descriptor.color_attachments.iter().enumerate() {
+            color_attachments.push(Some(wgpu_core::command::RenderPassColorAttachment {
+                view: views[i],
                 resolve_target: None,
-                ops: wgpu::Operations {
-                    // load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                channel: wgpu_core::command::PassChannel {
+                    load_op: wgpu_core::command::LoadOp::Clear,
+                    store_op: wgpu_core::command::StoreOp::Store,
+                    clear_value: wgpu_types::Color {
                         r: 0.0,
                         g: 0.0,
                         b: 0.1,
                         a: 0.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
+                    },
+                    read_only: false,
                 },
             }));
         }
 
-        let color_attachments: Vec<Option<wgpu::RenderPassColorAttachment<'static>>> =
-            unsafe { std::mem::transmute(color_attachments) };
-
-        cwr.set_child(move |command_encoder: &mut wgpu::CommandEncoder| {
-            command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &color_attachments,
+        let render_pass = wgpu_core::command::RenderPass::new(
+            *command_encoder,
+            &wgpu_core::command::RenderPassDescriptor {
+                color_attachments: color_attachments.into(),
                 label: None,
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
-            })
-        });
+            },
+        );
 
-        Ok(Resource::new_own(cwr_rep))
+        Ok(self.table.push(render_pass).unwrap())
     }
 
     async fn finish(
         &mut self,
-        command_encoder: Resource<CommandEncoderWithRenderPass>,
+        command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandBuffer>> {
         let command_encoder = self.table.delete(command_encoder).unwrap();
-        let command_encoder = command_encoder.take_parent();
-        let command_buffer = command_encoder.finish();
+        let command_buffer = core_result(
+            self.instance
+                .command_encoder_finish::<wgpu_core::api::Vulkan>(
+                    command_encoder,
+                    &Default::default(),
+                ),
+        )
+        .unwrap();
         Ok(self.table.push(command_buffer).unwrap())
     }
 
-    fn drop(&mut self, _rep: Resource<CommandEncoderWithRenderPass>) -> wasmtime::Result<()> {
-        // self.web_gpu_host.encoders.remove(&rep.rep());
+    fn drop(&mut self, _rep: Resource<wgpu_core::id::CommandEncoderId>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl webgpu::HostGpuRenderPass for HostState {
+impl webgpu::HostGpuRenderPassEncoder for HostState {
     async fn set_pipeline(
         &mut self,
-        cwr: Resource<CommandEncoderWithRenderPass>,
+        render_pass: Resource<wgpu_core::command::RenderPass>,
         pipeline: Resource<webgpu::GpuRenderPipeline>,
     ) -> wasmtime::Result<()> {
-        let cwr_rep = cwr.rep();
-        let pipeline_rep = pipeline.rep();
-        let cwr_and_pipeline = self.table.iter_entries({
-            let mut m = HashMap::new();
-            m.insert(cwr_rep, cwr_rep);
-            m.insert(pipeline_rep, pipeline_rep);
-            m
-        });
-
-        let mut cwr: Option<&mut CommandEncoderWithRenderPass> = None;
-        let mut pipeline: Option<&webgpu::GpuRenderPipeline> = None;
-
-        for (cwr_or_pipeline, rep) in cwr_and_pipeline {
-            let cwr_or_pipeline = cwr_or_pipeline.unwrap();
-
-            if rep == cwr_rep {
-                let val = cwr_or_pipeline
-                    .downcast_mut::<CommandEncoderWithRenderPass>()
-                    .unwrap();
-                cwr = Some(val);
-            } else if rep == pipeline_rep {
-                let val = cwr_or_pipeline
-                    .downcast_ref::<webgpu::GpuRenderPipeline>()
-                    .unwrap();
-                pipeline = Some(val);
-            }
-        }
-
-        let cwr = cwr.unwrap();
-        let pipeline = pipeline.unwrap();
-        let pipeline: &wgpu::RenderPipeline = unsafe { std::mem::transmute(pipeline) };
-
-        cwr.child_mut().unwrap().set_pipeline(&pipeline);
-
+        let pipeline = *self.table.get(&pipeline).unwrap();
+        let cwr = self.table.get_mut(&render_pass).unwrap();
+        wgpu_core::command::render_ffi::wgpu_render_pass_set_pipeline(cwr, pipeline);
         Ok(())
     }
 
     async fn draw(
         &mut self,
-        cwr: Resource<CommandEncoderWithRenderPass>,
-        count: u32,
+        cwr: Resource<wgpu_core::command::RenderPass>,
+        vertex_count: webgpu::GpuSize32,
+        instance_count: webgpu::GpuSize32,
+        first_vertex: webgpu::GpuSize32,
+        first_instance: webgpu::GpuSize32,
     ) -> wasmtime::Result<()> {
         let cwr = self.table.get_mut(&cwr).unwrap();
 
-        cwr.child_mut().unwrap().draw(0..count, 0..1);
+        wgpu_core::command::render_ffi::wgpu_render_pass_draw(
+            cwr,
+            vertex_count,
+            instance_count,
+            first_vertex,
+            first_instance,
+        );
 
         Ok(())
     }
 
-    async fn end(&mut self, _cwr: Resource<CommandEncoderWithRenderPass>) -> wasmtime::Result<()> {
-        todo!()
+    async fn end(
+        &mut self,
+        rpass: Resource<wgpu_core::command::RenderPass>,
+        non_standard_encoder: Resource<wgpu_core::id::CommandEncoderId>,
+    ) -> wasmtime::Result<()> {
+        // use this instead of non_standard_present? Ask on ...
+
+        let rpass = self.table.delete(rpass).unwrap();
+        let encoder = self.table.get(&non_standard_encoder).unwrap();
+        self.instance
+            .command_encoder_run_render_pass::<wgpu_core::api::Vulkan>(*encoder, &rpass)
+            .unwrap();
+        Ok(())
     }
 
-    fn drop(&mut self, cwr: Resource<CommandEncoderWithRenderPass>) -> wasmtime::Result<()> {
-        let cwr = self.table.get_mut(&cwr).unwrap();
-        cwr.take_child();
+    fn drop(&mut self, cwr: Resource<wgpu_core::command::RenderPass>) -> wasmtime::Result<()> {
+        self.table.delete(cwr).unwrap();
         Ok(())
     }
 }
 
-impl From<&wgpu::TextureFormat> for webgpu::GpuTextureFormat {
-    fn from(value: &wgpu::TextureFormat) -> Self {
+impl From<&wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
+    fn from(value: &wgpu_types::TextureFormat) -> Self {
         match value {
-            wgpu::TextureFormat::Bgra8UnormSrgb => webgpu::GpuTextureFormat::Bgra8UnormSrgb,
+            wgpu_types::TextureFormat::Bgra8UnormSrgb => webgpu::GpuTextureFormat::Bgra8UnormSrgb,
             _ => todo!(),
         }
     }
 }
-impl From<&webgpu::GpuTextureFormat> for wgpu::TextureFormat {
+impl From<&webgpu::GpuTextureFormat> for wgpu_types::TextureFormat {
     fn from(value: &webgpu::GpuTextureFormat) -> Self {
         match value {
-            webgpu::GpuTextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Bgra8UnormSrgb,
+            webgpu::GpuTextureFormat::Bgra8UnormSrgb => wgpu_types::TextureFormat::Bgra8UnormSrgb,
         }
     }
 }
 
-impl From<&webgpu::GpuPrimitiveTopology> for wgpu::PrimitiveTopology {
+impl From<&webgpu::GpuPrimitiveTopology> for wgpu_types::PrimitiveTopology {
     fn from(value: &webgpu::GpuPrimitiveTopology) -> Self {
         match value {
-            webgpu::GpuPrimitiveTopology::PointList => wgpu::PrimitiveTopology::PointList,
-            webgpu::GpuPrimitiveTopology::LineList => wgpu::PrimitiveTopology::LineList,
-            webgpu::GpuPrimitiveTopology::LineStrip => wgpu::PrimitiveTopology::LineStrip,
-            webgpu::GpuPrimitiveTopology::TriangleList => wgpu::PrimitiveTopology::TriangleList,
-            webgpu::GpuPrimitiveTopology::TriangleStrip => wgpu::PrimitiveTopology::TriangleStrip,
+            webgpu::GpuPrimitiveTopology::PointList => wgpu_types::PrimitiveTopology::PointList,
+            webgpu::GpuPrimitiveTopology::LineList => wgpu_types::PrimitiveTopology::LineList,
+            webgpu::GpuPrimitiveTopology::LineStrip => wgpu_types::PrimitiveTopology::LineStrip,
+            webgpu::GpuPrimitiveTopology::TriangleList => {
+                wgpu_types::PrimitiveTopology::TriangleList
+            }
+            webgpu::GpuPrimitiveTopology::TriangleStrip => {
+                wgpu_types::PrimitiveTopology::TriangleStrip
+            }
         }
     }
 }
-impl From<&wgpu::PrimitiveTopology> for webgpu::GpuPrimitiveTopology {
-    fn from(value: &wgpu::PrimitiveTopology) -> Self {
+impl From<&wgpu_types::PrimitiveTopology> for webgpu::GpuPrimitiveTopology {
+    fn from(value: &wgpu_types::PrimitiveTopology) -> Self {
         match value {
-            wgpu::PrimitiveTopology::PointList => webgpu::GpuPrimitiveTopology::PointList,
-            wgpu::PrimitiveTopology::LineList => webgpu::GpuPrimitiveTopology::LineList,
-            wgpu::PrimitiveTopology::LineStrip => webgpu::GpuPrimitiveTopology::LineStrip,
-            wgpu::PrimitiveTopology::TriangleList => webgpu::GpuPrimitiveTopology::TriangleList,
-            wgpu::PrimitiveTopology::TriangleStrip => webgpu::GpuPrimitiveTopology::TriangleStrip,
+            wgpu_types::PrimitiveTopology::PointList => webgpu::GpuPrimitiveTopology::PointList,
+            wgpu_types::PrimitiveTopology::LineList => webgpu::GpuPrimitiveTopology::LineList,
+            wgpu_types::PrimitiveTopology::LineStrip => webgpu::GpuPrimitiveTopology::LineStrip,
+            wgpu_types::PrimitiveTopology::TriangleList => {
+                webgpu::GpuPrimitiveTopology::TriangleList
+            }
+            wgpu_types::PrimitiveTopology::TriangleStrip => {
+                webgpu::GpuPrimitiveTopology::TriangleStrip
+            }
         }
+    }
+}
+
+fn core_result<I, E>(
+    (id, error): (wgpu_core::id::Id<I>, Option<E>),
+) -> Result<wgpu_core::id::Id<I>, E> {
+    match error {
+        Some(error) => Err(error),
+        None => Ok(id),
     }
 }
