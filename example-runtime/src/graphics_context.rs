@@ -25,13 +25,12 @@ pub struct WebgpuTexture {
 
 impl crate::component::webgpu::graphics_context::Host for HostState {}
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostState {
-    async fn new(&mut self) -> wasmtime::Result<Resource<GraphicsContext>> {
+    fn new(&mut self) -> wasmtime::Result<Resource<GraphicsContext>> {
         Ok(self.table.push(GraphicsContext { kind: None }).unwrap())
     }
 
-    async fn configure(
+    fn configure(
         &mut self,
         context: Resource<GraphicsContext>,
         _desc: ConfigureContextDesc,
@@ -40,7 +39,7 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
         Ok(())
     }
 
-    async fn get_current_buffer(
+    fn get_current_buffer(
         &mut self,
         context: Resource<GraphicsContext>,
     ) -> wasmtime::Result<Resource<GraphicsBuffer>> {

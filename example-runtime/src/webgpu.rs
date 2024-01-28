@@ -12,9 +12,8 @@ pub struct Device {
     pub adapter: Resource<wgpu_core::id::AdapterId>,
 }
 
-#[async_trait::async_trait]
 impl webgpu::Host for HostState {
-    async fn request_adapter(&mut self) -> wasmtime::Result<Resource<wgpu_core::id::AdapterId>> {
+    fn request_adapter(&mut self) -> wasmtime::Result<Resource<wgpu_core::id::AdapterId>> {
         let adapter = self
             .instance
             .request_adapter(
@@ -26,9 +25,8 @@ impl webgpu::Host for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuDevice for HostState {
-    async fn connect_graphics_context(
+    fn connect_graphics_context(
         &mut self,
         device: Resource<Device>,
         context: Resource<GraphicsContext>,
@@ -77,7 +75,7 @@ impl webgpu::HostGpuDevice for HostState {
         Ok(())
     }
 
-    async fn create_command_encoder(
+    fn create_command_encoder(
         &mut self,
         device: Resource<Device>,
     ) -> wasmtime::Result<Resource<wgpu_core::id::CommandEncoderId>> {
@@ -96,7 +94,7 @@ impl webgpu::HostGpuDevice for HostState {
         Ok(self.table.push_child(command_encoder, &device).unwrap())
     }
 
-    async fn create_shader_module(
+    fn create_shader_module(
         &mut self,
         device: Resource<Device>,
         desc: webgpu::GpuShaderModuleDescriptor,
@@ -120,7 +118,7 @@ impl webgpu::HostGpuDevice for HostState {
         Ok(self.table.push(shader).unwrap())
     }
 
-    async fn create_render_pipeline(
+    fn create_render_pipeline(
         &mut self,
         device: Resource<Device>,
         props: webgpu::GpuRenderPipelineDescriptor,
@@ -190,7 +188,7 @@ impl webgpu::HostGpuDevice for HostState {
         Ok(self.table.push_child(render_pipeline, &device).unwrap())
     }
 
-    async fn queue(&mut self, device: Resource<Device>) -> wasmtime::Result<Resource<Device>> {
+    fn queue(&mut self, device: Resource<Device>) -> wasmtime::Result<Resource<Device>> {
         Ok(Resource::new_own(device.rep()))
     }
 
@@ -199,9 +197,8 @@ impl webgpu::HostGpuDevice for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuTexture for HostState {
-    async fn from_graphics_buffer(
+    fn from_graphics_buffer(
         &mut self,
         buffer: Resource<GraphicsBuffer>,
     ) -> wasmtime::Result<Resource<crate::graphics_context::WebgpuTexture>> {
@@ -213,7 +210,7 @@ impl webgpu::HostGpuTexture for HostState {
         }
     }
 
-    async fn create_view(
+    fn create_view(
         &mut self,
         texture: Resource<crate::graphics_context::WebgpuTexture>,
     ) -> wasmtime::Result<Resource<wgpu_core::id::TextureViewId>> {
@@ -228,7 +225,7 @@ impl webgpu::HostGpuTexture for HostState {
         Ok(self.table.push(texture_view).unwrap())
     }
 
-    async fn non_standard_present(
+    fn non_standard_present(
         &mut self,
         texture: Resource<crate::graphics_context::WebgpuTexture>,
     ) -> wasmtime::Result<()> {
@@ -248,14 +245,12 @@ impl webgpu::HostGpuTexture for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuTextureView for HostState {
     fn drop(&mut self, _rep: Resource<wgpu_core::id::TextureViewId>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuCommandBuffer for HostState {
     fn drop(&mut self, _rep: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<()> {
         // self.web_gpu_host.command_buffers.remove(&rep.rep());
@@ -263,7 +258,6 @@ impl webgpu::HostGpuCommandBuffer for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuShaderModule for HostState {
     fn drop(&mut self, _rep: Resource<webgpu::GpuShaderModule>) -> wasmtime::Result<()> {
         // self.web_gpu_host.shaders.remove(&rep.rep());
@@ -271,7 +265,6 @@ impl webgpu::HostGpuShaderModule for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuRenderPipeline for HostState {
     fn drop(&mut self, _rep: Resource<webgpu::GpuRenderPipeline>) -> wasmtime::Result<()> {
         // TODO:
@@ -279,9 +272,8 @@ impl webgpu::HostGpuRenderPipeline for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuAdapter for HostState {
-    async fn request_device(
+    fn request_device(
         &mut self,
         adapter: Resource<wgpu_core::id::AdapterId>,
     ) -> wasmtime::Result<Resource<webgpu::GpuDevice>> {
@@ -317,9 +309,8 @@ impl webgpu::HostGpuAdapter for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuQueue for HostState {
-    async fn submit(
+    fn submit(
         &mut self,
         daq: Resource<Device>,
         val: Vec<Resource<webgpu::GpuCommandBuffer>>,
@@ -343,9 +334,8 @@ impl webgpu::HostGpuQueue for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuCommandEncoder for HostState {
-    async fn begin_render_pass(
+    fn begin_render_pass(
         &mut self,
         command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
         descriptor: webgpu::GpuRenderPassDescriptor,
@@ -390,7 +380,7 @@ impl webgpu::HostGpuCommandEncoder for HostState {
         Ok(self.table.push(render_pass).unwrap())
     }
 
-    async fn finish(
+    fn finish(
         &mut self,
         command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandBuffer>> {
@@ -411,9 +401,8 @@ impl webgpu::HostGpuCommandEncoder for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl webgpu::HostGpuRenderPassEncoder for HostState {
-    async fn set_pipeline(
+    fn set_pipeline(
         &mut self,
         render_pass: Resource<wgpu_core::command::RenderPass>,
         pipeline: Resource<webgpu::GpuRenderPipeline>,
@@ -424,7 +413,7 @@ impl webgpu::HostGpuRenderPassEncoder for HostState {
         Ok(())
     }
 
-    async fn draw(
+    fn draw(
         &mut self,
         cwr: Resource<wgpu_core::command::RenderPass>,
         vertex_count: webgpu::GpuSize32,
@@ -445,7 +434,7 @@ impl webgpu::HostGpuRenderPassEncoder for HostState {
         Ok(())
     }
 
-    async fn end(
+    fn end(
         &mut self,
         rpass: Resource<wgpu_core::command::RenderPass>,
         non_standard_encoder: Resource<wgpu_core::id::CommandEncoderId>,

@@ -8,9 +8,8 @@ use tokio::sync::broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::animation_frame::Host for HostState {
-    async fn listener(&mut self) -> wasmtime::Result<Resource<AnimationFrameListener>> {
+    fn listener(&mut self) -> wasmtime::Result<Resource<AnimationFrameListener>> {
         let receiver = self.sender.subscribe();
 
         Ok(self
@@ -23,15 +22,14 @@ impl crate::component::webgpu::animation_frame::Host for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl HostFrameListener for HostState {
-    async fn subscribe(
+    fn subscribe(
         &mut self,
         frame_listener: Resource<AnimationFrameListener>,
     ) -> wasmtime::Result<Resource<Pollable>> {
         preview2::subscribe(self.table_mut(), frame_listener)
     }
-    async fn get(
+    fn get(
         &mut self,
         frame_listener: Resource<AnimationFrameListener>,
     ) -> wasmtime::Result<Option<FrameEvent>> {

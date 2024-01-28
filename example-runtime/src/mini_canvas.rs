@@ -15,12 +15,10 @@ pub struct MiniCanvas {
     pub offscreen: bool,
 }
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::mini_canvas::Host for HostState {}
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::mini_canvas::HostMiniCanvas for HostState {
-    async fn new(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvas>> {
+    fn new(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvas>> {
         Ok(self
             .table
             .push(MiniCanvas {
@@ -31,7 +29,7 @@ impl crate::component::webgpu::mini_canvas::HostMiniCanvas for HostState {
             .unwrap())
     }
 
-    async fn connect_graphics_context(
+    fn connect_graphics_context(
         &mut self,
         mini_canvas: Resource<MiniCanvas>,
         context: Resource<GraphicsContext>,
@@ -42,7 +40,7 @@ impl crate::component::webgpu::mini_canvas::HostMiniCanvas for HostState {
         Ok(())
     }
 
-    async fn resize_listener(
+    fn resize_listener(
         &mut self,
         _mini_canvas: Resource<MiniCanvas>,
     ) -> wasmtime::Result<Resource<ResizeListener>> {
@@ -56,12 +54,12 @@ impl crate::component::webgpu::mini_canvas::HostMiniCanvas for HostState {
             .unwrap())
     }
 
-    async fn height(&mut self, mini_canvas: Resource<MiniCanvas>) -> wasmtime::Result<u32> {
+    fn height(&mut self, mini_canvas: Resource<MiniCanvas>) -> wasmtime::Result<u32> {
         let _mini_canvas = self.table.get(&mini_canvas).unwrap();
         Ok(self.window.inner_size().height)
     }
 
-    async fn width(&mut self, mini_canvas: Resource<MiniCanvas>) -> wasmtime::Result<u32> {
+    fn width(&mut self, mini_canvas: Resource<MiniCanvas>) -> wasmtime::Result<u32> {
         let _mini_canvas = self.table.get(&mini_canvas).unwrap();
         Ok(self.window.inner_size().width)
     }
@@ -90,15 +88,14 @@ impl preview2::Subscribe for ResizeListener {
     }
 }
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::mini_canvas::HostResizeListener for HostState {
-    async fn subscribe(
+    fn subscribe(
         &mut self,
         pointer_down: Resource<ResizeListener>,
     ) -> wasmtime::Result<Resource<Pollable>> {
         Ok(preview2::subscribe(self.table_mut(), pointer_down).unwrap())
     }
-    async fn get(
+    fn get(
         &mut self,
         pointer_down: Resource<ResizeListener>,
     ) -> wasmtime::Result<Option<ResizeEvent>> {

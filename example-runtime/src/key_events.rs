@@ -8,9 +8,8 @@ use tokio::sync::broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::key_events::Host for HostState {
-    async fn up_listener(&mut self) -> wasmtime::Result<Resource<KeyUpListener>> {
+    fn up_listener(&mut self) -> wasmtime::Result<Resource<KeyUpListener>> {
         let receiver = self.sender.subscribe();
         Ok(self
             .table_mut()
@@ -21,7 +20,7 @@ impl crate::component::webgpu::key_events::Host for HostState {
             .unwrap())
     }
 
-    async fn down_listener(&mut self) -> wasmtime::Result<Resource<KeyDownListener>> {
+    fn down_listener(&mut self) -> wasmtime::Result<Resource<KeyDownListener>> {
         let receiver = self.sender.subscribe();
         Ok(self
             .table_mut()
@@ -33,15 +32,14 @@ impl crate::component::webgpu::key_events::Host for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::key_events::HostKeyUpListener for HostState {
-    async fn subscribe(
+    fn subscribe(
         &mut self,
         key_up: Resource<KeyUpListener>,
     ) -> wasmtime::Result<Resource<Pollable>> {
         Ok(preview2::subscribe(self.table_mut(), key_up).unwrap())
     }
-    async fn get(&mut self, key_up: Resource<KeyUpListener>) -> wasmtime::Result<Option<KeyEvent>> {
+    fn get(&mut self, key_up: Resource<KeyUpListener>) -> wasmtime::Result<Option<KeyEvent>> {
         let key_up = self.table.get(&key_up).unwrap();
         Ok(key_up.data.lock().unwrap().take())
     }
@@ -69,18 +67,14 @@ impl preview2::Subscribe for KeyUpListener {
     }
 }
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::key_events::HostKeyDownListener for HostState {
-    async fn subscribe(
+    fn subscribe(
         &mut self,
         key_down: Resource<KeyDownListener>,
     ) -> wasmtime::Result<Resource<Pollable>> {
         Ok(preview2::subscribe(self.table_mut(), key_down).unwrap())
     }
-    async fn get(
-        &mut self,
-        key_down: Resource<KeyDownListener>,
-    ) -> wasmtime::Result<Option<KeyEvent>> {
+    fn get(&mut self, key_down: Resource<KeyDownListener>) -> wasmtime::Result<Option<KeyEvent>> {
         let key_down = self.table.get(&key_down).unwrap();
         Ok(key_down.data.lock().unwrap().take())
     }

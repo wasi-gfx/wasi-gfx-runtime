@@ -47,9 +47,8 @@ impl From<softbuffer::Buffer<'static>> for SimpleBuffer {
     }
 }
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::simple_buffer::Host for HostState {
-    async fn connect_graphics_context(
+    fn connect_graphics_context(
         &mut self,
         graphics_context: Resource<GraphicsContext>,
     ) -> wasmtime::Result<()> {
@@ -86,9 +85,8 @@ impl crate::component::webgpu::simple_buffer::Host for HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl crate::component::webgpu::simple_buffer::HostSimpleBuffer for HostState {
-    async fn from_graphics_buffer(
+    fn from_graphics_buffer(
         &mut self,
         buffer: Resource<crate::graphics_context::GraphicsBuffer>,
     ) -> wasmtime::Result<Resource<SimpleBuffer>> {
@@ -100,7 +98,7 @@ impl crate::component::webgpu::simple_buffer::HostSimpleBuffer for HostState {
         }
     }
 
-    async fn present(&mut self, buffer: Resource<SimpleBuffer>) -> wasmtime::Result<()> {
+    fn present(&mut self, buffer: Resource<SimpleBuffer>) -> wasmtime::Result<()> {
         let buffer = self.table.delete(buffer).unwrap();
         buffer
             .buffer
@@ -113,13 +111,13 @@ impl crate::component::webgpu::simple_buffer::HostSimpleBuffer for HostState {
         Ok(())
     }
 
-    async fn length(&mut self, buffer: Resource<SimpleBuffer>) -> wasmtime::Result<u32> {
+    fn length(&mut self, buffer: Resource<SimpleBuffer>) -> wasmtime::Result<u32> {
         let buffer = self.table.get(&buffer).unwrap();
         let len = buffer.buffer.lock().unwrap().as_ref().unwrap().len();
         Ok(len as u32)
     }
 
-    async fn get(&mut self, buffer: Resource<SimpleBuffer>, i: u32) -> wasmtime::Result<u32> {
+    fn get(&mut self, buffer: Resource<SimpleBuffer>, i: u32) -> wasmtime::Result<u32> {
         let buffer = self.table.get(&buffer).unwrap();
         let val = *buffer
             .buffer
@@ -132,12 +130,7 @@ impl crate::component::webgpu::simple_buffer::HostSimpleBuffer for HostState {
         Ok(val)
     }
 
-    async fn set(
-        &mut self,
-        buffer: Resource<SimpleBuffer>,
-        i: u32,
-        val: u32,
-    ) -> wasmtime::Result<()> {
+    fn set(&mut self, buffer: Resource<SimpleBuffer>, i: u32, val: u32) -> wasmtime::Result<()> {
         let buffer = self.table.get_mut(&buffer).unwrap();
         buffer.buffer.lock().unwrap().as_mut().unwrap()[i as usize] = val as u32;
         Ok(())
