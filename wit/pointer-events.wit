@@ -3,7 +3,7 @@
 package component:webgpu;
 
 interface pointer-events {
-    use wasi:io/poll@0.2.0-rc-2023-11-10.{pollable};
+    use wasi:io/poll@0.2.0.{pollable};
 
     up-listener: func() -> pointer-up-listener;
 

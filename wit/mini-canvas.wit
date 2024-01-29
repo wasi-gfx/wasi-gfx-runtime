@@ -2,7 +2,7 @@ package component:webgpu;
 
 interface mini-canvas {
   use graphics-context.{graphics-context};
-  use wasi:io/poll@0.2.0-rc-2023-11-10.{pollable};
+  use wasi:io/poll@0.2.0.{pollable};
 
   record create-desc {
     height: u32,

@@ -12,7 +12,7 @@ use wasmtime::{
 };
 use winit::{event::ElementState, event_loop::EventLoop, window::Window};
 
-use wasmtime_wasi::preview2::{self, Table, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::preview2::{self, ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
 mod animation_frame;
 mod graphics_context;
 mod key_events;
@@ -87,7 +87,7 @@ wasmtime::component::bindgen!({
 });
 
 struct HostState {
-    pub table: Table,
+    pub table: ResourceTable,
     pub ctx: WasiCtx,
     pub sender: Sender<HostEvent>,
     pub instance: wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>,
@@ -199,7 +199,7 @@ pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
 impl HostState {
     fn new(event_loop: &EventLoop<()>, sender: Sender<HostEvent>) -> Self {
         Self {
-            table: Table::new(),
+            table: ResourceTable::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
             sender,
             instance: wgpu_core::global::Global::new(
@@ -219,11 +219,11 @@ impl HostState {
 
 #[async_trait::async_trait]
 impl WasiView for HostState {
-    fn table(&self) -> &Table {
+    fn table(&self) -> &ResourceTable {
         &self.table
     }
 
-    fn table_mut(&mut self) -> &mut Table {
+    fn table_mut(&mut self) -> &mut ResourceTable {
         &mut self.table
     }
 

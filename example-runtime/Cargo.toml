@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.3.19", features = ["derive"] }
-wasmtime = { version = "15.0.0", features = ['component-model'] }
-wasmtime-wasi = "15.0.0"
+wasmtime = { version = "17.0", features = ['component-model'] }
+wasmtime-wasi = "17.0"
 anyhow = "1.0.72"
 winit = { version = "0.28", features = [ "android-native-activity" ] }
 wgpu-types = "0.18"
