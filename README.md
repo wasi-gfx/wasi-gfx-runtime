@@ -62,7 +62,7 @@ On the web, canvas and webgpu are actually tied to each other. e.g. you get a `G
 Maybe y'all will tell me that separating them is a stupid idea, in which case I'll bow down and build a time machine fueled by pure awkwardness, traveling back to the moment before I even suggested this.
 
 #### Potential use cases where canvas might make sense without webgpu include:
-- Vulken, if it ever becomes truly cross platform.
+- Vulkan, if it ever becomes truly cross platform.
 - OpenGL might make sense for some use cases.
 - Future gpu api's that will almost certainly come eventually.
 - Using simple arrays as buffers for simple drawings, especially useful in embedded. E.g. https://github.com/rust-windowing/softbuffer. See later section tackling this.
