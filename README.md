@@ -87,30 +87,31 @@ This looks something like this:
 
 ```wit
 interface graphics {
-  resource context {
-    new: static func() -> context;
-    configure: func(desc: configure-context-desc);
-    get-current-buffer: func() -> buffer;
-  }
-  resource buffer { }
+  resource graphics-context {
+    constructor();
+    configure: func(desc: configure-context-desc);
+    get-current-buffer: func() -> graphics-context-buffer;
+  }
+  resource graphics-context-buffer { }
 }
+
 interface webgpu {
-  resource gpu-device {
-    connect-context: func(context: borrow<graphics.context>);
-    ...
-  }
-  resource gpu-texture {
-    from-graphics-buffer: func(buffer: graphics.buffer) -> gpu-texture;
-    ...
-  }
-  ...
+  resource gpu-device {
+    connect-graphics-context: func(context: borrow<graphics-context>);
+    ...
+  }
+  resource gpu-texture {
+    from-graphics-context-buffer: func(buffer: graphics-context-buffer) -> gpu-texture;
+    ...
+  }
+  ...
 }
 interface canvas {
-  resource canvas {
-    connect-context: func(context: borrow<graphics.context>)
-    ...
-  }
-  ...
+  resource canvas {
+    connect-graphics-context: func(context: borrow<graphics-context>)
+    ...
+  }
+  ...
 }
 ```
 
