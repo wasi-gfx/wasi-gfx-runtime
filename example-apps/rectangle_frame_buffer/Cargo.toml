@@ -1,5 +1,5 @@
 [package]
-name = "rectangle-simple-buffer"
+name = "rectangle-frame-buffer"
 version = "0.1.0"
 edition = "2021"
 

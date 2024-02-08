@@ -119,7 +119,7 @@ The wit for graphics-context can be found in [`/wit/graphics-context.wit`](/wit/
 #### Other options.
 There's another option in issue #1, but I think this one would be better as it's closer to how webgpu does things, while it still let's us keep canvas and webgpu separated.
 
-## Simple frame buffer rendering:
+## Frame buffer rendering:
 
 I'm also currently working on a simple readable buffer that can be written to, and then displayed. Similar to https://github.com/rust-windowing/softbuffer.
 

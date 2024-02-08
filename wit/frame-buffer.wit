@@ -1,14 +1,14 @@
 package component:webgpu;
 
-interface simple-buffer {
+interface frame-buffer {
   use graphics-context.{graphics-context, graphics-context-buffer};
 
   connect-graphics-context: func(context: borrow<graphics-context>);
 
-  resource simple-buffer {
-    from-graphics-buffer: static func(buffer: graphics-context-buffer) -> simple-buffer;
+  resource frame-buffer {
+    from-graphics-buffer: static func(buffer: graphics-context-buffer) -> frame-buffer;
 
-    present: static func(this: simple-buffer);
+    present: static func(this: frame-buffer);
 
     length: func() -> u32;
 

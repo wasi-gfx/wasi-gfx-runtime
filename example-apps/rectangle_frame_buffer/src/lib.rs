@@ -15,7 +15,7 @@ impl Guest for Example {
 }
 
 use component::webgpu::{
-    animation_frame, graphics_context, mini_canvas, pointer_events, simple_buffer,
+    animation_frame, frame_buffer, graphics_context, mini_canvas, pointer_events,
 };
 use std::cmp::min;
 
@@ -28,7 +28,7 @@ fn draw_rectangle() {
     let graphics_context = graphics_context::GraphicsContext::new();
     canvas.connect_graphics_context(&graphics_context);
 
-    simple_buffer::connect_graphics_context(&graphics_context);
+    frame_buffer::connect_graphics_context(&graphics_context);
 
     let pointer_up_listener = pointer_events::up_listener();
     let pointer_up_pollable = pointer_up_listener.subscribe();
@@ -62,7 +62,7 @@ fn draw_rectangle() {
 
             let graphics_buffer = graphics_context.get_current_buffer();
 
-            let buffer = simple_buffer::SimpleBuffer::from_graphics_buffer(graphics_buffer);
+            let buffer = frame_buffer::FrameBuffer::from_graphics_buffer(graphics_buffer);
 
             const RED: u32 = 0b_00000000_11111111_00000000_00000000;
             const GREEN: u32 = 0b_00000000_00000000_11111111_00000000;
@@ -85,7 +85,7 @@ fn draw_rectangle() {
                 }
             }
 
-            simple_buffer::SimpleBuffer::present(buffer);
+            frame_buffer::FrameBuffer::present(buffer);
         }
     }
 }

@@ -9,13 +9,13 @@ pub struct GraphicsContext {
 
 pub enum GraphicsContextKind {
     Webgpu(wgpu_core::id::SurfaceId),
-    SimpleBuffer(crate::simple_buffer::Surface),
+    FrameBuffer(crate::frame_buffer::Surface),
 }
 
 #[non_exhaustive]
 pub enum GraphicsContextBuffer {
     Webgpu(WebgpuTexture),
-    SimpleBuffer(crate::simple_buffer::SimpleBuffer),
+    FrameBuffer(crate::frame_buffer::FrameBuffer),
 }
 
 pub struct WebgpuTexture {
@@ -57,8 +57,8 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
                     surface: *surface,
                 })
             }
-            GraphicsContextKind::SimpleBuffer(surface) => {
-                GraphicsContextBuffer::SimpleBuffer(surface.buffer_mut())
+            GraphicsContextKind::FrameBuffer(surface) => {
+                GraphicsContextBuffer::FrameBuffer(surface.buffer_mut())
             }
         };
         Ok(self.table.push_child(next_frame, &context).unwrap())
