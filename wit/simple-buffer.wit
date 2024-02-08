@@ -1,12 +1,12 @@
 package component:webgpu;
 
 interface simple-buffer {
-  use graphics-context.{graphics-context, buffer};
+  use graphics-context.{graphics-context, graphics-context-buffer};
 
   connect-graphics-context: func(context: borrow<graphics-context>);
 
   resource simple-buffer {
-    from-graphics-buffer: static func(buffer: buffer) -> simple-buffer;
+    from-graphics-buffer: static func(buffer: graphics-context-buffer) -> simple-buffer;
 
     present: static func(this: simple-buffer);
 

@@ -80,7 +80,7 @@ wasmtime::component::bindgen!({
         "component:webgpu/key-events/key-down-listener": key_events::KeyDownListener,
         "component:webgpu/animation-frame/frame-listener": animation_frame::AnimationFrameListener,
         "component:webgpu/graphics-context/graphics-context": graphics_context::GraphicsContext,
-        "component:webgpu/graphics-context/buffer": graphics_context::GraphicsBuffer,
+        "component:webgpu/graphics-context/graphics-context-buffer": graphics_context::GraphicsContextBuffer,
         "component:webgpu/mini-canvas/mini-canvas": mini_canvas::MiniCanvas,
         "component:webgpu/mini-canvas/resize-listener": mini_canvas::ResizeListener,
     },

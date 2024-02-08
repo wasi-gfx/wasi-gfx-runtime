@@ -2,7 +2,7 @@ package component:webgpu;
 
 
 interface webgpu {
-  use graphics-context.{graphics-context, buffer};
+  use graphics-context.{graphics-context, graphics-context-buffer};
 
   // some external resources.
   resource uint32-array { }
@@ -279,7 +279,7 @@ interface webgpu {
   //   write,
   // }
   resource gpu-texture {
-    from-graphics-buffer: static func(buffer: buffer) -> gpu-texture;
+    from-graphics-buffer: static func(buffer: graphics-context-buffer) -> gpu-texture;
     create-view: func(descriptor: option<gpu-texture-view-descriptor>) -> gpu-texture-view;
     destroy: func();
     width: func() -> gpu-integer-coordinate-out;

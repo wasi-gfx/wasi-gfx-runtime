@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use wasmtime::component::Resource;
 
 use crate::component::webgpu::webgpu;
-use crate::graphics_context::{GraphicsBuffer, GraphicsContext, GraphicsContextKind};
+use crate::graphics_context::{GraphicsContext, GraphicsContextBuffer, GraphicsContextKind};
 use crate::HostState;
 
 pub struct Device {
@@ -349,10 +349,10 @@ impl webgpu::HostGpuDevice for HostState {
 impl webgpu::HostGpuTexture for HostState {
     fn from_graphics_buffer(
         &mut self,
-        buffer: Resource<GraphicsBuffer>,
+        buffer: Resource<GraphicsContextBuffer>,
     ) -> wasmtime::Result<Resource<crate::graphics_context::WebgpuTexture>> {
         let host_buffer = self.table.delete(buffer).unwrap();
-        if let GraphicsBuffer::Webgpu(host_buffer) = host_buffer {
+        if let GraphicsContextBuffer::Webgpu(host_buffer) = host_buffer {
             Ok(self.table.push(host_buffer).unwrap())
         } else {
             panic!("Context not connected to webgpu");

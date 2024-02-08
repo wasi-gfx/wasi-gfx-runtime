@@ -13,7 +13,7 @@ pub enum GraphicsContextKind {
 }
 
 #[non_exhaustive]
-pub enum GraphicsBuffer {
+pub enum GraphicsContextBuffer {
     Webgpu(WebgpuTexture),
     SimpleBuffer(crate::simple_buffer::SimpleBuffer),
 }
@@ -42,7 +42,7 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
     fn get_current_buffer(
         &mut self,
         context: Resource<GraphicsContext>,
-    ) -> wasmtime::Result<Resource<GraphicsBuffer>> {
+    ) -> wasmtime::Result<Resource<GraphicsContextBuffer>> {
         let context_kind = self.table.get_mut(&context).unwrap().kind.as_mut().unwrap();
         let next_frame = match context_kind {
             GraphicsContextKind::Webgpu(surface) => {
@@ -52,13 +52,13 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
                     .unwrap()
                     .texture_id
                     .unwrap();
-                GraphicsBuffer::Webgpu(WebgpuTexture {
+                GraphicsContextBuffer::Webgpu(WebgpuTexture {
                     texture,
                     surface: *surface,
                 })
             }
             GraphicsContextKind::SimpleBuffer(surface) => {
-                GraphicsBuffer::SimpleBuffer(surface.buffer_mut())
+                GraphicsContextBuffer::SimpleBuffer(surface.buffer_mut())
             }
         };
         Ok(self.table.push_child(next_frame, &context).unwrap())
@@ -69,8 +69,8 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
     }
 }
 
-impl crate::component::webgpu::graphics_context::HostBuffer for HostState {
-    fn drop(&mut self, _rep: Resource<GraphicsBuffer>) -> wasmtime::Result<()> {
+impl crate::component::webgpu::graphics_context::HostGraphicsContextBuffer for HostState {
+    fn drop(&mut self, _rep: Resource<GraphicsContextBuffer>) -> wasmtime::Result<()> {
         todo!()
     }
 }

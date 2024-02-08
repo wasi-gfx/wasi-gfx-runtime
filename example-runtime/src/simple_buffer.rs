@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use wasmtime::component::Resource;
 
-use crate::graphics_context::{GraphicsBuffer, GraphicsContext, GraphicsContextKind};
+use crate::graphics_context::{GraphicsContext, GraphicsContextBuffer, GraphicsContextKind};
 use crate::{HostEvent, HostState};
 
 #[derive(Clone)]
@@ -88,10 +88,10 @@ impl crate::component::webgpu::simple_buffer::Host for HostState {
 impl crate::component::webgpu::simple_buffer::HostSimpleBuffer for HostState {
     fn from_graphics_buffer(
         &mut self,
-        buffer: Resource<crate::graphics_context::GraphicsBuffer>,
+        buffer: Resource<crate::graphics_context::GraphicsContextBuffer>,
     ) -> wasmtime::Result<Resource<SimpleBuffer>> {
-        let host_buffer = self.table.delete(buffer).unwrap();
-        if let GraphicsBuffer::SimpleBuffer(host_buffer) = host_buffer {
+        let host_buffer: GraphicsContextBuffer = self.table.delete(buffer).unwrap();
+        if let GraphicsContextBuffer::SimpleBuffer(host_buffer) = host_buffer {
             Ok(self.table.push(host_buffer).unwrap())
         } else {
             panic!("Context not connected to webgpu");
