@@ -350,7 +350,7 @@ impl webgpu::HostGpuTexture for HostState {
     fn from_graphics_buffer(
         &mut self,
         buffer: Resource<GraphicsContextBuffer>,
-    ) -> wasmtime::Result<Resource<crate::graphics_context::WebgpuTexture>> {
+    ) -> wasmtime::Result<Resource<wgpu_core::id::TextureId>> {
         let host_buffer = self.table.delete(buffer).unwrap();
         if let GraphicsContextBuffer::Webgpu(host_buffer) = host_buffer {
             Ok(self.table.push(host_buffer).unwrap())
@@ -361,12 +361,12 @@ impl webgpu::HostGpuTexture for HostState {
 
     fn create_view(
         &mut self,
-        texture: Resource<crate::graphics_context::WebgpuTexture>,
+        texture: Resource<wgpu_core::id::TextureId>,
         _descriptor: Option<webgpu::GpuTextureViewDescriptor>,
     ) -> wasmtime::Result<Resource<wgpu_core::id::TextureViewId>> {
-        let texture_id = self.table.get(&texture).unwrap();
+        let texture_id = *self.table.get(&texture).unwrap();
         let texture_view = core_result(self.instance.texture_create_view::<crate::Backend>(
-            texture_id.texture,
+            texture_id,
             &Default::default(),
             (),
         ))
@@ -374,23 +374,9 @@ impl webgpu::HostGpuTexture for HostState {
         Ok(self.table.push(texture_view).unwrap())
     }
 
-    fn non_standard_present(
-        &mut self,
-        texture: Resource<crate::graphics_context::WebgpuTexture>,
-    ) -> wasmtime::Result<()> {
-        let texture = self.table.delete(texture).unwrap();
-
-        self.instance
-            .surface_present::<crate::Backend>(texture.surface)
-            .unwrap();
+    fn drop(&mut self, _rep: Resource<wgpu_core::id::TextureId>) -> wasmtime::Result<()> {
+        // TODO:
         Ok(())
-    }
-
-    fn drop(
-        &mut self,
-        _rep: Resource<crate::graphics_context::WebgpuTexture>,
-    ) -> wasmtime::Result<()> {
-        todo!();
     }
 
     fn destroy(&mut self, _self_: Resource<webgpu::GpuTexture>) -> wasmtime::Result<()> {

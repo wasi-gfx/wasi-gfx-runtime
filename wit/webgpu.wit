@@ -292,7 +292,6 @@ interface webgpu {
     usage: func() -> gpu-flags-constant;
     label: func() -> string;
     set-label: func(label: string);
-    non-standard-present: static func(this: gpu-texture);
   }
   record gpu-texture-descriptor {
     size: gpu-extent3-d,

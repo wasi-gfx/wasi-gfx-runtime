@@ -14,13 +14,8 @@ pub enum GraphicsContextKind {
 
 #[non_exhaustive]
 pub enum GraphicsContextBuffer {
-    Webgpu(WebgpuTexture),
+    Webgpu(wgpu_core::id::TextureId),
     FrameBuffer(crate::frame_buffer::FrameBuffer),
-}
-
-pub struct WebgpuTexture {
-    pub texture: wgpu_core::id::TextureId,
-    pub surface: wgpu_core::id::SurfaceId,
 }
 
 impl crate::component::webgpu::graphics_context::Host for HostState {}
@@ -52,16 +47,38 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
                     .unwrap()
                     .texture_id
                     .unwrap();
-                GraphicsContextBuffer::Webgpu(WebgpuTexture {
-                    texture,
-                    surface: *surface,
-                })
+                GraphicsContextBuffer::Webgpu(texture)
             }
             GraphicsContextKind::FrameBuffer(surface) => {
                 GraphicsContextBuffer::FrameBuffer(surface.buffer_mut())
             }
         };
         Ok(self.table.push_child(next_frame, &context).unwrap())
+    }
+
+    fn present(&mut self, context: Resource<GraphicsContext>) -> wasmtime::Result<()> {
+        let context = self.table.get(&context).unwrap();
+        match &context.kind {
+            Some(GraphicsContextKind::Webgpu(surface)) => {
+                self.instance
+                    .surface_present::<crate::Backend>(*surface)
+                    .unwrap();
+            }
+            Some(GraphicsContextKind::FrameBuffer(surface)) => {
+                surface
+                    .surface
+                    .lock()
+                    .unwrap()
+                    .buffer_mut()
+                    .unwrap()
+                    .present()
+                    .unwrap();
+            }
+            None => {
+                panic!("present called on an unconnected context.");
+            }
+        };
+        Ok(())
     }
 
     fn drop(&mut self, _graphics_context: Resource<GraphicsContext>) -> wasmtime::Result<()> {

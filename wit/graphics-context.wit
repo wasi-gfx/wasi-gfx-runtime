@@ -8,6 +8,8 @@ interface graphics-context {
     configure: func(desc: configure-context-desc);
 
     get-current-buffer: func() -> graphics-context-buffer;
+
+    present: func();
   }
 
   // might not make sense here

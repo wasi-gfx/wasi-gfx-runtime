@@ -70,7 +70,6 @@ wasmtime::component::bindgen!({
         "component:webgpu/webgpu/gpu-render-pipeline": wgpu_core::id::RenderPipelineId,
         "component:webgpu/webgpu/gpu-command-buffer": wgpu_core::id::CommandBufferId,
         "component:webgpu/webgpu/gpu-texture": wgpu_core::id::TextureId,
-        "component:webgpu/webgpu/gpu-texture": graphics_context::WebgpuTexture,
         "component:webgpu/webgpu/gpu-texture-view": wgpu_core::id::TextureViewId,
         "component:webgpu/frame-buffer/frame-buffer": frame_buffer::FrameBuffer,
         "component:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,

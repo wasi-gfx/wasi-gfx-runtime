@@ -9,7 +9,7 @@ use crate::{HostEvent, HostState};
 
 #[derive(Clone)]
 pub struct Surface {
-    surface: Arc<Mutex<softbuffer::Surface>>,
+    pub(super) surface: Arc<Mutex<softbuffer::Surface>>,
 }
 unsafe impl Send for Surface {}
 unsafe impl Sync for Surface {}
@@ -24,6 +24,7 @@ impl Surface {
     pub fn buffer_mut<'a>(&'a mut self) -> FrameBuffer {
         let mut surface = self.surface.lock().unwrap();
         let buff = surface.buffer_mut().unwrap();
+        // TODO: use ouroboros?
         let buff: softbuffer::Buffer<'static> = unsafe { mem::transmute(buff) };
         buff.into()
     }
@@ -98,19 +99,6 @@ impl crate::component::webgpu::frame_buffer::HostFrameBuffer for HostState {
         }
     }
 
-    fn present(&mut self, buffer: Resource<FrameBuffer>) -> wasmtime::Result<()> {
-        let buffer = self.table.delete(buffer).unwrap();
-        buffer
-            .buffer
-            .lock()
-            .unwrap()
-            .take()
-            .unwrap()
-            .present()
-            .unwrap();
-        Ok(())
-    }
-
     fn length(&mut self, buffer: Resource<FrameBuffer>) -> wasmtime::Result<u32> {
         let buffer = self.table.get(&buffer).unwrap();
         let len = buffer.buffer.lock().unwrap().as_ref().unwrap().len();
@@ -137,6 +125,7 @@ impl crate::component::webgpu::frame_buffer::HostFrameBuffer for HostState {
     }
 
     fn drop(&mut self, _rep: Resource<FrameBuffer>) -> wasmtime::Result<()> {
-        todo!()
+        // todo!()
+        Ok(())
     }
 }

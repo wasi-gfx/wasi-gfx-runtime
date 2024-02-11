@@ -179,7 +179,7 @@ fn draw_triangle() {
             device
                 .queue()
                 .submit(vec![webgpu::GpuCommandEncoder::finish(encoder, None)]);
-            webgpu::GpuTexture::non_standard_present(texture);
+            graphics_context.present();
         }
     }
 }

@@ -85,7 +85,7 @@ fn draw_rectangle() {
                 }
             }
 
-            frame_buffer::FrameBuffer::present(buffer);
+            graphics_context.present();
         }
     }
 }
