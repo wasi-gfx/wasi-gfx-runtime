@@ -76,7 +76,7 @@ fn draw_triangle() {
     let mut green = false;
     loop {
         let vertex = webgpu::GpuVertexState {
-            module: device.create_shader_module(webgpu::GpuShaderModuleDescriptor {
+            module: &device.create_shader_module(webgpu::GpuShaderModuleDescriptor {
                 code: SHADER_CODE.to_string(),
                 label: None,
                 compilation_hints: None,
@@ -85,7 +85,7 @@ fn draw_triangle() {
             buffers: None,
         };
         let fragment = webgpu::GpuFragmentState {
-            module: device.create_shader_module(webgpu::GpuShaderModuleDescriptor {
+            module: &device.create_shader_module(webgpu::GpuShaderModuleDescriptor {
                 code: SHADER_CODE.to_string(),
                 label: None,
                 compilation_hints: None,
@@ -161,8 +161,13 @@ fn draw_triangle() {
                     view,
                     depth_slice: None,
                     resolve_target: None,
-                    clear_value: None,
-                    load_op: webgpu::GpuLoadOp::Load,
+                    clear_value: Some(webgpu::GpuColorDictOrListFloat64::GpuColorDict(webgpu::GpuColorDict {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.1,
+                        a: 0.0,
+                    })),
+                    load_op: webgpu::GpuLoadOp::Clear,
                     store_op: webgpu::GpuStoreOp::Store,
                 }],
                 depth_stencil_attachment: None,
@@ -172,7 +177,7 @@ fn draw_triangle() {
             };
             let render_pass = encoder.begin_render_pass(render_pass_description);
 
-            render_pass.set_pipeline(render_pipeline);
+            render_pass.set_pipeline(&render_pipeline);
             render_pass.draw(3, 1, 0, 0);
             webgpu::GpuRenderPassEncoder::end(render_pass, &encoder);
 

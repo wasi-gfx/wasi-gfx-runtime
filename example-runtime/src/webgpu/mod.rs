@@ -6,10 +6,18 @@ use crate::component::webgpu::webgpu;
 use crate::graphics_context::{GraphicsContext, GraphicsContextBuffer, GraphicsContextKind};
 use crate::HostState;
 
+use self::to_core_conversions::ToCore;
+
+// ToCore trait used for resources, records, and variants.
+// Into trait used for enums, since they never need table access.
+mod enum_conversions;
+mod to_core_conversions;
+
+#[derive(Clone, Copy)]
 pub struct Device {
     pub device: wgpu_core::id::DeviceId,
     // only needed when calling surface.get_capabilities in connect_graphics_context. If table would have a way to get parent from child, we could get it from device.
-    pub adapter: Resource<wgpu_core::id::AdapterId>,
+    pub adapter: wgpu_core::id::AdapterId,
 }
 
 impl webgpu::Host for HostState {
@@ -30,10 +38,7 @@ impl webgpu::HostGpuDevice for HostState {
             (),
         );
 
-        let host_daq = self.table.get(&device).unwrap();
-
-        // think the table should have a way to get parent so that we can get adapter from device.
-        let adapter = self.table.get(&host_daq.adapter).unwrap();
+        let host_device = self.table.get(&device).unwrap();
 
         let mut size = self.window.inner_size();
         size.width = size.width.max(1);
@@ -41,7 +46,7 @@ impl webgpu::HostGpuDevice for HostState {
 
         let swapchain_capabilities = self
             .instance
-            .surface_get_capabilities::<crate::Backend>(surface, *adapter)
+            .surface_get_capabilities::<crate::Backend>(surface, host_device.adapter)
             .unwrap();
         let swapchain_format = swapchain_capabilities.formats[0];
 
@@ -56,7 +61,7 @@ impl webgpu::HostGpuDevice for HostState {
         };
 
         self.instance
-            .surface_configure::<crate::Backend>(surface, host_daq.device, &config);
+            .surface_configure::<crate::Backend>(surface, host_device.device, &config);
 
         let context = self.table.get_mut(&context).unwrap();
 
@@ -68,7 +73,7 @@ impl webgpu::HostGpuDevice for HostState {
     fn create_command_encoder(
         &mut self,
         device: Resource<Device>,
-        _descriptor: Option<webgpu::GpuCommandEncoderDescriptor>,
+        descriptor: Option<webgpu::GpuCommandEncoderDescriptor>,
     ) -> wasmtime::Result<Resource<wgpu_core::id::CommandEncoderId>> {
         let host_daq = self.table.get(&device).unwrap();
 
@@ -76,7 +81,9 @@ impl webgpu::HostGpuDevice for HostState {
             self.instance
                 .device_create_command_encoder::<crate::Backend>(
                     host_daq.device,
-                    &wgpu_types::CommandEncoderDescriptor { label: None },
+                    &descriptor
+                        .map(|d| d.to_core(&self.table))
+                        .unwrap_or_default(),
                     (),
                 ),
         )
@@ -88,17 +95,16 @@ impl webgpu::HostGpuDevice for HostState {
     fn create_shader_module(
         &mut self,
         device: Resource<Device>,
-        desc: webgpu::GpuShaderModuleDescriptor,
+        descriptor: webgpu::GpuShaderModuleDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuShaderModule>> {
         let device = self.table.get(&device).unwrap();
 
+        let code =
+            wgpu_core::pipeline::ShaderModuleSource::Wgsl(Cow::Owned(descriptor.code.to_owned()));
         let shader = core_result(self.instance.device_create_shader_module::<crate::Backend>(
             device.device,
-            &wgpu_core::pipeline::ShaderModuleDescriptor {
-                label: desc.label.map(|label| label.into()),
-                shader_bound_checks: Default::default(),
-            },
-            wgpu_core::pipeline::ShaderModuleSource::Wgsl(Cow::Owned(desc.code)),
+            &descriptor.to_core(&self.table),
+            code,
             (),
         ))
         .unwrap();
@@ -109,59 +115,13 @@ impl webgpu::HostGpuDevice for HostState {
     fn create_render_pipeline(
         &mut self,
         device: Resource<Device>,
-        props: webgpu::GpuRenderPipelineDescriptor,
+        descriptor: webgpu::GpuRenderPipelineDescriptor,
     ) -> wasmtime::Result<Resource<wgpu_core::id::RenderPipelineId>> {
-        let vertex_module = self.table.get(&props.vertex.module).unwrap();
-        let vertex = wgpu_core::pipeline::VertexState {
-            stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
-                module: *vertex_module,
-                entry_point: props.vertex.entry_point.into(),
-            },
-            buffers: Cow::Borrowed(&[]),
-        };
+        let host_device = self.table.get(&device).unwrap();
 
-        let fragment = props.fragment.map(|fragment| {
-            let fragment_module = self.table.get(&fragment.module).unwrap();
-            wgpu_core::pipeline::FragmentState {
-                stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
-                    module: *fragment_module,
-                    entry_point: fragment.entry_point.into(),
-                },
-                // targets: fragment
-                //     .targets
-                //     .iter()
-                //     .map(|target| {
-                //         Some(wgpu_types::ColorTargetState {
-                //             format: (&target.format).into(),
-                //             blend: None,
-                //             write_mask: Default::default(),
-                //         })
-                //     })
-                //     .collect::<Vec<_>>()
-                //     .into(),
-                targets: vec![Some(wgpu_types::ColorTargetState {
-                    format: wgpu_types::TextureFormat::Bgra8UnormSrgb,
-                    blend: None,
-                    write_mask: Default::default(),
-                })]
-                .into(),
-            }
-        });
+        let descriptor = descriptor.to_core(&self.table);
 
-        let host_daq = self.table.get(&device).unwrap();
-
-        let desc = &wgpu_core::pipeline::RenderPipelineDescriptor {
-            vertex,
-            fragment,
-            primitive: wgpu_types::PrimitiveState::default(),
-            depth_stencil: Default::default(),
-            multisample: Default::default(),
-            multiview: Default::default(),
-            label: Default::default(),
-            layout: Default::default(),
-        };
-
-        let implicit_pipeline_ids = match desc.layout {
+        let implicit_pipeline_ids = match descriptor.layout {
             Some(_) => None,
             None => Some(wgpu_core::device::ImplicitPipelineIds {
                 root_id: (),
@@ -171,8 +131,8 @@ impl webgpu::HostGpuDevice for HostState {
         let render_pipeline = core_result(
             self.instance
                 .device_create_render_pipeline::<crate::Backend>(
-                    host_daq.device,
-                    desc,
+                    host_device.device,
+                    &descriptor,
                     (),
                     implicit_pipeline_ids,
                 ),
@@ -186,55 +146,84 @@ impl webgpu::HostGpuDevice for HostState {
         Ok(Resource::new_own(device.rep()))
     }
 
-    fn drop(&mut self, _rep: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
-        Ok(())
-    }
-
     fn features(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        device: Resource<webgpu::GpuDevice>,
     ) -> wasmtime::Result<Resource<webgpu::GpuSupportedFeatures>> {
-        todo!()
+        let device = self.table.get(&device).unwrap();
+        let features = self
+            .instance
+            .device_features::<crate::Backend>(device.device)
+            .unwrap();
+        Ok(self.table.push(features).unwrap())
     }
 
     fn limits(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
     ) -> wasmtime::Result<Resource<webgpu::GpuSupportedLimits>> {
         todo!()
     }
 
-    fn destroy(&mut self, _self_: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
+    fn destroy(&mut self, _device: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
         todo!()
     }
 
     fn create_buffer(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuBufferDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuBufferDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuBuffer>> {
-        todo!()
+        let device = self.table.get(&device).unwrap();
+
+        let buffer = core_result(self.instance.device_create_buffer::<crate::Backend>(
+            device.device,
+            &descriptor.to_core(&self.table),
+            (),
+        ))
+        .unwrap();
+
+        Ok(self.table.push(buffer).unwrap())
     }
 
     fn create_texture(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuTextureDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuTextureDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuTexture>> {
-        todo!()
+        let device = *self.table.get(&device).unwrap();
+        let texture = core_result(self.instance.device_create_texture::<crate::Backend>(
+            device.device,
+            &descriptor.to_core(&self.table),
+            (),
+        ))
+        .unwrap();
+
+        Ok(self.table.push(texture).unwrap())
     }
 
     fn create_sampler(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
-        _descriptor: Option<webgpu::GpuSamplerDescriptor>,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: Option<webgpu::GpuSamplerDescriptor>,
     ) -> wasmtime::Result<Resource<webgpu::GpuSampler>> {
-        todo!()
+        let device = self.table.get(&device).unwrap();
+
+        let descriptor = descriptor.unwrap();
+
+        let sampler = core_result(self.instance.device_create_sampler::<crate::Backend>(
+            device.device,
+            &descriptor.to_core(&self.table),
+            (),
+        ))
+        .unwrap();
+
+        Ok(self.table.push(sampler).unwrap())
     }
 
     fn import_external_texture(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
         _descriptor: webgpu::GpuExternalTextureDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuExternalTexture>> {
         todo!()
@@ -242,31 +231,64 @@ impl webgpu::HostGpuDevice for HostState {
 
     fn create_bind_group_layout(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuBindGroupLayoutDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuBindGroupLayoutDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuBindGroupLayout>> {
-        todo!()
+        let device = self.table.get(&device).unwrap();
+
+        let bind_group_layout = core_result(
+            self.instance
+                .device_create_bind_group_layout::<crate::Backend>(
+                    device.device,
+                    &descriptor.to_core(&self.table),
+                    (),
+                ),
+        )
+        .unwrap();
+
+        Ok(self.table.push(bind_group_layout).unwrap())
     }
 
     fn create_pipeline_layout(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuPipelineLayoutDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuPipelineLayoutDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuPipelineLayout>> {
-        todo!()
+        let device = *self.table.get(&device).unwrap();
+
+        let pipeline_layout = core_result(
+            self.instance
+                .device_create_pipeline_layout::<crate::Backend>(
+                    device.device,
+                    &descriptor.to_core(&self.table),
+                    (),
+                ),
+        )
+        .unwrap();
+
+        Ok(self.table.push(pipeline_layout).unwrap())
     }
 
     fn create_bind_group(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuBindGroupDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuBindGroupDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuBindGroup>> {
-        todo!()
+        let device = *self.table.get(&device).unwrap();
+
+        let bind_group = core_result(self.instance.device_create_bind_group::<crate::Backend>(
+            device.device,
+            &descriptor.to_core(&self.table),
+            (),
+        ))
+        .unwrap();
+
+        Ok(self.table.push(bind_group).unwrap())
     }
 
     fn create_compute_pipeline(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
         _descriptor: webgpu::GpuComputePipelineDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuComputePipeline>> {
         todo!()
@@ -290,7 +312,7 @@ impl webgpu::HostGpuDevice for HostState {
 
     fn create_render_bundle_encoder(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
         _descriptor: webgpu::GpuRenderBundleEncoderDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuRenderBundleEncoder>> {
         todo!()
@@ -298,19 +320,19 @@ impl webgpu::HostGpuDevice for HostState {
 
     fn create_query_set(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
         _descriptor: webgpu::GpuQuerySetDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuQuerySet>> {
         todo!()
     }
 
-    fn label(&mut self, _self_: Resource<webgpu::GpuDevice>) -> wasmtime::Result<String> {
+    fn label(&mut self, _device: Resource<webgpu::GpuDevice>) -> wasmtime::Result<String> {
         todo!()
     }
 
     fn set_label(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
         _label: String,
     ) -> wasmtime::Result<()> {
         todo!()
@@ -318,14 +340,14 @@ impl webgpu::HostGpuDevice for HostState {
 
     fn lost(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
     ) -> wasmtime::Result<Resource<webgpu::GpuDeviceLostInfo>> {
         todo!()
     }
 
     fn push_error_scope(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
         _filter: webgpu::GpuErrorFilter,
     ) -> wasmtime::Result<()> {
         todo!()
@@ -333,16 +355,20 @@ impl webgpu::HostGpuDevice for HostState {
 
     fn pop_error_scope(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
     ) -> wasmtime::Result<Resource<webgpu::GpuError>> {
         todo!()
     }
 
     fn onuncapturederror(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
+        _device: Resource<webgpu::GpuDevice>,
     ) -> wasmtime::Result<Resource<webgpu::EventHandler>> {
         todo!()
+    }
+
+    fn drop(&mut self, _rep: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
+        Ok(())
     }
 }
 
@@ -362,14 +388,18 @@ impl webgpu::HostGpuTexture for HostState {
     fn create_view(
         &mut self,
         texture: Resource<wgpu_core::id::TextureId>,
-        _descriptor: Option<webgpu::GpuTextureViewDescriptor>,
+        descriptor: Option<webgpu::GpuTextureViewDescriptor>,
     ) -> wasmtime::Result<Resource<wgpu_core::id::TextureViewId>> {
         let texture_id = *self.table.get(&texture).unwrap();
-        let texture_view = core_result(self.instance.texture_create_view::<crate::Backend>(
-            texture_id,
-            &Default::default(),
-            (),
-        ))
+        let texture_view = core_result(
+            self.instance.texture_create_view::<crate::Backend>(
+                texture_id,
+                &descriptor
+                    .map(|d| d.to_core(&self.table))
+                    .unwrap_or_default(),
+                (),
+            ),
+        )
         .unwrap();
         Ok(self.table.push(texture_view).unwrap())
     }
@@ -558,16 +588,20 @@ impl webgpu::HostGpuAdapter for HostState {
     fn request_device(
         &mut self,
         adapter: Resource<wgpu_core::id::AdapterId>,
-        _descriptor: Option<webgpu::GpuDeviceDescriptor>,
+        descriptor: Option<webgpu::GpuDeviceDescriptor>,
     ) -> wasmtime::Result<Resource<webgpu::GpuDevice>> {
         let adapter_id = self.table.get(&adapter).unwrap();
 
-        let device_id = core_result(self.instance.adapter_request_device::<crate::Backend>(
-            *adapter_id,
-            &Default::default(),
-            None,
-            Default::default(),
-        ))
+        let device_id = core_result(
+            self.instance.adapter_request_device::<crate::Backend>(
+                *adapter_id,
+                &descriptor
+                    .map(|d| d.to_core(&self.table))
+                    .unwrap_or_default(),
+                None,
+                (),
+            ),
+        )
         .unwrap();
 
         let daq = self
@@ -575,7 +609,7 @@ impl webgpu::HostGpuAdapter for HostState {
             .push_child(
                 Device {
                     device: device_id,
-                    adapter: Resource::new_own(adapter.rep()),
+                    adapter: *adapter_id,
                 },
                 &adapter,
             )
@@ -693,42 +727,9 @@ impl webgpu::HostGpuCommandEncoder for HostState {
         command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
         descriptor: webgpu::GpuRenderPassDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuRenderPassEncoder>> {
-        let command_encoder = self.table.get(&command_encoder).unwrap();
-        let views = descriptor
-            .color_attachments
-            .iter()
-            .map(|color_attachment| *self.table.get(&color_attachment.view).unwrap())
-            .collect::<Vec<_>>();
-
-        let mut color_attachments = vec![];
-        for (i, _color_attachment) in descriptor.color_attachments.iter().enumerate() {
-            color_attachments.push(Some(wgpu_core::command::RenderPassColorAttachment {
-                view: views[i],
-                // TODO: take from descriptor
-                resolve_target: None,
-                channel: wgpu_core::command::PassChannel {
-                    load_op: wgpu_core::command::LoadOp::Clear,
-                    store_op: wgpu_core::command::StoreOp::Store,
-                    clear_value: wgpu_types::Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.1,
-                        a: 0.0,
-                    },
-                    read_only: false,
-                },
-            }));
-        }
-
         let render_pass = wgpu_core::command::RenderPass::new(
-            *command_encoder,
-            &wgpu_core::command::RenderPassDescriptor {
-                color_attachments: color_attachments.into(),
-                label: None,
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            },
+            command_encoder.to_core(&self.table),
+            &descriptor.to_core(&self.table),
         );
 
         Ok(self.table.push(render_pass).unwrap())
@@ -737,12 +738,16 @@ impl webgpu::HostGpuCommandEncoder for HostState {
     fn finish(
         &mut self,
         command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
-        _descriptor: Option<webgpu::GpuCommandBufferDescriptor>,
+        descriptor: Option<webgpu::GpuCommandBufferDescriptor>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCommandBuffer>> {
         let command_encoder = self.table.delete(command_encoder).unwrap();
         let command_buffer = core_result(
-            self.instance
-                .command_encoder_finish::<crate::Backend>(command_encoder, &Default::default()),
+            self.instance.command_encoder_finish::<crate::Backend>(
+                command_encoder,
+                &descriptor
+                    .map(|d| d.to_core(&self.table))
+                    .unwrap_or_default(),
+            ),
         )
         .unwrap();
         Ok(self.table.push(command_buffer).unwrap())
@@ -869,9 +874,9 @@ impl webgpu::HostGpuRenderPassEncoder for HostState {
         render_pass: Resource<wgpu_core::command::RenderPass>,
         pipeline: Resource<webgpu::GpuRenderPipeline>,
     ) -> wasmtime::Result<()> {
-        let pipeline = *self.table.get(&pipeline).unwrap();
-        let cwr = self.table.get_mut(&render_pass).unwrap();
-        wgpu_core::command::render_ffi::wgpu_render_pass_set_pipeline(cwr, pipeline);
+        let pipeline = pipeline.to_core(&self.table);
+        let render_pass = self.table.get_mut(&render_pass).unwrap();
+        wgpu_core::command::render_ffi::wgpu_render_pass_set_pipeline(render_pass, pipeline);
         Ok(())
     }
 
@@ -2084,165 +2089,6 @@ impl webgpu::HostArrayBuffer for HostState {
 impl webgpu::HostUint32Array for HostState {
     fn drop(&mut self, _rep: Resource<webgpu::Uint32Array>) -> wasmtime::Result<()> {
         todo!()
-    }
-}
-
-impl From<&wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
-    fn from(value: &wgpu_types::TextureFormat) -> Self {
-        match value {
-            wgpu_types::TextureFormat::Bgra8UnormSrgb => webgpu::GpuTextureFormat::Bgra8unormSrgb,
-            _ => todo!(),
-        }
-    }
-}
-impl From<&webgpu::GpuTextureFormat> for wgpu_types::TextureFormat {
-    fn from(value: &webgpu::GpuTextureFormat) -> Self {
-        match value {
-            webgpu::GpuTextureFormat::Bgra8unormSrgb => wgpu_types::TextureFormat::Bgra8UnormSrgb,
-            webgpu::GpuTextureFormat::R8unorm => wgpu_types::TextureFormat::R8Unorm,
-            webgpu::GpuTextureFormat::R8snorm => wgpu_types::TextureFormat::R8Snorm,
-            webgpu::GpuTextureFormat::R8uint => wgpu_types::TextureFormat::R8Uint,
-            webgpu::GpuTextureFormat::R8sint => wgpu_types::TextureFormat::R8Sint,
-            webgpu::GpuTextureFormat::R16uint => wgpu_types::TextureFormat::R16Uint,
-            webgpu::GpuTextureFormat::R16sint => wgpu_types::TextureFormat::R16Sint,
-            webgpu::GpuTextureFormat::R16float => wgpu_types::TextureFormat::R16Float,
-            webgpu::GpuTextureFormat::Rg8unorm => wgpu_types::TextureFormat::Rg8Unorm,
-            webgpu::GpuTextureFormat::Rg8snorm => wgpu_types::TextureFormat::Rg8Snorm,
-            webgpu::GpuTextureFormat::Rg8uint => wgpu_types::TextureFormat::Rg8Uint,
-            webgpu::GpuTextureFormat::Rg8sint => wgpu_types::TextureFormat::Rg8Sint,
-            webgpu::GpuTextureFormat::R32uint => wgpu_types::TextureFormat::R32Uint,
-            webgpu::GpuTextureFormat::R32sint => wgpu_types::TextureFormat::R32Sint,
-            webgpu::GpuTextureFormat::R32float => wgpu_types::TextureFormat::R32Float,
-            webgpu::GpuTextureFormat::Rg16uint => wgpu_types::TextureFormat::Rg16Uint,
-            webgpu::GpuTextureFormat::Rg16sint => wgpu_types::TextureFormat::Rg16Sint,
-            webgpu::GpuTextureFormat::Rg16float => wgpu_types::TextureFormat::Rg16Float,
-            webgpu::GpuTextureFormat::Rgba8unorm => wgpu_types::TextureFormat::Rgba8Unorm,
-            webgpu::GpuTextureFormat::Rgba8unormSrgb => wgpu_types::TextureFormat::Rgba8UnormSrgb,
-            webgpu::GpuTextureFormat::Rgba8snorm => wgpu_types::TextureFormat::Rgba8Snorm,
-            webgpu::GpuTextureFormat::Rgba8uint => wgpu_types::TextureFormat::Rgba8Uint,
-            webgpu::GpuTextureFormat::Rgba8sint => wgpu_types::TextureFormat::Rgba8Sint,
-            webgpu::GpuTextureFormat::Bgra8unorm => wgpu_types::TextureFormat::Bgra8Unorm,
-            webgpu::GpuTextureFormat::Rgb9e5ufloat => wgpu_types::TextureFormat::Rgb9e5Ufloat,
-            webgpu::GpuTextureFormat::Rgb10a2uint => wgpu_types::TextureFormat::Rgb10a2Uint,
-            webgpu::GpuTextureFormat::Rgb10a2unorm => wgpu_types::TextureFormat::Rgb10a2Unorm,
-            webgpu::GpuTextureFormat::Rg11b10ufloat => wgpu_types::TextureFormat::Rg11b10Float,
-            webgpu::GpuTextureFormat::Rg32uint => wgpu_types::TextureFormat::Rg32Uint,
-            webgpu::GpuTextureFormat::Rg32sint => wgpu_types::TextureFormat::Rg32Sint,
-            webgpu::GpuTextureFormat::Rg32float => wgpu_types::TextureFormat::Rg32Float,
-            webgpu::GpuTextureFormat::Rgba16uint => wgpu_types::TextureFormat::Rgba16Uint,
-            webgpu::GpuTextureFormat::Rgba16sint => wgpu_types::TextureFormat::Rgba16Sint,
-            webgpu::GpuTextureFormat::Rgba16float => wgpu_types::TextureFormat::Rgba16Float,
-            webgpu::GpuTextureFormat::Rgba32uint => wgpu_types::TextureFormat::Rgba32Uint,
-            webgpu::GpuTextureFormat::Rgba32sint => wgpu_types::TextureFormat::Rgba32Sint,
-            webgpu::GpuTextureFormat::Rgba32float => wgpu_types::TextureFormat::Rgba32Float,
-            webgpu::GpuTextureFormat::Stencil8 => wgpu_types::TextureFormat::Stencil8,
-            webgpu::GpuTextureFormat::Depth16unorm => wgpu_types::TextureFormat::Depth16Unorm,
-            webgpu::GpuTextureFormat::Depth24plus => wgpu_types::TextureFormat::Depth24Plus,
-            webgpu::GpuTextureFormat::Depth24plusStencil8 => {
-                wgpu_types::TextureFormat::Depth24PlusStencil8
-            }
-            webgpu::GpuTextureFormat::Depth32float => wgpu_types::TextureFormat::Depth32Float,
-            webgpu::GpuTextureFormat::Depth32floatStencil8 => {
-                wgpu_types::TextureFormat::Depth32FloatStencil8
-            }
-            webgpu::GpuTextureFormat::Bc1RgbaUnorm => wgpu_types::TextureFormat::Bc1RgbaUnorm,
-            webgpu::GpuTextureFormat::Bc1RgbaUnormSrgb => {
-                wgpu_types::TextureFormat::Bc1RgbaUnormSrgb
-            }
-            webgpu::GpuTextureFormat::Bc2RgbaUnorm => wgpu_types::TextureFormat::Bc2RgbaUnorm,
-            webgpu::GpuTextureFormat::Bc2RgbaUnormSrgb => {
-                wgpu_types::TextureFormat::Bc2RgbaUnormSrgb
-            }
-            webgpu::GpuTextureFormat::Bc3RgbaUnorm => wgpu_types::TextureFormat::Bc3RgbaUnorm,
-            webgpu::GpuTextureFormat::Bc3RgbaUnormSrgb => {
-                wgpu_types::TextureFormat::Bc3RgbaUnormSrgb
-            }
-            webgpu::GpuTextureFormat::Bc4RUnorm => wgpu_types::TextureFormat::Bc4RUnorm,
-            webgpu::GpuTextureFormat::Bc4RSnorm => wgpu_types::TextureFormat::Bc4RSnorm,
-            webgpu::GpuTextureFormat::Bc5RgUnorm => wgpu_types::TextureFormat::Bc5RgUnorm,
-            webgpu::GpuTextureFormat::Bc5RgSnorm => wgpu_types::TextureFormat::Bc5RgSnorm,
-            webgpu::GpuTextureFormat::Bc6hRgbUfloat => wgpu_types::TextureFormat::Bc6hRgbUfloat,
-            webgpu::GpuTextureFormat::Bc6hRgbFloat => wgpu_types::TextureFormat::Bc6hRgbFloat,
-            webgpu::GpuTextureFormat::Bc7RgbaUnorm => wgpu_types::TextureFormat::Bc7RgbaUnorm,
-            webgpu::GpuTextureFormat::Bc7RgbaUnormSrgb => {
-                wgpu_types::TextureFormat::Bc7RgbaUnormSrgb
-            }
-            webgpu::GpuTextureFormat::Etc2Rgb8unorm => wgpu_types::TextureFormat::Etc2Rgb8Unorm,
-            webgpu::GpuTextureFormat::Etc2Rgb8unormSrgb => {
-                wgpu_types::TextureFormat::Etc2Rgb8UnormSrgb
-            }
-            webgpu::GpuTextureFormat::Etc2Rgb8a1unorm => wgpu_types::TextureFormat::Etc2Rgb8A1Unorm,
-            webgpu::GpuTextureFormat::Etc2Rgb8a1unormSrgb => {
-                wgpu_types::TextureFormat::Etc2Rgb8A1UnormSrgb
-            }
-            webgpu::GpuTextureFormat::Etc2Rgba8unorm => wgpu_types::TextureFormat::Etc2Rgba8Unorm,
-            webgpu::GpuTextureFormat::Etc2Rgba8unormSrgb => {
-                wgpu_types::TextureFormat::Etc2Rgba8UnormSrgb
-            }
-            webgpu::GpuTextureFormat::EacR11unorm => wgpu_types::TextureFormat::EacR11Unorm,
-            webgpu::GpuTextureFormat::EacR11snorm => wgpu_types::TextureFormat::EacR11Snorm,
-            webgpu::GpuTextureFormat::EacRg11unorm => wgpu_types::TextureFormat::EacRg11Unorm,
-            webgpu::GpuTextureFormat::EacRg11snorm => wgpu_types::TextureFormat::EacRg11Snorm,
-            webgpu::GpuTextureFormat::Astc4x4Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc4x4UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc5x4Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc5x4UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc5x5Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc5x5UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc6x5Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc6x5UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc6x6Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc6x6UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc8x5Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc8x5UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc8x6Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc8x6UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc8x8Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc8x8UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc10x5Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc10x5UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc10x6Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc10x6UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc10x8Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc10x8UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc10x10Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc10x10UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc12x10Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc12x10UnormSrgb => todo!(),
-            webgpu::GpuTextureFormat::Astc12x12Unorm => todo!(),
-            webgpu::GpuTextureFormat::Astc12x12UnormSrgb => todo!(),
-        }
-    }
-}
-
-impl From<&webgpu::GpuPrimitiveTopology> for wgpu_types::PrimitiveTopology {
-    fn from(value: &webgpu::GpuPrimitiveTopology) -> Self {
-        match value {
-            webgpu::GpuPrimitiveTopology::PointList => wgpu_types::PrimitiveTopology::PointList,
-            webgpu::GpuPrimitiveTopology::LineList => wgpu_types::PrimitiveTopology::LineList,
-            webgpu::GpuPrimitiveTopology::LineStrip => wgpu_types::PrimitiveTopology::LineStrip,
-            webgpu::GpuPrimitiveTopology::TriangleList => {
-                wgpu_types::PrimitiveTopology::TriangleList
-            }
-            webgpu::GpuPrimitiveTopology::TriangleStrip => {
-                wgpu_types::PrimitiveTopology::TriangleStrip
-            }
-        }
-    }
-}
-impl From<&wgpu_types::PrimitiveTopology> for webgpu::GpuPrimitiveTopology {
-    fn from(value: &wgpu_types::PrimitiveTopology) -> Self {
-        match value {
-            wgpu_types::PrimitiveTopology::PointList => webgpu::GpuPrimitiveTopology::PointList,
-            wgpu_types::PrimitiveTopology::LineList => webgpu::GpuPrimitiveTopology::LineList,
-            wgpu_types::PrimitiveTopology::LineStrip => webgpu::GpuPrimitiveTopology::LineStrip,
-            wgpu_types::PrimitiveTopology::TriangleList => {
-                webgpu::GpuPrimitiveTopology::TriangleList
-            }
-            wgpu_types::PrimitiveTopology::TriangleStrip => {
-                webgpu::GpuPrimitiveTopology::TriangleStrip
-            }
-        }
     }
 }
 

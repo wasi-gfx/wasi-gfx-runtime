@@ -358,7 +358,7 @@ interface webgpu {
     set-label: func(label: string);
   }
   record gpu-pipeline-layout-descriptor {
-    bind-group-layouts: list<gpu-bind-group-layout>,
+    bind-group-layouts: list<borrow<gpu-bind-group-layout>>,
     label: option<string>,
   }
   resource gpu-bind-group {
@@ -427,11 +427,11 @@ interface webgpu {
     push-debug-group: func(group-label: string);
     pop-debug-group: func();
     insert-debug-marker: func(marker-label: string);
-    set-bind-group: func(index: gpu-index32, bind-group: gpu-bind-group, dynamic-offsets: option<list<gpu-buffer-dynamic-offset>>);
+    set-bind-group: func(index: gpu-index32, bind-group: borrow<gpu-bind-group>, dynamic-offsets: option<list<gpu-buffer-dynamic-offset>>);
     // set-bind-group: func(index: gpu-index32, bind-group: gpu-bind-group, dynamic-offsets-data: uint32-array, dynamic-offsets-data-start: gpu-size64, dynamic-offsets-data-length: gpu-size32);
-    set-pipeline: func(pipeline: gpu-render-pipeline);
+    set-pipeline: func(pipeline: borrow<gpu-render-pipeline>);
     set-index-buffer: func(buffer: gpu-buffer, index-format: gpu-index-format, offset: option<gpu-size64>, size: option<gpu-size64>);
-    set-vertex-buffer: func(slot: gpu-index32, buffer: gpu-buffer, offset: option<gpu-size64>, size: option<gpu-size64>);
+    set-vertex-buffer: func(slot: gpu-index32, buffer: borrow<gpu-buffer>, offset: option<gpu-size64>, size: option<gpu-size64>);
     draw: func(vertex-count: gpu-size32, instance-count: option<gpu-size32>, first-vertex: option<gpu-size32>, first-instance: option<gpu-size32>);
     draw-indexed: func(index-count: gpu-size32, instance-count: option<gpu-size32>, first-index: option<gpu-size32>, base-vertex: option<gpu-signed-offset32>, first-instance: option<gpu-size32>);
     draw-indirect: func(indirect-buffer: gpu-buffer, indirect-offset: gpu-size64);
@@ -638,14 +638,14 @@ interface webgpu {
     label: option<string>,
   }
   record gpu-programmable-stage {
-    module: gpu-shader-module,
+    module: borrow<gpu-shader-module>,
     entry-point: option<string>,
     // record<USVString, GPUPipelineConstantValue> constants;
   }
   type gpu-pipeline-constant-value = float64;
   record gpu-vertex-state {
     buffers: option<list<gpu-vertex-buffer-layout>>,
-    module: gpu-shader-module,
+    module: borrow<gpu-shader-module>,
     entry-point: string,
     // record<USVString, GPUPipelineConstantValue> constants;
   }
@@ -676,7 +676,7 @@ interface webgpu {
   record gpu-fragment-state {
     // TODO: Panic in runtime with this enabled. Need to figure out why.
     // targets: list<gpu-color-target-state>,
-    module: gpu-shader-module,
+    module: borrow<gpu-shader-module>,
     entry-point: string,
     // record<USVString, GPUPipelineConstantValue> constants;
   }
@@ -866,11 +866,11 @@ interface webgpu {
     push-debug-group: func(group-label: string);
     pop-debug-group: func();
     insert-debug-marker: func(marker-label: string);
-    set-bind-group: func(index: gpu-index32, bind-group: gpu-bind-group, dynamic-offsets: option<list<gpu-buffer-dynamic-offset>>);
+    set-bind-group: func(index: gpu-index32, bind-group: borrow<gpu-bind-group>, dynamic-offsets: option<list<gpu-buffer-dynamic-offset>>);
     // set-bind-group: func(index: gpu-index32, bind-group: gpu-bind-group, dynamic-offsets-data: uint32-array, dynamic-offsets-data-start: gpu-size64, dynamic-offsets-data-length: gpu-size32);
-    set-pipeline: func(pipeline: gpu-render-pipeline);
+    set-pipeline: func(pipeline: borrow<gpu-render-pipeline>);
     set-index-buffer: func(buffer: gpu-buffer, index-format: gpu-index-format, offset: gpu-size64, size: gpu-size64);
-    set-vertex-buffer: func(slot: gpu-index32, buffer: gpu-buffer, offset: gpu-size64, size: gpu-size64);
+    set-vertex-buffer: func(slot: gpu-index32, buffer: borrow<gpu-buffer>, offset: gpu-size64, size: gpu-size64);
     draw: func(vertex-count: gpu-size32, instance-count: gpu-size32, first-vertex: gpu-size32, first-instance: gpu-size32);
     draw-indexed: func(index-count: gpu-size32, instance-count: gpu-size32, first-index: gpu-size32, base-vertex: gpu-signed-offset32, first-instance: gpu-size32);
     draw-indirect: func(indirect-buffer: gpu-buffer, indirect-offset: gpu-size64);
@@ -885,7 +885,7 @@ interface webgpu {
     label: option<string>,
   }
   resource gpu-compute-pass-encoder {
-    set-pipeline: func(pipeline: gpu-compute-pipeline);
+    set-pipeline: func(pipeline: borrow<gpu-compute-pipeline>);
     dispatch-workgroups: func(workgroup-count-x: gpu-size32, workgroup-count-y: option<gpu-size32>, workgroup-count-z: option<gpu-size32>);
     dispatch-workgroups-indirect: func(indirect-buffer: gpu-buffer, indirect-offset: gpu-size64);
     end: func();
@@ -894,7 +894,7 @@ interface webgpu {
     push-debug-group: func(group-label: string);
     pop-debug-group: func();
     insert-debug-marker: func(marker-label: string);
-    set-bind-group: func(index: gpu-index32, bind-group: gpu-bind-group, dynamic-offsets: option<list<gpu-buffer-dynamic-offset>>);
+    set-bind-group: func(index: gpu-index32, bind-group: borrow<gpu-bind-group>, dynamic-offsets: option<list<gpu-buffer-dynamic-offset>>);
     // set-bind-group: func(index: gpu-index32, bind-group: gpu-bind-group, dynamic-offsets-data: uint32-array, dynamic-offsets-data-start: gpu-size64, dynamic-offsets-data-length: gpu-size32);
   }
   record gpu-compute-pass-descriptor {
@@ -926,7 +926,7 @@ interface webgpu {
     store-op: gpu-store-op,
   }
   record gpu-render-pass-depth-stencil-attachment {
-    view: gpu-texture-view,
+    view: borrow<gpu-texture-view>,
     depth-clear-value: option<float32>,
     depth-load-op: option<gpu-load-op>,
     depth-store-op: option<gpu-store-op>,

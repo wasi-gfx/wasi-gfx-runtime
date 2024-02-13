@@ -48,6 +48,7 @@ struct RuntimeArgs {
 
 // needed for wasmtime::component::bindgen! as it only looks in the current crate.
 pub(crate) use wgpu_core;
+pub(crate) use wgpu_types;
 
 wasmtime::component::bindgen!({
     path: "../wit/",
@@ -69,7 +70,13 @@ wasmtime::component::bindgen!({
         "component:webgpu/webgpu/gpu-shader-module": wgpu_core::id::ShaderModuleId,
         "component:webgpu/webgpu/gpu-render-pipeline": wgpu_core::id::RenderPipelineId,
         "component:webgpu/webgpu/gpu-command-buffer": wgpu_core::id::CommandBufferId,
+        "component:webgpu/webgpu/gpu-buffer": wgpu_core::id::BufferId,
+        "component:webgpu/webgpu/gpu-pipeline-layout": wgpu_core::id::PipelineLayoutId,
+        "component:webgpu/webgpu/gpu-bind-group-layout": wgpu_core::id::BindGroupLayoutId,
+        "component:webgpu/webgpu/gpu-sampler": wgpu_core::id::SamplerId,
+        "component:webgpu/webgpu/gpu-supported-features": wgpu_types::Features,
         "component:webgpu/webgpu/gpu-texture": wgpu_core::id::TextureId,
+        "component:webgpu/webgpu/gpu-bind-group": wgpu_core::id::BindGroupId,
         "component:webgpu/webgpu/gpu-texture-view": wgpu_core::id::TextureViewId,
         "component:webgpu/frame-buffer/frame-buffer": frame_buffer::FrameBuffer,
         "component:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
