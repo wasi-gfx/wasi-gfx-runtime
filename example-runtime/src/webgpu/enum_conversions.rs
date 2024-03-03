@@ -4,7 +4,79 @@ impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
     fn from(value: wgpu_types::TextureFormat) -> Self {
         match value {
             wgpu_types::TextureFormat::Bgra8UnormSrgb => webgpu::GpuTextureFormat::Bgra8unormSrgb,
-            _ => todo!(),
+            wgpu_types::TextureFormat::R8Unorm => todo!(),
+            wgpu_types::TextureFormat::R8Snorm => todo!(),
+            wgpu_types::TextureFormat::R8Uint => todo!(),
+            wgpu_types::TextureFormat::R8Sint => todo!(),
+            wgpu_types::TextureFormat::R16Uint => todo!(),
+            wgpu_types::TextureFormat::R16Sint => todo!(),
+            wgpu_types::TextureFormat::R16Unorm => todo!(),
+            wgpu_types::TextureFormat::R16Snorm => todo!(),
+            wgpu_types::TextureFormat::R16Float => todo!(),
+            wgpu_types::TextureFormat::Rg8Unorm => todo!(),
+            wgpu_types::TextureFormat::Rg8Snorm => todo!(),
+            wgpu_types::TextureFormat::Rg8Uint => todo!(),
+            wgpu_types::TextureFormat::Rg8Sint => todo!(),
+            wgpu_types::TextureFormat::R32Uint => todo!(),
+            wgpu_types::TextureFormat::R32Sint => todo!(),
+            wgpu_types::TextureFormat::R32Float => todo!(),
+            wgpu_types::TextureFormat::Rg16Uint => todo!(),
+            wgpu_types::TextureFormat::Rg16Sint => todo!(),
+            wgpu_types::TextureFormat::Rg16Unorm => todo!(),
+            wgpu_types::TextureFormat::Rg16Snorm => todo!(),
+            wgpu_types::TextureFormat::Rg16Float => todo!(),
+            wgpu_types::TextureFormat::Rgba8Unorm => todo!(),
+            wgpu_types::TextureFormat::Rgba8UnormSrgb => todo!(),
+            wgpu_types::TextureFormat::Rgba8Snorm => todo!(),
+            wgpu_types::TextureFormat::Rgba8Uint => todo!(),
+            wgpu_types::TextureFormat::Rgba8Sint => todo!(),
+            wgpu_types::TextureFormat::Bgra8Unorm => todo!(),
+            wgpu_types::TextureFormat::Rgb9e5Ufloat => todo!(),
+            wgpu_types::TextureFormat::Rgb10a2Uint => todo!(),
+            wgpu_types::TextureFormat::Rgb10a2Unorm => todo!(),
+            wgpu_types::TextureFormat::Rg11b10Float => todo!(),
+            wgpu_types::TextureFormat::Rg32Uint => todo!(),
+            wgpu_types::TextureFormat::Rg32Sint => todo!(),
+            wgpu_types::TextureFormat::Rg32Float => todo!(),
+            wgpu_types::TextureFormat::Rgba16Uint => todo!(),
+            wgpu_types::TextureFormat::Rgba16Sint => todo!(),
+            wgpu_types::TextureFormat::Rgba16Unorm => todo!(),
+            wgpu_types::TextureFormat::Rgba16Snorm => todo!(),
+            wgpu_types::TextureFormat::Rgba16Float => todo!(),
+            wgpu_types::TextureFormat::Rgba32Uint => todo!(),
+            wgpu_types::TextureFormat::Rgba32Sint => todo!(),
+            wgpu_types::TextureFormat::Rgba32Float => todo!(),
+            wgpu_types::TextureFormat::Stencil8 => todo!(),
+            wgpu_types::TextureFormat::Depth16Unorm => todo!(),
+            wgpu_types::TextureFormat::Depth24Plus => todo!(),
+            wgpu_types::TextureFormat::Depth24PlusStencil8 => todo!(),
+            wgpu_types::TextureFormat::Depth32Float => todo!(),
+            wgpu_types::TextureFormat::Depth32FloatStencil8 => todo!(),
+            wgpu_types::TextureFormat::Bc1RgbaUnorm => todo!(),
+            wgpu_types::TextureFormat::Bc1RgbaUnormSrgb => todo!(),
+            wgpu_types::TextureFormat::Bc2RgbaUnorm => todo!(),
+            wgpu_types::TextureFormat::Bc2RgbaUnormSrgb => todo!(),
+            wgpu_types::TextureFormat::Bc3RgbaUnorm => todo!(),
+            wgpu_types::TextureFormat::Bc3RgbaUnormSrgb => todo!(),
+            wgpu_types::TextureFormat::Bc4RUnorm => todo!(),
+            wgpu_types::TextureFormat::Bc4RSnorm => todo!(),
+            wgpu_types::TextureFormat::Bc5RgUnorm => todo!(),
+            wgpu_types::TextureFormat::Bc5RgSnorm => todo!(),
+            wgpu_types::TextureFormat::Bc6hRgbUfloat => todo!(),
+            wgpu_types::TextureFormat::Bc6hRgbFloat => todo!(),
+            wgpu_types::TextureFormat::Bc7RgbaUnorm => todo!(),
+            wgpu_types::TextureFormat::Bc7RgbaUnormSrgb => todo!(),
+            wgpu_types::TextureFormat::Etc2Rgb8Unorm => todo!(),
+            wgpu_types::TextureFormat::Etc2Rgb8UnormSrgb => todo!(),
+            wgpu_types::TextureFormat::Etc2Rgb8A1Unorm => todo!(),
+            wgpu_types::TextureFormat::Etc2Rgb8A1UnormSrgb => todo!(),
+            wgpu_types::TextureFormat::Etc2Rgba8Unorm => todo!(),
+            wgpu_types::TextureFormat::Etc2Rgba8UnormSrgb => todo!(),
+            wgpu_types::TextureFormat::EacR11Unorm => todo!(),
+            wgpu_types::TextureFormat::EacR11Snorm => todo!(),
+            wgpu_types::TextureFormat::EacRg11Unorm => todo!(),
+            wgpu_types::TextureFormat::EacRg11Snorm => todo!(),
+            wgpu_types::TextureFormat::Astc { .. } => todo!(),
         }
     }
 }
@@ -304,6 +376,148 @@ impl From<webgpu::GpuColor> for wgpu_types::Color {
                 b: list[2],
                 a: list[3],
             },
+        }
+    }
+}
+
+impl From<webgpu::GpuCullMode> for wgpu_types::Face {
+    fn from(value: webgpu::GpuCullMode) -> Self {
+        match value {
+            webgpu::GpuCullMode::None => todo!(),
+            webgpu::GpuCullMode::Front => wgpu_types::Face::Front,
+            webgpu::GpuCullMode::Back => wgpu_types::Face::Back,
+        }
+    }
+}
+
+impl From<webgpu::GpuIndexFormat> for wgpu_types::IndexFormat {
+    fn from(value: webgpu::GpuIndexFormat) -> Self {
+        match value {
+            webgpu::GpuIndexFormat::Uint16 => wgpu_types::IndexFormat::Uint16,
+            webgpu::GpuIndexFormat::Uint32 => wgpu_types::IndexFormat::Uint32,
+        }
+    }
+}
+
+impl From<webgpu::GpuFrontFace> for wgpu_types::FrontFace {
+    fn from(value: webgpu::GpuFrontFace) -> Self {
+        match value {
+            webgpu::GpuFrontFace::Ccw => wgpu_types::FrontFace::Ccw,
+            webgpu::GpuFrontFace::Cw => wgpu_types::FrontFace::Cw,
+        }
+    }
+}
+
+impl From<webgpu::GpuVertexStepMode> for wgpu_types::VertexStepMode {
+    fn from(value: webgpu::GpuVertexStepMode) -> Self {
+        match value {
+            webgpu::GpuVertexStepMode::Vertex => wgpu_types::VertexStepMode::Vertex,
+            webgpu::GpuVertexStepMode::Instance => wgpu_types::VertexStepMode::Instance,
+        }
+    }
+}
+
+impl From<webgpu::GpuVertexFormat> for wgpu_types::VertexFormat {
+    fn from(value: webgpu::GpuVertexFormat) -> Self {
+        match value {
+            webgpu::GpuVertexFormat::Uint8x2 => wgpu_types::VertexFormat::Uint8x2,
+            webgpu::GpuVertexFormat::Uint8x4 => wgpu_types::VertexFormat::Uint8x4,
+            webgpu::GpuVertexFormat::Sint8x2 => wgpu_types::VertexFormat::Sint8x2,
+            webgpu::GpuVertexFormat::Sint8x4 => wgpu_types::VertexFormat::Sint8x4,
+            webgpu::GpuVertexFormat::Unorm8x2 => wgpu_types::VertexFormat::Unorm8x2,
+            webgpu::GpuVertexFormat::Unorm8x4 => wgpu_types::VertexFormat::Unorm8x4,
+            webgpu::GpuVertexFormat::Snorm8x2 => wgpu_types::VertexFormat::Snorm8x2,
+            webgpu::GpuVertexFormat::Snorm8x4 => wgpu_types::VertexFormat::Snorm8x4,
+            webgpu::GpuVertexFormat::Uint16x2 => wgpu_types::VertexFormat::Uint16x2,
+            webgpu::GpuVertexFormat::Uint16x4 => wgpu_types::VertexFormat::Uint16x4,
+            webgpu::GpuVertexFormat::Sint16x2 => wgpu_types::VertexFormat::Sint16x2,
+            webgpu::GpuVertexFormat::Sint16x4 => wgpu_types::VertexFormat::Sint16x4,
+            webgpu::GpuVertexFormat::Unorm16x2 => wgpu_types::VertexFormat::Unorm16x2,
+            webgpu::GpuVertexFormat::Unorm16x4 => wgpu_types::VertexFormat::Unorm16x4,
+            webgpu::GpuVertexFormat::Snorm16x2 => wgpu_types::VertexFormat::Snorm16x2,
+            webgpu::GpuVertexFormat::Snorm16x4 => wgpu_types::VertexFormat::Snorm16x4,
+            webgpu::GpuVertexFormat::Float16x2 => wgpu_types::VertexFormat::Float16x2,
+            webgpu::GpuVertexFormat::Float16x4 => wgpu_types::VertexFormat::Float16x4,
+            webgpu::GpuVertexFormat::Float32 => wgpu_types::VertexFormat::Float32,
+            webgpu::GpuVertexFormat::Float32x2 => wgpu_types::VertexFormat::Float32x2,
+            webgpu::GpuVertexFormat::Float32x3 => wgpu_types::VertexFormat::Float32x3,
+            webgpu::GpuVertexFormat::Float32x4 => wgpu_types::VertexFormat::Float32x4,
+            webgpu::GpuVertexFormat::Uint32 => wgpu_types::VertexFormat::Uint32,
+            webgpu::GpuVertexFormat::Uint32x2 => wgpu_types::VertexFormat::Uint32x2,
+            webgpu::GpuVertexFormat::Uint32x3 => wgpu_types::VertexFormat::Uint32x3,
+            webgpu::GpuVertexFormat::Uint32x4 => wgpu_types::VertexFormat::Uint32x4,
+            webgpu::GpuVertexFormat::Sint32 => wgpu_types::VertexFormat::Sint32,
+            webgpu::GpuVertexFormat::Sint32x2 => wgpu_types::VertexFormat::Sint32x2,
+            webgpu::GpuVertexFormat::Sint32x3 => wgpu_types::VertexFormat::Sint32x3,
+            webgpu::GpuVertexFormat::Sint32x4 => wgpu_types::VertexFormat::Sint32x4,
+            webgpu::GpuVertexFormat::Unorm1010102 => todo!(),
+        }
+    }
+}
+
+impl From<webgpu::GpuBlendFactor> for wgpu_types::BlendFactor {
+    fn from(value: webgpu::GpuBlendFactor) -> Self {
+        match value {
+            webgpu::GpuBlendFactor::Zero => wgpu_types::BlendFactor::Zero,
+            webgpu::GpuBlendFactor::One => wgpu_types::BlendFactor::One,
+            webgpu::GpuBlendFactor::Src => wgpu_types::BlendFactor::Src,
+            webgpu::GpuBlendFactor::OneMinusSrc => wgpu_types::BlendFactor::OneMinusSrc,
+            webgpu::GpuBlendFactor::SrcAlpha => wgpu_types::BlendFactor::SrcAlpha,
+            webgpu::GpuBlendFactor::OneMinusSrcAlpha => wgpu_types::BlendFactor::OneMinusSrcAlpha,
+            webgpu::GpuBlendFactor::Dst => wgpu_types::BlendFactor::Dst,
+            webgpu::GpuBlendFactor::OneMinusDst => wgpu_types::BlendFactor::OneMinusDst,
+            webgpu::GpuBlendFactor::DstAlpha => wgpu_types::BlendFactor::DstAlpha,
+            webgpu::GpuBlendFactor::OneMinusDstAlpha => wgpu_types::BlendFactor::OneMinusDstAlpha,
+            webgpu::GpuBlendFactor::SrcAlphaSaturated => wgpu_types::BlendFactor::SrcAlphaSaturated,
+            webgpu::GpuBlendFactor::Constant => wgpu_types::BlendFactor::Constant,
+            webgpu::GpuBlendFactor::OneMinusConstant => wgpu_types::BlendFactor::OneMinusConstant,
+        }
+    }
+}
+
+impl From<webgpu::GpuBlendOperation> for wgpu_types::BlendOperation {
+    fn from(value: webgpu::GpuBlendOperation) -> Self {
+        match value {
+            webgpu::GpuBlendOperation::Add => wgpu_types::BlendOperation::Add,
+            webgpu::GpuBlendOperation::Subtract => wgpu_types::BlendOperation::Subtract,
+            webgpu::GpuBlendOperation::ReverseSubtract => {
+                wgpu_types::BlendOperation::ReverseSubtract
+            }
+            webgpu::GpuBlendOperation::Min => wgpu_types::BlendOperation::Min,
+            webgpu::GpuBlendOperation::Max => wgpu_types::BlendOperation::Max,
+        }
+    }
+}
+
+impl From<webgpu::GpuStencilOperation> for wgpu_types::StencilOperation {
+    fn from(value: webgpu::GpuStencilOperation) -> Self {
+        match value {
+            webgpu::GpuStencilOperation::Keep => wgpu_types::StencilOperation::Keep,
+            webgpu::GpuStencilOperation::Zero => wgpu_types::StencilOperation::Zero,
+            webgpu::GpuStencilOperation::Replace => wgpu_types::StencilOperation::Replace,
+            webgpu::GpuStencilOperation::Invert => wgpu_types::StencilOperation::Invert,
+            webgpu::GpuStencilOperation::IncrementClamp => {
+                wgpu_types::StencilOperation::IncrementClamp
+            }
+            webgpu::GpuStencilOperation::DecrementClamp => {
+                wgpu_types::StencilOperation::DecrementClamp
+            }
+            webgpu::GpuStencilOperation::IncrementWrap => {
+                wgpu_types::StencilOperation::IncrementWrap
+            }
+            webgpu::GpuStencilOperation::DecrementWrap => {
+                wgpu_types::StencilOperation::DecrementWrap
+            }
+        }
+    }
+}
+
+impl From<webgpu::GpuTextureAspect> for wgpu_types::TextureAspect {
+    fn from(value: webgpu::GpuTextureAspect) -> Self {
+        match value {
+            webgpu::GpuTextureAspect::All => wgpu_types::TextureAspect::All,
+            webgpu::GpuTextureAspect::StencilOnly => wgpu_types::TextureAspect::StencilOnly,
+            webgpu::GpuTextureAspect::DepthOnly => wgpu_types::TextureAspect::DepthOnly,
         }
     }
 }

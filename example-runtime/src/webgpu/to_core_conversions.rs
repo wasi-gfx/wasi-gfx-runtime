@@ -71,10 +71,10 @@ impl<'a> ToCore<wgpu_core::binding_model::BindingResource<'a>> for webgpu::GpuBi
 
 impl<'a> ToCore<wgpu_core::binding_model::BufferBinding> for webgpu::GpuBufferBinding {
     fn to_core(self, table: &ResourceTable) -> wgpu_core::binding_model::BufferBinding {
+        let buffer = table.get(&self.buffer).unwrap();
         wgpu_core::binding_model::BufferBinding {
-            buffer_id: self.buffer.to_core(table),
-            // TODO: Not sure we can default here.
-            offset: self.offset.unwrap_or_default(),
+            buffer_id: buffer.buffer,
+            offset: self.offset.unwrap(),
             size: self.size.map(|s| s.try_into().unwrap()),
         }
     }
@@ -108,14 +108,20 @@ impl<'a> ToCore<wgpu_core::resource::TextureViewDescriptor<'a>>
     for webgpu::GpuTextureViewDescriptor
 {
     fn to_core(self, _table: &ResourceTable) -> wgpu_core::resource::TextureViewDescriptor<'a> {
-        // TODO:
-        Default::default()
-        // wgpu_core::resource::TextureViewDescriptor {
-        //     label: self.label.map(|l| l.into()),
-        //     format: self.format.into(),
-        //     dimension: self.dimension.into(),
-        //     range: self.range.into(),
-        // }
+        wgpu_core::resource::TextureViewDescriptor {
+            label: self.label.map(|l| l.into()),
+            format: self.format.map(|f| f.into()),
+            dimension: self.dimension.map(|d| d.into()),
+            // TODO: Don't default
+            range: Default::default(),
+            // range: wgpu_types::ImageSubresourceRange {
+            //     aspect: self.aspect,
+            //     base_mip_level: self.base_mip_level,
+            //     mip_level_count: self.mip_level_count,
+            //     base_array_layer: self.base_array_layer,
+            //     array_layer_count: self.array_layer_count,
+            // }
+        }
     }
 }
 
@@ -146,13 +152,91 @@ impl<'a> ToCore<wgpu_core::pipeline::RenderPipelineDescriptor<'a>>
         wgpu_core::pipeline::RenderPipelineDescriptor {
             // TODO: remove defaults
             label: Default::default(),
-            layout: Default::default(),
+            layout: self.layout.map(|l| l.to_core(table)),
             vertex: self.vertex.to_core(table),
-            primitive: Default::default(),
-            depth_stencil: Default::default(),
-            multisample: Default::default(),
+            primitive: self.primitive.map(|p| p.to_core(table)).unwrap(),
+            depth_stencil: self.depth_stencil.map(|ds| ds.to_core(table)),
+            multisample: self
+                .multisample
+                .map(|ms| ms.to_core(table))
+                .unwrap_or_default(),
             fragment: self.fragment.map(|f| f.to_core(table)),
             multiview: Default::default(),
+        }
+    }
+}
+
+impl ToCore<wgpu_types::MultisampleState> for webgpu::GpuMultisampleState {
+    fn to_core(self, _table: &ResourceTable) -> wgpu_types::MultisampleState {
+        wgpu_types::MultisampleState {
+            count: self.count.unwrap(),
+            mask: self.mask.unwrap().into(),
+            alpha_to_coverage_enabled: self.alpha_to_coverage_enabled.unwrap(),
+        }
+    }
+}
+
+impl ToCore<wgpu_types::DepthStencilState> for webgpu::GpuDepthStencilState {
+    fn to_core(self, table: &ResourceTable) -> wgpu_types::DepthStencilState {
+        wgpu_types::DepthStencilState {
+            format: self.format.into(),
+            depth_write_enabled: self.depth_write_enabled.unwrap().into(),
+            depth_compare: self.depth_compare.unwrap().into(),
+            stencil: wgpu_types::StencilState {
+                front: self
+                    .stencil_front
+                    .map(|f| f.to_core(table))
+                    .unwrap_or_default(),
+                back: self
+                    .stencil_back
+                    .map(|b| b.to_core(table))
+                    .unwrap_or_default(),
+                read_mask: self.stencil_read_mask.unwrap_or_default(),
+                write_mask: self.stencil_write_mask.unwrap_or_default(),
+            },
+            bias: wgpu_types::DepthBiasState {
+                constant: self.depth_bias.unwrap_or_default(),
+                slope_scale: self.depth_bias_slope_scale.unwrap_or_default(),
+                clamp: self.depth_bias_clamp.unwrap_or_default(),
+            },
+        }
+    }
+}
+
+impl ToCore<wgpu_types::StencilFaceState> for webgpu::GpuStencilFaceState {
+    fn to_core(self, _table: &ResourceTable) -> wgpu_types::StencilFaceState {
+        wgpu_types::StencilFaceState {
+            compare: self
+                .compare
+                .map(|c| c.into())
+                .unwrap_or(wgpu_types::CompareFunction::Always),
+            fail_op: self
+                .fail_op
+                .map(|fo| fo.into())
+                .unwrap_or(wgpu_types::StencilOperation::Keep),
+            depth_fail_op: self
+                .depth_fail_op
+                .map(|dfo| dfo.into())
+                .unwrap_or(wgpu_types::StencilOperation::Keep),
+            pass_op: self
+                .pass_op
+                .map(|po| po.into())
+                .unwrap_or(wgpu_types::StencilOperation::Keep),
+        }
+    }
+}
+
+impl ToCore<wgpu_types::PrimitiveState> for webgpu::GpuPrimitiveState {
+    fn to_core(self, _table: &ResourceTable) -> wgpu_types::PrimitiveState {
+        wgpu_types::PrimitiveState {
+            topology: self.topology.map(|t| t.into()).unwrap_or_default(),
+            strip_index_format: self.strip_index_format.map(|f| f.into()),
+            front_face: self.front_face.map(|x| x.into()).unwrap_or_default(),
+            cull_mode: self.cull_mode.map(|cm| cm.into()),
+            unclipped_depth: self.unclipped_depth.unwrap_or_default(),
+            // TODO: remove defaults
+            polygon_mode: Default::default(),
+            conservative: Default::default(),
         }
     }
 }
@@ -164,14 +248,54 @@ impl<'a> ToCore<wgpu_core::pipeline::FragmentState<'a>> for webgpu::GpuFragmentS
                 module: self.module.to_core(table),
                 entry_point: self.entry_point.into(),
             },
-            // TODO: Remove Default?
-            // targets: Default::default(),
-            targets: vec![Some(wgpu_types::ColorTargetState {
-                format: wgpu_types::TextureFormat::Bgra8UnormSrgb,
-                blend: None,
-                write_mask: Default::default(),
-            })]
-            .into(),
+            targets: self
+                .targets
+                .into_iter()
+                .map(|t| Some(t.to_core(table)))
+                .collect::<Vec<_>>()
+                .into(),
+        }
+    }
+}
+
+impl ToCore<wgpu_types::ColorTargetState> for webgpu::GpuColorTargetState {
+    fn to_core(self, table: &ResourceTable) -> wgpu_types::ColorTargetState {
+        wgpu_types::ColorTargetState {
+            format: self.format.into(),
+            blend: self.blend.map(|b| b.to_core(table)),
+            write_mask: self
+                .write_mask
+                .map(|wm| wgpu_types::ColorWrites::from_bits(wm).unwrap())
+                .unwrap_or_default(),
+        }
+    }
+}
+
+impl ToCore<wgpu_types::BlendState> for webgpu::GpuBlendState {
+    fn to_core(self, table: &ResourceTable) -> wgpu_types::BlendState {
+        wgpu_types::BlendState {
+            color: self.color.to_core(table),
+            alpha: self.alpha.to_core(table),
+        }
+    }
+}
+
+impl ToCore<wgpu_types::BlendComponent> for webgpu::GpuBlendComponent {
+    fn to_core(self, _table: &ResourceTable) -> wgpu_types::BlendComponent {
+        wgpu_types::BlendComponent {
+            // TODO: link to spec for defaults.
+            src_factor: self
+                .src_factor
+                .map(|x| x.into())
+                .unwrap_or(wgpu_types::BlendFactor::One),
+            dst_factor: self
+                .dst_factor
+                .map(|x| x.into())
+                .unwrap_or(wgpu_types::BlendFactor::Zero),
+            operation: self
+                .operation
+                .map(|x| x.into())
+                .unwrap_or(wgpu_types::BlendOperation::Add),
         }
     }
 }
@@ -183,8 +307,34 @@ impl<'a> ToCore<wgpu_core::pipeline::VertexState<'a>> for webgpu::GpuVertexState
                 module: self.module.to_core(table),
                 entry_point: self.entry_point.into(),
             },
-            // TODO: Remove Default?
-            buffers: Default::default(),
+            buffers: self
+                .buffers
+                .map(|buffer| buffer.into_iter().map(|b| b.to_core(table)).collect())
+                .unwrap_or_default(),
+        }
+    }
+}
+
+impl<'a> ToCore<wgpu_core::pipeline::VertexBufferLayout<'a>> for webgpu::GpuVertexBufferLayout {
+    fn to_core(self, table: &ResourceTable) -> wgpu_core::pipeline::VertexBufferLayout<'a> {
+        wgpu_core::pipeline::VertexBufferLayout {
+            array_stride: self.array_stride,
+            step_mode: self.step_mode.unwrap().into(),
+            attributes: self
+                .attributes
+                .into_iter()
+                .map(|a| a.to_core(table))
+                .collect(),
+        }
+    }
+}
+
+impl ToCore<wgpu_types::VertexAttribute> for webgpu::GpuVertexAttribute {
+    fn to_core(self, _table: &ResourceTable) -> wgpu_types::VertexAttribute {
+        wgpu_types::VertexAttribute {
+            format: self.format.into(),
+            offset: self.offset,
+            shader_location: self.shader_location,
         }
     }
 }
@@ -203,7 +353,6 @@ impl<'a> ToCore<wgpu_types::TextureDescriptor<wgpu_core::Label<'a>, Vec<wgpu_typ
             sample_count: self.sample_count.unwrap(),
             dimension: self.dimension.into(),
             format: self.format.into(),
-            // TODO: Remove from_bits?
             usage: wgpu_types::TextureUsages::from_bits(self.usage).unwrap(),
             view_formats: self
                 .view_formats
@@ -233,11 +382,8 @@ impl<'a> ToCore<wgpu_core::resource::SamplerDescriptor<'a>> for webgpu::GpuSampl
             lod_min_clamp: self.lod_min_clamp.unwrap(),
             lod_max_clamp: self.lod_max_clamp.unwrap(),
             compare: self.compare.map(|compare| compare.into()),
-            // TODO:
-            anisotropy_clamp: 1,
-            // TODO:
+            anisotropy_clamp: self.max_anisotropy.unwrap(),
             border_color: Default::default(),
-            // border_color: descriptor.border_color,
         }
     }
 }
@@ -337,22 +483,73 @@ impl ToCore<wgpu_types::BindingType> for webgpu::GpuExternalTextureBindingLayout
     }
 }
 
-impl<'a> ToCore<wgpu_core::command::RenderPassDescriptor<'a>> for webgpu::GpuRenderPassDescriptor {
-    fn to_core(self, table: &ResourceTable) -> wgpu_core::command::RenderPassDescriptor<'a> {
-        wgpu_core::command::RenderPassDescriptor {
-            label: self.label.map(|l| l.into()),
-            color_attachments: self
-                .color_attachments
-                .into_iter()
-                .map(|c| Some(c.to_core(table)))
-                .collect::<Vec<_>>()
-                .into(),
-            // TODO: remove default
-            ..Default::default() // depth_stencil_attachment: self.depth_stencil_attachment,
-                                 // timestamp_writes: self.timestamp_writes,
-                                 // occlusion_query_set: self.occlusion_query_set,
-                                 // TODO: self.max_draw_count not used
+// see begin_render_pass
+// impl<'a> ToCore<wgpu_core::command::RenderPassDescriptor<'a>> for webgpu::GpuRenderPassDescriptor {
+//     fn to_core(self, table: &ResourceTable) -> wgpu_core::command::RenderPassDescriptor<'a> {
+//         wgpu_core::command::RenderPassDescriptor {
+//             label: self.label.map(|l| l.into()),
+//             color_attachments: self
+//                 .color_attachments
+//                 .into_iter()
+//                 .map(|c| Some(c.to_core(table)))
+//                 .collect::<Vec<_>>()
+//                 .into(),
+//             // depth_stencil_attachment: self.depth_stencil_attachment.map(|d| d.to_core(table)),
+//             // timestamp_writes: self.timestamp_writes,
+//             // occlusion_query_set: self.occlusion_query_set,
+//             // TODO: self.max_draw_count not used
+//             ..Default::default()
+//         }
+//     }
+// }
+
+impl ToCore<wgpu_core::command::RenderPassDepthStencilAttachment>
+    for webgpu::GpuRenderPassDepthStencilAttachment
+{
+    fn to_core(
+        self,
+        table: &ResourceTable,
+    ) -> wgpu_core::command::RenderPassDepthStencilAttachment {
+        wgpu_core::command::RenderPassDepthStencilAttachment {
+            view: self.view.to_core(table),
+            depth: pass_channel_from_options(
+                self.depth_load_op.map(|x| x.into()),
+                self.depth_store_op.map(|x| x.into()),
+                self.depth_clear_value.map(|x| x.into()),
+                self.depth_read_only.map(|x| x.into()),
+            ),
+            stencil: pass_channel_from_options(
+                self.stencil_load_op.map(|x| x.into()),
+                self.stencil_store_op.map(|x| x.into()),
+                self.stencil_clear_value.map(|x| x.into()),
+                self.stencil_read_only.map(|x| x.into()),
+            ),
         }
+    }
+}
+
+fn pass_channel_from_options<V: Default + Copy>(
+    load_op: Option<wgpu_core::command::LoadOp>,
+    store_op: Option<wgpu_core::command::StoreOp>,
+    clear_value: Option<V>,
+    read_only: Option<bool>,
+) -> wgpu_core::command::PassChannel<V> {
+    match (load_op, store_op, clear_value) {
+        (Some(load_op), Some(store_op), Some(clear_value)) => wgpu_core::command::PassChannel {
+            load_op,
+            store_op,
+            clear_value,
+            // TODO: why default to false?
+            read_only: read_only.unwrap_or(false),
+        },
+        (None, None, None) => wgpu_core::command::PassChannel {
+            load_op: wgpu_core::command::LoadOp::Load,
+            store_op: wgpu_core::command::StoreOp::Store,
+            clear_value: V::default(),
+            // TODO: why default to false?
+            read_only: read_only.unwrap_or(false),
+        },
+        _ => todo!(),
     }
 }
 
@@ -365,13 +562,13 @@ impl ToCore<wgpu_core::command::RenderPassColorAttachment>
             resolve_target: self
                 .resolve_target
                 .map(|resolve_target| resolve_target.to_core(table)),
-            channel: wgpu_core::command::PassChannel {
-                load_op: self.load_op.into(),
-                store_op: self.store_op.into(),
-                clear_value: self.clear_value.map(|c| c.into()).unwrap_or_default(),
-                // TODO:
-                read_only: false,
-            },
+            channel: pass_channel_from_options(
+                Some(self.load_op.into()),
+                Some(self.store_op.into()),
+                self.clear_value.map(|c| c.into()),
+                // TODO: why default to false?
+                Some(false),
+            ),
             // TODO: didn't use self.depth_slice
         }
     }
@@ -384,7 +581,6 @@ impl<'a> ToCore<wgpu_types::BufferDescriptor<wgpu_core::Label<'a>>>
         wgpu_types::BufferDescriptor {
             label: self.label.map(|l| l.into()),
             size: self.size,
-            // TODO:
             usage: wgpu_types::BufferUsages::from_bits(self.usage).unwrap(),
             mapped_at_creation: self.mapped_at_creation.unwrap_or_default(),
         }
@@ -399,6 +595,49 @@ impl<'a> ToCore<wgpu_types::DeviceDescriptor<wgpu_core::Label<'a>>>
             label: self.label.map(|l| l.into()),
             // TODO: Don't default
             ..Default::default()
+        }
+    }
+}
+
+impl ToCore<wgpu_types::ImageCopyTexture<wgpu_core::id::TextureId>>
+    for webgpu::GpuImageCopyTexture
+{
+    fn to_core(
+        self,
+        table: &ResourceTable,
+    ) -> wgpu_types::ImageCopyTexture<wgpu_core::id::TextureId> {
+        wgpu_types::ImageCopyTexture {
+            texture: self.texture.to_core(table),
+            mip_level: self.mip_level.unwrap(),
+            origin: self.origin.unwrap().to_core(table),
+            aspect: self.aspect.unwrap().into(),
+        }
+    }
+}
+
+impl ToCore<wgpu_types::Origin3d> for webgpu::GpuOrigin3DDictOrListGpuIntegerCoordinate {
+    fn to_core(self, _table: &ResourceTable) -> wgpu_types::Origin3d {
+        match self {
+            webgpu::GpuOrigin3DDictOrListGpuIntegerCoordinate::GpuOrigin3DDict(dict) => {
+                wgpu_types::Origin3d {
+                    x: dict.x.unwrap(),
+                    y: dict.y.unwrap(),
+                    z: dict.z.unwrap(),
+                }
+            }
+            webgpu::GpuOrigin3DDictOrListGpuIntegerCoordinate::ListGpuIntegerCoordinate(_) => {
+                todo!()
+            }
+        }
+    }
+}
+
+impl ToCore<wgpu_types::ImageDataLayout> for webgpu::GpuImageDataLayout {
+    fn to_core(self, _table: &ResourceTable) -> wgpu_types::ImageDataLayout {
+        wgpu_types::ImageDataLayout {
+            offset: self.offset.unwrap(),
+            bytes_per_row: self.bytes_per_row,
+            rows_per_image: self.rows_per_image,
         }
     }
 }

@@ -1,5 +1,12 @@
+// TODO: in this file:
+// - Remove all calls to `Default::default()`. Instead, manually set them, and link to the spec stating what defaults should be used.
+// - Implement all todos.
+// - Remove all unwraps.
+// - Implement all the drop handlers.
+
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::borrow::Cow;
+use std::sync::{Arc, Mutex};
 use wasmtime::component::Resource;
 
 use crate::component::webgpu::webgpu;
@@ -13,6 +20,16 @@ use self::to_core_conversions::ToCore;
 mod enum_conversions;
 mod to_core_conversions;
 
+pub struct RemoteBuffer {
+    // TODO: don't put behind a mutex.
+    // See https://bytecodealliance.zulipchat.com/#narrow/stream/206238-general/topic/Should.20wasi.20resources.20be.20stored.20behind.20a.20mutex.3F
+    pub(crate) buffer: Arc<Mutex<Vec<u8>>>,
+}
+pub struct Buffer {
+    buffer: wgpu_core::id::BufferId,
+    mapped: Option<RemoteBuffer>,
+}
+
 #[derive(Clone, Copy)]
 pub struct Device {
     pub device: wgpu_core::id::DeviceId,
@@ -23,6 +40,43 @@ pub struct Device {
 impl webgpu::Host for HostState {
     fn get_gpu(&mut self) -> wasmtime::Result<Resource<webgpu::Gpu>> {
         Ok(Resource::new_own(0))
+    }
+}
+
+impl webgpu::HostRemoteBuffer for HostState {
+    fn length(&mut self, buffer: Resource<webgpu::RemoteBuffer>) -> wasmtime::Result<u32> {
+        let buffer = self.table.get(&buffer).unwrap();
+        let len = buffer.mapped.as_ref().unwrap().buffer.lock().unwrap().len();
+        Ok(len as u32)
+    }
+
+    fn get(&mut self, buffer: Resource<webgpu::RemoteBuffer>, i: u32) -> wasmtime::Result<u8> {
+        let buffer = self.table.get(&buffer).unwrap();
+        let val = *buffer
+            .mapped
+            .as_ref()
+            .unwrap()
+            .buffer
+            .lock()
+            .unwrap()
+            .get(i as usize)
+            .unwrap();
+        Ok(val)
+    }
+
+    fn set(
+        &mut self,
+        buffer: Resource<webgpu::RemoteBuffer>,
+        i: u32,
+        val: u8,
+    ) -> wasmtime::Result<()> {
+        let buffer = self.table.get_mut(&buffer).unwrap();
+        buffer.mapped.as_ref().unwrap().buffer.lock().unwrap()[i as usize] = val;
+        Ok(())
+    }
+
+    fn drop(&mut self, _rep: Resource<webgpu::RemoteBuffer>) -> wasmtime::Result<()> {
+        Ok(())
     }
 }
 
@@ -57,7 +111,7 @@ impl webgpu::HostGpuDevice for HostState {
             height: size.height,
             present_mode: wgpu_types::PresentMode::Fifo,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![],
+            view_formats: vec![swapchain_format],
         };
 
         self.instance
@@ -182,6 +236,11 @@ impl webgpu::HostGpuDevice for HostState {
             (),
         ))
         .unwrap();
+
+        let buffer = Buffer {
+            buffer,
+            mapped: None,
+        };
 
         Ok(self.table.push(buffer).unwrap())
     }
@@ -681,25 +740,50 @@ impl webgpu::HostGpuQueue for HostState {
 
     fn write_buffer(
         &mut self,
-        _self_: Resource<Device>,
-        _buffer: Resource<webgpu::GpuBuffer>,
-        _buffer_offset: webgpu::GpuSize64,
-        _data_offset: Option<webgpu::GpuSize64>,
-        _data: Resource<webgpu::AllowSharedBufferSource>,
-        _size: Option<webgpu::GpuSize64>,
+        queue: Resource<Device>,
+        buffer: Resource<webgpu::GpuBuffer>,
+        buffer_offset: webgpu::GpuSize64,
+        data_offset: Option<webgpu::GpuSize64>,
+        data: Vec<u8>,
+        size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let queue = self.table.get(&queue).unwrap();
+        let buffer = self.table.get(&buffer).unwrap();
+        let mut data: &[u8] = &data[..];
+        if let Some(data_offset) = data_offset {
+            let data_offset = data_offset as usize;
+            data = &data[data_offset..];
+        }
+        if let Some(size) = size {
+            let size = size as usize;
+            data = &data[..size];
+        }
+        self.instance
+            .queue_write_buffer::<crate::Backend>(queue.device, buffer.buffer, buffer_offset, &data)
+            .unwrap();
+
+        Ok(())
     }
 
     fn write_texture(
         &mut self,
-        _self_: Resource<Device>,
-        _destination: webgpu::GpuImageCopyTexture,
-        _data: Resource<webgpu::AllowSharedBufferSource>,
-        _data_layout: webgpu::GpuImageDataLayout,
-        _size: webgpu::GpuExtent3D,
+        device: Resource<Device>,
+        destination: webgpu::GpuImageCopyTexture,
+        data: Vec<u8>,
+        data_layout: webgpu::GpuImageDataLayout,
+        size: webgpu::GpuExtent3D,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let device = self.table.get(&device).unwrap();
+        self.instance
+            .queue_write_texture::<crate::Backend>(
+                device.device,
+                &destination.to_core(&self.table),
+                &data,
+                &data_layout.to_core(&self.table),
+                &size.to_core(&self.table),
+            )
+            .unwrap();
+        Ok(())
     }
 
     fn copy_external_image_to_texture(
@@ -727,10 +811,27 @@ impl webgpu::HostGpuCommandEncoder for HostState {
         command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
         descriptor: webgpu::GpuRenderPassDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuRenderPassEncoder>> {
-        let render_pass = wgpu_core::command::RenderPass::new(
-            command_encoder.to_core(&self.table),
-            &descriptor.to_core(&self.table),
-        );
+        // can't use to_core because depth_stencil_attachment is Option<&x>.
+        let depth_stencil_attachment = descriptor
+            .depth_stencil_attachment
+            .map(|d| d.to_core(&self.table));
+        let descriptor = wgpu_core::command::RenderPassDescriptor {
+            label: descriptor.label.map(|l| l.into()),
+            color_attachments: descriptor
+                .color_attachments
+                .into_iter()
+                .map(|c| Some(c.to_core(&self.table)))
+                .collect::<Vec<_>>()
+                .into(),
+            depth_stencil_attachment: depth_stencil_attachment.as_ref(),
+            // timestamp_writes: self.timestamp_writes,
+            // occlusion_query_set: self.occlusion_query_set,
+            // TODO: self.max_draw_count not used
+            // TODO: remove default
+            ..Default::default()
+        };
+        let render_pass =
+            wgpu_core::command::RenderPass::new(command_encoder.to_core(&self.table), &descriptor);
 
         Ok(self.table.push(render_pass).unwrap())
     }
@@ -906,8 +1007,6 @@ impl webgpu::HostGpuRenderPassEncoder for HostState {
         rpass: Resource<wgpu_core::command::RenderPass>,
         non_standard_encoder: Resource<wgpu_core::id::CommandEncoderId>,
     ) -> wasmtime::Result<()> {
-        // use this instead of non_standard_present? Ask on ...
-
         let rpass = self.table.delete(rpass).unwrap();
         let encoder = self.table.get(&non_standard_encoder).unwrap();
         self.instance
@@ -1024,12 +1123,27 @@ impl webgpu::HostGpuRenderPassEncoder for HostState {
 
     fn set_bind_group(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass>,
-        _index: webgpu::GpuIndex32,
-        _bind_group: Resource<webgpu::GpuBindGroup>,
-        _dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
+        render_pass: Resource<wgpu_core::command::RenderPass>,
+        index: webgpu::GpuIndex32,
+        bind_group: Resource<webgpu::GpuBindGroup>,
+        dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let bind_group = *self.table.get(&bind_group).unwrap();
+        let mut render_pass = self.table.get_mut(&render_pass).unwrap();
+
+        let dynamic_offsets = dynamic_offsets.unwrap();
+        unsafe {
+            wgpu_core::command::render_ffi::wgpu_render_pass_set_bind_group(
+                &mut render_pass,
+                index,
+                bind_group,
+                // TODO: Not sure that these are correct. Verify please.
+                dynamic_offsets.as_ptr(),
+                dynamic_offsets.len(),
+            )
+        };
+
+        Ok(())
     }
 
     fn set_index_buffer(
@@ -1045,13 +1159,24 @@ impl webgpu::HostGpuRenderPassEncoder for HostState {
 
     fn set_vertex_buffer(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass>,
-        _slot: webgpu::GpuIndex32,
-        _buffer: Resource<webgpu::GpuBuffer>,
-        _offset: webgpu::GpuSize64,
-        _size: webgpu::GpuSize64,
+        render_pass: Resource<wgpu_core::command::RenderPass>,
+        slot: webgpu::GpuIndex32,
+        buffer: Resource<webgpu::GpuBuffer>,
+        offset: webgpu::GpuSize64,
+        size: webgpu::GpuSize64,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let buffer_id = self.table.get(&buffer).unwrap().buffer;
+        let mut render_pass = self.table.get_mut(&render_pass).unwrap();
+
+        wgpu_core::command::render_ffi::wgpu_render_pass_set_vertex_buffer(
+            &mut render_pass,
+            slot,
+            buffer_id,
+            offset,
+            Some(size.try_into().unwrap()),
+        );
+
+        Ok(())
     }
 
     fn draw_indexed(
@@ -1579,7 +1704,7 @@ impl webgpu::HostGpuBindGroup for HostState {
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuBindGroup>) -> wasmtime::Result<()> {
-        todo!()
+        Ok(())
     }
 }
 impl webgpu::HostGpuPipelineLayout for HostState {
@@ -1596,7 +1721,7 @@ impl webgpu::HostGpuPipelineLayout for HostState {
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuPipelineLayout>) -> wasmtime::Result<()> {
-        todo!()
+        Ok(())
     }
 }
 impl webgpu::HostGpuBindGroupLayout for HostState {
@@ -1684,14 +1809,14 @@ impl webgpu::HostGpuBuffer for HostState {
 
     fn get_mapped_range(
         &mut self,
-        _self_: Resource<webgpu::GpuBuffer>,
-        _offset: webgpu::GpuSize64,
-        _size: webgpu::GpuSize64,
-    ) -> wasmtime::Result<Resource<webgpu::ArrayBuffer>> {
+        _buffer: Resource<webgpu::GpuBuffer>,
+        _offset: Option<webgpu::GpuSize64>,
+        _size: Option<webgpu::GpuSize64>,
+    ) -> wasmtime::Result<Resource<webgpu::GpuBuffer>> {
         todo!()
     }
 
-    fn unmap(&mut self, _self_: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<()> {
+    fn unmap(&mut self, _buffer: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<()> {
         todo!()
     }
 
@@ -1712,7 +1837,7 @@ impl webgpu::HostGpuBuffer for HostState {
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<()> {
-        todo!()
+        Ok(())
     }
 }
 impl webgpu::HostGpu for HostState {
@@ -1746,7 +1871,7 @@ impl webgpu::HostGpu for HostState {
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::Gpu>) -> wasmtime::Result<()> {
-        todo!()
+        Ok(())
     }
 }
 impl webgpu::HostGpuAdapterInfo for HostState {
@@ -1792,14 +1917,41 @@ impl webgpu::HostWgslLanguageFeatures for HostState {
 impl webgpu::HostGpuSupportedFeatures for HostState {
     fn has(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedFeatures>,
-        _key: String,
+        features: Resource<webgpu::GpuSupportedFeatures>,
+        query: String,
     ) -> wasmtime::Result<bool> {
-        todo!()
+        let features = self.table.get(&features).unwrap();
+        // TODO: what other options should be here?
+        Ok(match query.as_str() {
+            "depth-clip-control" => features.contains(wgpu_types::Features::DEPTH_CLIP_CONTROL),
+            "timestamp-query" => features.contains(wgpu_types::Features::TIMESTAMP_QUERY),
+            "indirect-first-instance" => {
+                features.contains(wgpu_types::Features::INDIRECT_FIRST_INSTANCE)
+            }
+            "shader-f16" => features.contains(wgpu_types::Features::SHADER_F16),
+            "depth32float-stencil8" => {
+                features.contains(wgpu_types::Features::DEPTH32FLOAT_STENCIL8)
+            }
+            "texture-compression-bc" => {
+                features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_BC)
+            }
+            "texture-compression-etc2" => {
+                features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_ETC2)
+            }
+            "texture-compression-astc" => {
+                features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_ASTC)
+            }
+            "rg11b10ufloat-renderable" => {
+                features.contains(wgpu_types::Features::RG11B10UFLOAT_RENDERABLE)
+            }
+            "bgra8unorm-storage" => features.contains(wgpu_types::Features::BGRA8UNORM_STORAGE),
+            // "float32-filterable" => features.contains(wgpu_types::Features::FLOAT32_FILTERABLE),
+            _ => todo!(),
+        })
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuSupportedFeatures>) -> wasmtime::Result<()> {
-        todo!()
+        Ok(())
     }
 }
 impl webgpu::HostGpuSupportedLimits for HostState {

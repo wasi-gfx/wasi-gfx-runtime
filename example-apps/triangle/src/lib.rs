@@ -98,17 +98,17 @@ fn draw_triangle() {
                 }
             }
             .to_string(),
-            // targets: vec![webgpu::GpuColorTargetState {
-            //     format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
-            //     blend: None,
-            //     write_mask: None,
-            // }],
+            targets: vec![webgpu::GpuColorTargetState {
+                format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
+                blend: None,
+                write_mask: None,
+            }],
         };
         let pipeline_description = webgpu::GpuRenderPipelineDescriptor {
             vertex,
             fragment: Some(fragment),
             primitive: Some(webgpu::GpuPrimitiveState {
-                topology: Some(webgpu::GpuPrimitiveTopology::PointList),
+                topology: Some(webgpu::GpuPrimitiveTopology::TriangleList),
                 strip_index_format: None,
                 front_face: None,
                 cull_mode: None,
@@ -116,9 +116,9 @@ fn draw_triangle() {
             }),
             depth_stencil: None,
             multisample: None,
+            layout: None,
         };
-        let render_pipeline = device.create_render_pipeline(pipeline_description);
-        // let render_pipeline = device.create_render_pipeline();
+        let render_pipeline = device.create_render_pipeline(&pipeline_description);
         let pollables_res = wasi::io::poll::poll(&pollables);
 
         if pollables_res.contains(&0) {
@@ -161,12 +161,14 @@ fn draw_triangle() {
                     view,
                     depth_slice: None,
                     resolve_target: None,
-                    clear_value: Some(webgpu::GpuColorDictOrListFloat64::GpuColorDict(webgpu::GpuColorDict {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.1,
-                        a: 0.0,
-                    })),
+                    clear_value: Some(webgpu::GpuColorDictOrListFloat64::GpuColorDict(
+                        webgpu::GpuColorDict {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.1,
+                            a: 0.0,
+                        },
+                    )),
                     load_op: webgpu::GpuLoadOp::Clear,
                     store_op: webgpu::GpuStoreOp::Store,
                 }],
