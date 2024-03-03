@@ -82,7 +82,8 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
     }
 
     fn drop(&mut self, _graphics_context: Resource<GraphicsContext>) -> wasmtime::Result<()> {
-        todo!()
+        // todo!()
+        Ok(())
     }
 }
 

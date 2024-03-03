@@ -4,7 +4,8 @@ package component:webgpu;
 interface webgpu {
   use graphics-context.{graphics-context, graphics-context-buffer};
 
-  // some external resources.
+  // JS built-in objects.
+  // These should probably be replaced with thinkgs that make sense in wit.
   resource uint32-array { }
   resource array-buffer { }
   resource image-bitmap { }
@@ -239,18 +240,28 @@ interface webgpu {
   resource gpu-queue {
     submit: func(command-buffers: list<gpu-command-buffer>);
     on-submitted-work-done: func();
-    write-buffer: func(buffer: gpu-buffer, buffer-offset: gpu-size64, data-offset: option<gpu-size64>, data: allow-shared-buffer-source, size: option<gpu-size64>);
-    write-texture: func(destination: gpu-image-copy-texture, data: allow-shared-buffer-source, data-layout: gpu-image-data-layout, size: gpu-extent3-d);
+    // write-buffer: func(buffer: borrow<gpu-buffer>, buffer-offset: gpu-size64, data-offset: option<gpu-size64>, data: allow-shared-buffer-source, size: option<gpu-size64>);
+    write-buffer: func(buffer: borrow<gpu-buffer>, buffer-offset: gpu-size64, data-offset: option<gpu-size64>, data: list<u8>, size: option<gpu-size64>);
+    // write-texture: func(destination: gpu-image-copy-texture, data: allow-shared-buffer-source, data-layout: gpu-image-data-layout, size: gpu-extent3-d);
+    write-texture: func(destination: gpu-image-copy-texture, data: list<u8>, data-layout: gpu-image-data-layout, size: gpu-extent3-d);
     copy-external-image-to-texture: func(source: gpu-image-copy-external-image, destination: gpu-image-copy-texture-tagged, copy-size: gpu-extent3-d);
     label: func() -> string;
     set-label: func(label: string);
+  }
+  resource remote-buffer {
+    // what about wasm64? Use u64?
+    length: func() -> u32;
+    get: func(i: u32) -> u8;
+    set: func(i: u32, val: u8);
   }
   resource gpu-buffer {
     size: func() -> gpu-size64-out;
     usage: func() -> gpu-flags-constant;
     map-state: func() -> gpu-buffer-map-state;
     map-async: func(mode: gpu-map-mode-flags, offset: option<gpu-size64>, size: option<gpu-size64>);
-    get-mapped-range: func(offset: gpu-size64, size: gpu-size64) -> array-buffer;
+    // TODO: why were these not option<T>
+    // get-mapped-range: func(offset: option<gpu-size64>, size: option<gpu-size64>) -> array-buffer;
+    get-mapped-range: func(offset: option<gpu-size64>, size: option<gpu-size64>) -> remote-buffer;
     unmap: func();
     destroy: func();
     label: func() -> string;
@@ -400,6 +411,7 @@ interface webgpu {
     depth-stencil: option<gpu-depth-stencil-state>,
     multisample: option<gpu-multisample-state>,
     fragment: option<gpu-fragment-state>,
+    layout: option<borrow<gpu-pipeline-layout>>,
   }
   resource gpu-command-encoder {
     begin-render-pass: func(descriptor: gpu-render-pass-descriptor) -> gpu-render-pass-encoder;
@@ -469,7 +481,7 @@ interface webgpu {
   }
   record gpu-texture-view-descriptor {
     format: option<gpu-texture-format>,
-    dimension: gpu-texture-view-dimension,
+    dimension: option<gpu-texture-view-dimension>,
     aspect: option<gpu-texture-aspect>,
     base-mip-level: option<gpu-integer-coordinate>,
     mip-level-count: option<gpu-integer-coordinate>,
@@ -585,6 +597,7 @@ interface webgpu {
   }
   record gpu-buffer-binding {
     buffer: gpu-buffer,
+    // buffer: borrow<gpu-buffer>,
     offset: option<gpu-size64>,
     size: option<gpu-size64>,
   }
@@ -675,7 +688,7 @@ interface webgpu {
   }
   record gpu-fragment-state {
     // TODO: Panic in runtime with this enabled. Need to figure out why.
-    // targets: list<gpu-color-target-state>,
+    targets: list<gpu-color-target-state>,
     module: borrow<gpu-shader-module>,
     entry-point: string,
     // record<USVString, GPUPipelineConstantValue> constants;
@@ -820,7 +833,7 @@ interface webgpu {
   }
   type gpu-origin3-d = gpu-origin3-d-dict-or-list-gpu-integer-coordinate;
   record gpu-image-copy-texture {
-    texture: gpu-texture,
+    texture: borrow<gpu-texture>,
     mip-level: option<gpu-integer-coordinate>,
     origin: option<gpu-origin3-d>,
     aspect: option<gpu-texture-aspect>,
