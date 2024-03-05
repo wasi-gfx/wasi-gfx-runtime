@@ -596,8 +596,8 @@ interface webgpu {
     %resource: gpu-binding-resource,
   }
   record gpu-buffer-binding {
-    buffer: gpu-buffer,
-    // buffer: borrow<gpu-buffer>,
+    // buffer: gpu-buffer,
+    buffer: borrow<gpu-buffer>,
     offset: option<gpu-size64>,
     size: option<gpu-size64>,
   }

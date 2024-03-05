@@ -30,24 +30,30 @@ wit-deps
 ```
 
 
+#### List of available examples:
+- triangle
+- skybox
+- rectangle_simple_buffer
+
+
 #### To run the examples:
 
 In `example-apps/*/`
 ```bash
 cargo build --release --target wasm32-unknown-unknown
-wasm-tools component new ./target/wasm32-unknown-unknown/release/triangle.wasm -o out.wasm
+wasm-tools component new ./target/wasm32-unknown-unknown/release/[example].wasm -o out.wasm
 ```
 
 
 In `example-runtime/`
 ```bash
-cargo run -- --example triangle
+cargo run -- --example [example]
 ```
 
 Wayland on an Nvidia GPU is [not working well](https://github.com/gfx-rs/wgpu/issues/2519), use XWayland instead:
 
 ```bash
-export WAYLAND_DISPLAY=wayland-1 vkcube && cargo run -- --example triangle
+export WAYLAND_DISPLAY=wayland-1 vkcube && cargo run -- --example [example]
 ```
 
 
@@ -55,5 +61,5 @@ export WAYLAND_DISPLAY=wayland-1 vkcube && cargo run -- --example triangle
 
 In `example-apps/*/`
 ```bash
-wasm-tools component wit ./target/wasm32-unknown-unknown/release/triangle.wasm
+wasm-tools component wit ./target/wasm32-unknown-unknown/release/[example].wasm
 ```

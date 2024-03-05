@@ -4,9 +4,9 @@
 // - Remove all unwraps.
 // - Implement all the drop handlers.
 
+use core::slice;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex};
 use wasmtime::component::Resource;
 
 use crate::component::webgpu::webgpu;
@@ -21,10 +21,21 @@ mod enum_conversions;
 mod to_core_conversions;
 
 pub struct RemoteBuffer {
-    // TODO: don't put behind a mutex.
     // See https://bytecodealliance.zulipchat.com/#narrow/stream/206238-general/topic/Should.20wasi.20resources.20be.20stored.20behind.20a.20mutex.3F
-    pub(crate) buffer: Arc<Mutex<Vec<u8>>>,
+    pub(crate) ptr: *mut u8,
+    pub(crate) len: u64,
 }
+impl RemoteBuffer {
+    pub fn slice(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.ptr, self.len as usize) }
+    }
+    pub fn slice_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.ptr, self.len as usize) }
+    }
+}
+unsafe impl Send for RemoteBuffer {}
+unsafe impl Sync for RemoteBuffer {}
+
 pub struct Buffer {
     buffer: wgpu_core::id::BufferId,
     mapped: Option<RemoteBuffer>,
@@ -46,21 +57,14 @@ impl webgpu::Host for HostState {
 impl webgpu::HostRemoteBuffer for HostState {
     fn length(&mut self, buffer: Resource<webgpu::RemoteBuffer>) -> wasmtime::Result<u32> {
         let buffer = self.table.get(&buffer).unwrap();
-        let len = buffer.mapped.as_ref().unwrap().buffer.lock().unwrap().len();
+        let len = buffer.mapped.as_ref().unwrap().len;
         Ok(len as u32)
     }
 
     fn get(&mut self, buffer: Resource<webgpu::RemoteBuffer>, i: u32) -> wasmtime::Result<u8> {
         let buffer = self.table.get(&buffer).unwrap();
-        let val = *buffer
-            .mapped
-            .as_ref()
-            .unwrap()
-            .buffer
-            .lock()
-            .unwrap()
-            .get(i as usize)
-            .unwrap();
+        let remote_buffer = buffer.mapped.as_ref().unwrap();
+        let val = remote_buffer.slice()[i as usize];
         Ok(val)
     }
 
@@ -71,7 +75,8 @@ impl webgpu::HostRemoteBuffer for HostState {
         val: u8,
     ) -> wasmtime::Result<()> {
         let buffer = self.table.get_mut(&buffer).unwrap();
-        buffer.mapped.as_ref().unwrap().buffer.lock().unwrap()[i as usize] = val;
+        let remote_buffer = buffer.mapped.as_mut().unwrap();
+        remote_buffer.slice_mut()[i as usize] = val;
         Ok(())
     }
 
@@ -749,7 +754,7 @@ impl webgpu::HostGpuQueue for HostState {
     ) -> wasmtime::Result<()> {
         let queue = self.table.get(&queue).unwrap();
         let buffer = self.table.get(&buffer).unwrap();
-        let mut data: &[u8] = &data[..];
+        let mut data = &data[..];
         if let Some(data_offset) = data_offset {
             let data_offset = data_offset as usize;
             data = &data[data_offset..];
@@ -1132,6 +1137,7 @@ impl webgpu::HostGpuRenderPassEncoder for HostState {
         let mut render_pass = self.table.get_mut(&render_pass).unwrap();
 
         let dynamic_offsets = dynamic_offsets.unwrap();
+        // TODO: validate safety.
         unsafe {
             wgpu_core::command::render_ffi::wgpu_render_pass_set_bind_group(
                 &mut render_pass,
@@ -1809,15 +1815,31 @@ impl webgpu::HostGpuBuffer for HostState {
 
     fn get_mapped_range(
         &mut self,
-        _buffer: Resource<webgpu::GpuBuffer>,
-        _offset: Option<webgpu::GpuSize64>,
-        _size: Option<webgpu::GpuSize64>,
+        buffer: Resource<webgpu::GpuBuffer>,
+        offset: Option<webgpu::GpuSize64>,
+        size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Resource<webgpu::GpuBuffer>> {
-        todo!()
+        let buffer_rep = buffer.rep();
+        let buffer = self.table.get_mut(&buffer).unwrap();
+        let (ptr, len) = self
+            .instance
+            .buffer_get_mapped_range::<crate::Backend>(buffer.buffer, offset.unwrap_or(0), size)
+            .unwrap();
+        let remote_buffer = RemoteBuffer {
+            ptr,
+            len,
+        };
+        buffer.mapped = Some(remote_buffer);
+        Ok(Resource::new_own(buffer_rep))
     }
 
-    fn unmap(&mut self, _buffer: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<()> {
-        todo!()
+    fn unmap(&mut self, buffer: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<()> {
+        let buffer = self.table.get_mut(&buffer).unwrap();
+        buffer.mapped.take().unwrap();
+        self.instance
+            .buffer_unmap::<crate::Backend>(buffer.buffer)
+            .unwrap();
+        Ok(())
     }
 
     fn destroy(&mut self, _self_: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<()> {

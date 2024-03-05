@@ -124,8 +124,9 @@ impl crate::component::webgpu::frame_buffer::HostFrameBuffer for HostState {
         Ok(())
     }
 
-    fn drop(&mut self, _rep: Resource<FrameBuffer>) -> wasmtime::Result<()> {
-        // todo!()
+    fn drop(&mut self, frame_buffer: Resource<FrameBuffer>) -> wasmtime::Result<()> {
+        let frame_buffer = self.table.delete(frame_buffer).unwrap();
+        frame_buffer.buffer.lock().unwrap().take();
         Ok(())
     }
 }

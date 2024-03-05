@@ -382,7 +382,8 @@ impl<'a> ToCore<wgpu_core::resource::SamplerDescriptor<'a>> for webgpu::GpuSampl
             lod_min_clamp: self.lod_min_clamp.unwrap(),
             lod_max_clamp: self.lod_max_clamp.unwrap(),
             compare: self.compare.map(|compare| compare.into()),
-            anisotropy_clamp: self.max_anisotropy.unwrap(),
+            // TODO: should this be coming from self.anisotropy_clamp?
+            anisotropy_clamp: 1,
             border_color: Default::default(),
         }
     }
