@@ -19,6 +19,7 @@ futures = "0.3.29"
 tokio = { version = "1.35.0", features = ["full"] }
 softbuffer = "0.3.0"
 env_logger = "0.11.0"
+log = "0.4.8"
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 version = "0.18"
