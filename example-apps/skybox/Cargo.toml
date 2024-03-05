@@ -1,0 +1,18 @@
+[package]
+name = "skybox"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+bitflags = "2.4.2"
+bytemuck = { version = "1.14.1", features=["derive"] }
+glam = "0.25.0"
+ktx2 = "0.3.0"
+log = "0.4.20"
+obj = "0.10.2"
+wit-bindgen = "0.19.0"
