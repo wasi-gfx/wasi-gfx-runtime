@@ -1,6 +1,6 @@
-// TODO: Move this into mini-canvas.
-
 package component:webgpu;
+
+// TODO: Move this into mini-canvas.
 
 interface pointer-events {
     use wasi:io/poll@0.2.0.{pollable};
