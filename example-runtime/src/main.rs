@@ -264,7 +264,9 @@ pub enum HostEvent {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .init();
 
     // can't drop receiver right away, that'll cause panics. No idea why.
     let (sender, _receiver) = tokio::sync::broadcast::channel::<HostEvent>(10);

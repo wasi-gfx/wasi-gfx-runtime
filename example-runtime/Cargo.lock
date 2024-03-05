@@ -961,6 +961,7 @@ dependencies = [
  "clap",
  "env_logger",
  "futures",
+ "log",
  "rand",
  "raw-window-handle",
  "softbuffer",
