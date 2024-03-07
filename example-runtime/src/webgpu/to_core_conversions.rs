@@ -1,6 +1,6 @@
 use wasmtime::component::ResourceTable;
 
-use crate::component::webgpu::webgpu;
+use crate::wasi::webgpu::webgpu;
 
 pub trait ToCore<T> {
     fn to_core(self, table: &ResourceTable) -> T;

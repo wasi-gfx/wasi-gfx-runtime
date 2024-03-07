@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
-use component::webgpu::{
+use wasi::webgpu::{
     key_events::KeyEvent, mini_canvas::ResizeEvent, pointer_events::PointerEvent,
 };
 use tokio::sync::broadcast::Sender;
@@ -61,36 +61,36 @@ wasmtime::component::bindgen!({
     with: {
         "wasi:io/poll": preview2::bindings::io::poll,
         "wasi:io/streams": preview2::bindings::io::streams,
-        "component:webgpu/webgpu/gpu-adapter": wgpu_core::id::AdapterId,
-        "component:webgpu/webgpu/gpu-device": webgpu::Device,
+        "wasi:webgpu/webgpu/gpu-adapter": wgpu_core::id::AdapterId,
+        "wasi:webgpu/webgpu/gpu-device": webgpu::Device,
         // queue is same as device
-        "component:webgpu/webgpu/gpu-queue": webgpu::Device,
-        "component:webgpu/webgpu/gpu-command-encoder": wgpu_core::id::CommandEncoderId,
-        "component:webgpu/webgpu/gpu-render-pass-encoder": wgpu_core::command::RenderPass,
-        "component:webgpu/webgpu/gpu-shader-module": wgpu_core::id::ShaderModuleId,
-        "component:webgpu/webgpu/gpu-render-pipeline": wgpu_core::id::RenderPipelineId,
-        "component:webgpu/webgpu/gpu-command-buffer": wgpu_core::id::CommandBufferId,
-        // "component:webgpu/webgpu/gpu-buffer": wgpu_core::id::BufferId,
-        "component:webgpu/webgpu/gpu-buffer": webgpu::Buffer,
-        "component:webgpu/webgpu/remote-buffer": webgpu::Buffer,
-        "component:webgpu/webgpu/gpu-pipeline-layout": wgpu_core::id::PipelineLayoutId,
-        "component:webgpu/webgpu/gpu-bind-group-layout": wgpu_core::id::BindGroupLayoutId,
-        "component:webgpu/webgpu/gpu-sampler": wgpu_core::id::SamplerId,
-        "component:webgpu/webgpu/gpu-supported-features": wgpu_types::Features,
-        "component:webgpu/webgpu/gpu-texture": wgpu_core::id::TextureId,
-        "component:webgpu/webgpu/gpu-bind-group": wgpu_core::id::BindGroupId,
-        "component:webgpu/webgpu/gpu-texture-view": wgpu_core::id::TextureViewId,
-        "component:webgpu/frame-buffer/frame-buffer": frame_buffer::FrameBuffer,
-        "component:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
-        "component:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
-        "component:webgpu/pointer-events/pointer-move-listener": pointer_events::PointerMoveListener,
-        "component:webgpu/key-events/key-up-listener": key_events::KeyUpListener,
-        "component:webgpu/key-events/key-down-listener": key_events::KeyDownListener,
-        "component:webgpu/animation-frame/frame-listener": animation_frame::AnimationFrameListener,
-        "component:webgpu/graphics-context/graphics-context": graphics_context::GraphicsContext,
-        "component:webgpu/graphics-context/graphics-context-buffer": graphics_context::GraphicsContextBuffer,
-        "component:webgpu/mini-canvas/mini-canvas": mini_canvas::MiniCanvas,
-        "component:webgpu/mini-canvas/resize-listener": mini_canvas::ResizeListener,
+        "wasi:webgpu/webgpu/gpu-queue": webgpu::Device,
+        "wasi:webgpu/webgpu/gpu-command-encoder": wgpu_core::id::CommandEncoderId,
+        "wasi:webgpu/webgpu/gpu-render-pass-encoder": wgpu_core::command::RenderPass,
+        "wasi:webgpu/webgpu/gpu-shader-module": wgpu_core::id::ShaderModuleId,
+        "wasi:webgpu/webgpu/gpu-render-pipeline": wgpu_core::id::RenderPipelineId,
+        "wasi:webgpu/webgpu/gpu-command-buffer": wgpu_core::id::CommandBufferId,
+        // "wasi:webgpu/webgpu/gpu-buffer": wgpu_core::id::BufferId,
+        "wasi:webgpu/webgpu/gpu-buffer": webgpu::Buffer,
+        "wasi:webgpu/webgpu/remote-buffer": webgpu::Buffer,
+        "wasi:webgpu/webgpu/gpu-pipeline-layout": wgpu_core::id::PipelineLayoutId,
+        "wasi:webgpu/webgpu/gpu-bind-group-layout": wgpu_core::id::BindGroupLayoutId,
+        "wasi:webgpu/webgpu/gpu-sampler": wgpu_core::id::SamplerId,
+        "wasi:webgpu/webgpu/gpu-supported-features": wgpu_types::Features,
+        "wasi:webgpu/webgpu/gpu-texture": wgpu_core::id::TextureId,
+        "wasi:webgpu/webgpu/gpu-bind-group": wgpu_core::id::BindGroupId,
+        "wasi:webgpu/webgpu/gpu-texture-view": wgpu_core::id::TextureViewId,
+        "wasi:webgpu/frame-buffer/frame-buffer": frame_buffer::FrameBuffer,
+        "wasi:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
+        "wasi:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
+        "wasi:webgpu/pointer-events/pointer-move-listener": pointer_events::PointerMoveListener,
+        "wasi:webgpu/key-events/key-up-listener": key_events::KeyUpListener,
+        "wasi:webgpu/key-events/key-down-listener": key_events::KeyDownListener,
+        "wasi:webgpu/animation-frame/frame-listener": animation_frame::AnimationFrameListener,
+        "wasi:webgpu/graphics-context/graphics-context": graphics_context::GraphicsContext,
+        "wasi:webgpu/graphics-context/graphics-context-buffer": graphics_context::GraphicsContextBuffer,
+        "wasi:webgpu/mini-canvas/mini-canvas": mini_canvas::MiniCanvas,
+        "wasi:webgpu/mini-canvas/resize-listener": mini_canvas::ResizeListener,
     },
 });
 
@@ -279,13 +279,13 @@ async fn main() -> anyhow::Result<()> {
     let engine = Engine::new(&config)?;
     let mut linker = Linker::new(&engine);
 
-    component::webgpu::webgpu::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-    component::webgpu::frame_buffer::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-    component::webgpu::animation_frame::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-    component::webgpu::pointer_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-    component::webgpu::key_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-    component::webgpu::graphics_context::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-    component::webgpu::mini_canvas::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    wasi::webgpu::webgpu::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    wasi::webgpu::frame_buffer::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    wasi::webgpu::animation_frame::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    wasi::webgpu::pointer_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    wasi::webgpu::key_events::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    wasi::webgpu::graphics_context::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    wasi::webgpu::mini_canvas::add_to_linker(&mut linker, |state: &mut HostState| state)?;
 
     preview2::bindings::io::poll::add_to_linker(&mut linker, |state| state)?;
     preview2::bindings::io::streams::add_to_linker(&mut linker, |state| state)?;

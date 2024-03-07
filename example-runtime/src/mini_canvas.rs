@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use crate::{
-    component::webgpu::mini_canvas::{CreateDesc, GraphicsContext, Pollable, ResizeEvent},
+    wasi::webgpu::mini_canvas::{CreateDesc, GraphicsContext, Pollable, ResizeEvent},
     HostEvent, HostState,
 };
 use tokio::sync::broadcast::Receiver;
@@ -15,9 +15,9 @@ pub struct MiniCanvas {
     pub offscreen: bool,
 }
 
-impl crate::component::webgpu::mini_canvas::Host for HostState {}
+impl crate::wasi::webgpu::mini_canvas::Host for HostState {}
 
-impl crate::component::webgpu::mini_canvas::HostMiniCanvas for HostState {
+impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
     fn new(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvas>> {
         Ok(self
             .table
@@ -88,7 +88,7 @@ impl preview2::Subscribe for ResizeListener {
     }
 }
 
-impl crate::component::webgpu::mini_canvas::HostResizeListener for HostState {
+impl crate::wasi::webgpu::mini_canvas::HostResizeListener for HostState {
     fn subscribe(
         &mut self,
         pointer_down: Resource<ResizeListener>,

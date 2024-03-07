@@ -1,14 +1,14 @@
 use std::sync::Mutex;
 
 use crate::{
-    component::webgpu::pointer_events::{PointerEvent, Pollable},
+    wasi::webgpu::pointer_events::{PointerEvent, Pollable},
     HostEvent, HostState,
 };
 use tokio::sync::broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
-impl crate::component::webgpu::pointer_events::Host for HostState {
+impl crate::wasi::webgpu::pointer_events::Host for HostState {
     fn up_listener(&mut self) -> wasmtime::Result<Resource<PointerUpListener>> {
         let receiver = self.sender.subscribe();
         Ok(self
@@ -43,7 +43,7 @@ impl crate::component::webgpu::pointer_events::Host for HostState {
     }
 }
 
-impl crate::component::webgpu::pointer_events::HostPointerUpListener for HostState {
+impl crate::wasi::webgpu::pointer_events::HostPointerUpListener for HostState {
     fn subscribe(
         &mut self,
         pointer_up: Resource<PointerUpListener>,
@@ -81,7 +81,7 @@ impl preview2::Subscribe for PointerUpListener {
     }
 }
 
-impl crate::component::webgpu::pointer_events::HostPointerDownListener for HostState {
+impl crate::wasi::webgpu::pointer_events::HostPointerDownListener for HostState {
     fn subscribe(
         &mut self,
         pointer_down: Resource<PointerDownListener>,
@@ -119,7 +119,7 @@ impl preview2::Subscribe for PointerDownListener {
     }
 }
 
-impl crate::component::webgpu::pointer_events::HostPointerMoveListener for HostState {
+impl crate::wasi::webgpu::pointer_events::HostPointerMoveListener for HostState {
     fn subscribe(
         &mut self,
         pointer_move: Resource<PointerMoveListener>,

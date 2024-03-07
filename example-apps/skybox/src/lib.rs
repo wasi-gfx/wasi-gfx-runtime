@@ -2,7 +2,7 @@
 
 wit_bindgen::generate!({
     path: "../../wit",
-    world: "component:webgpu/example",
+    world: "example:example/example",
     exports: {
         world: ExampleSkybox,
     },
@@ -13,7 +13,7 @@ const HEIGHT: u32 = 600;
 
 struct ExampleSkybox;
 
-use component::webgpu::{
+use wasi::webgpu::{
     animation_frame, graphics_context, key_events, mini_canvas, pointer_events, webgpu,
 };
 

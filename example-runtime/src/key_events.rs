@@ -1,14 +1,14 @@
 use std::sync::Mutex;
 
 use crate::{
-    component::webgpu::key_events::{KeyEvent, Pollable},
+    wasi::webgpu::key_events::{KeyEvent, Pollable},
     HostEvent, HostState,
 };
 use tokio::sync::broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
-impl crate::component::webgpu::key_events::Host for HostState {
+impl crate::wasi::webgpu::key_events::Host for HostState {
     fn up_listener(&mut self) -> wasmtime::Result<Resource<KeyUpListener>> {
         let receiver = self.sender.subscribe();
         Ok(self
@@ -32,7 +32,7 @@ impl crate::component::webgpu::key_events::Host for HostState {
     }
 }
 
-impl crate::component::webgpu::key_events::HostKeyUpListener for HostState {
+impl crate::wasi::webgpu::key_events::HostKeyUpListener for HostState {
     fn subscribe(
         &mut self,
         key_up: Resource<KeyUpListener>,
@@ -67,7 +67,7 @@ impl preview2::Subscribe for KeyUpListener {
     }
 }
 
-impl crate::component::webgpu::key_events::HostKeyDownListener for HostState {
+impl crate::wasi::webgpu::key_events::HostKeyDownListener for HostState {
     fn subscribe(
         &mut self,
         key_down: Resource<KeyDownListener>,

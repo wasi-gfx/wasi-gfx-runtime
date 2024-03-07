@@ -1,4 +1,4 @@
-use crate::{component::webgpu::graphics_context::ConfigureContextDesc, HostState};
+use crate::{wasi::webgpu::graphics_context::ConfigureContextDesc, HostState};
 use wasmtime::component::Resource;
 
 // should context be an enum? like: Context::Webgpu2Canvas, Context::Buffer2Canvas.
@@ -18,9 +18,9 @@ pub enum GraphicsContextBuffer {
     FrameBuffer(crate::frame_buffer::FrameBuffer),
 }
 
-impl crate::component::webgpu::graphics_context::Host for HostState {}
+impl crate::wasi::webgpu::graphics_context::Host for HostState {}
 
-impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostState {
+impl crate::wasi::webgpu::graphics_context::HostGraphicsContext for HostState {
     fn new(&mut self) -> wasmtime::Result<Resource<GraphicsContext>> {
         Ok(self.table.push(GraphicsContext { kind: None }).unwrap())
     }
@@ -87,7 +87,7 @@ impl crate::component::webgpu::graphics_context::HostGraphicsContext for HostSta
     }
 }
 
-impl crate::component::webgpu::graphics_context::HostGraphicsContextBuffer for HostState {
+impl crate::wasi::webgpu::graphics_context::HostGraphicsContextBuffer for HostState {
     fn drop(&mut self, _rep: Resource<GraphicsContextBuffer>) -> wasmtime::Result<()> {
         todo!()
     }

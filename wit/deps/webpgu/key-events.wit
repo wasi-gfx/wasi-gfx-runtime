@@ -1,4 +1,4 @@
-package component:webgpu;
+package wasi:webgpu;
 
 // TODO: Move this into mini-canvas.
 

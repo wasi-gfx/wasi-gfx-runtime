@@ -1,6 +1,6 @@
 // TODO: Move this into mini-canvas.
 
-package component:webgpu;
+package wasi:webgpu;
 
 /// This is similar to requestAnimationFrame in JavaScript, or wl_surface::frame in Wayland.
 /// Should update as fast as the users display can, but not faster.

@@ -1,1 +1,1 @@
-io = "https://github.com/WebAssembly/wasi-io/archive/fef02cddb4ac28dcde97bf11a4c7b856833a948f.tar.gz"
+webpgu = "https://github.com/WebAssembly/wasi-webgpu/archive/d9210ac14fb10ccb20ca9f3d3c4ce371cccb053b.tar.gz"
