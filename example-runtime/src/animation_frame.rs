@@ -1,14 +1,14 @@
 use std::sync::Mutex;
 
 use crate::{
-    component::webgpu::animation_frame::{FrameEvent, HostFrameListener, Pollable},
+    wasi::webgpu::animation_frame::{FrameEvent, HostFrameListener, Pollable},
     HostEvent, HostState,
 };
 use tokio::sync::broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
-impl crate::component::webgpu::animation_frame::Host for HostState {
+impl crate::wasi::webgpu::animation_frame::Host for HostState {
     fn listener(&mut self) -> wasmtime::Result<Resource<AnimationFrameListener>> {
         let receiver = self.sender.subscribe();
 

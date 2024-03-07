@@ -1,4 +1,4 @@
-use crate::component::webgpu::webgpu;
+use crate::wasi::webgpu::webgpu;
 
 impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
     fn from(value: wgpu_types::TextureFormat) -> Self {

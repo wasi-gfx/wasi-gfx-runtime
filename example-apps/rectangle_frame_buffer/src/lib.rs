@@ -1,6 +1,6 @@
 wit_bindgen::generate!({
     path: "../../wit",
-    world: "component:webgpu/example",
+    world: "example:example/example",
     exports: {
         world: Example,
     },
@@ -14,7 +14,7 @@ impl Guest for Example {
     }
 }
 
-use component::webgpu::{
+use wasi::webgpu::{
     animation_frame, frame_buffer, graphics_context, mini_canvas, pointer_events,
 };
 use std::cmp::min;

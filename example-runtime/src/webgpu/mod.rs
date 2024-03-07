@@ -9,7 +9,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::borrow::Cow;
 use wasmtime::component::Resource;
 
-use crate::component::webgpu::webgpu;
+use crate::wasi::webgpu::webgpu;
 use crate::graphics_context::{GraphicsContext, GraphicsContextBuffer, GraphicsContextKind};
 use crate::HostState;
 

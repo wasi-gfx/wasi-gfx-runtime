@@ -48,7 +48,7 @@ impl From<softbuffer::Buffer<'static>> for FrameBuffer {
     }
 }
 
-impl crate::component::webgpu::frame_buffer::Host for HostState {
+impl crate::wasi::webgpu::frame_buffer::Host for HostState {
     fn connect_graphics_context(
         &mut self,
         graphics_context: Resource<GraphicsContext>,
@@ -86,7 +86,7 @@ impl crate::component::webgpu::frame_buffer::Host for HostState {
     }
 }
 
-impl crate::component::webgpu::frame_buffer::HostFrameBuffer for HostState {
+impl crate::wasi::webgpu::frame_buffer::HostFrameBuffer for HostState {
     fn from_graphics_buffer(
         &mut self,
         buffer: Resource<crate::graphics_context::GraphicsContextBuffer>,
