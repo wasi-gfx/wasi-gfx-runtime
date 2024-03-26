@@ -2,14 +2,13 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
-use wasi::webgpu::{
-    key_events::KeyEvent, mini_canvas::ResizeEvent, pointer_events::PointerEvent,
-};
 use tokio::sync::broadcast::Sender;
+use wasi::webgpu::{key_events::KeyEvent, mini_canvas::ResizeEvent, pointer_events::PointerEvent};
 use wasmtime::{
     component::{Component, Linker},
     Config, Engine, Store,
 };
+use webgpu::GpuInstance;
 use winit::{event::ElementState, event_loop::EventLoop, window::Window};
 
 use wasmtime_wasi::preview2::{self, ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
@@ -241,6 +240,12 @@ impl WasiView for HostState {
 
     fn ctx_mut(&mut self) -> &mut WasiCtx {
         &mut self.ctx
+    }
+}
+
+impl GpuInstance for HostState {
+    fn instance(&self) -> &wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory> {
+        &self.instance
     }
 }
 
