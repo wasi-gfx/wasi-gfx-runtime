@@ -5,19 +5,121 @@
 // - Implement all the drop handlers.
 
 use core::slice;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use std::sync::Arc;
+// use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::borrow::Cow;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 
-use crate::graphics_context::{GraphicsContext, GraphicsContextBuffer, GraphicsContextKind};
+use crate::graphics_context::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
 use crate::wasi::webgpu::webgpu;
 use crate::HostState;
 
 use self::to_core_conversions::ToCore;
 
+// TODO: rename to HasGpuInstance?
 pub trait GpuInstance {
     fn instance(&self) -> &wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>;
+}
+
+pub struct WebGpuSurface<F, I>
+where
+    I: AsRef<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
+    F: Fn() -> I,
+{
+    get_instance: F,
+    device_id: wgpu_core::id::DeviceId,
+    adapter_id: wgpu_core::id::AdapterId,
+    surface_id: Option<wgpu_core::id::SurfaceId>,
+}
+
+// impl<F, I> WebGpuSurface<F, I>
+// where
+//     I: AsRef<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
+//     F: Fn() -> I,
+// {
+//     fn get_instance(&self) -> &wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory> {
+//         (self.get_instance)().as_ref()
+//     }
+// }
+
+impl<F, I> DrawApi for WebGpuSurface<F, I>
+where
+    I: AsRef<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
+    F: Fn() -> I,
+{
+    fn get_current_buffer(&mut self) -> wasmtime::Result<GraphicsContextBuffer> {
+        let texture: wgpu_core::id::TextureId = (self.get_instance)().as_ref()
+            .surface_get_current_texture::<crate::Backend>(self.surface_id.unwrap(), ())
+            .unwrap()
+            .texture_id
+            .unwrap();
+        // let texture = (self.get_instance)().as_ref()
+        //     .surface_get_current_texture::<crate::Backend>(self.surface_id, ())
+        //     .unwrap();
+        // println!("{:?}", texture.status);
+        //     let texture = texture.texture_id
+        //     .unwrap();
+
+        let buff = Box::new(texture);
+        let buff: GraphicsContextBuffer = buff.into();
+        Ok(buff)
+    }
+    
+    fn present(&mut self) -> wasmtime::Result<()> {
+        (self.get_instance)().as_ref()
+            .surface_present::<crate::Backend>(self.surface_id.unwrap())
+            .unwrap();
+        Ok(())
+    }
+    
+    fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
+        // self.insert(value)
+        let surface_id = (self.get_instance)().as_ref().instance_create_surface(
+            display.raw_display_handle(),
+            display.raw_window_handle(),
+            (),
+        );
+
+        // let host_device = self.table.get(&device).unwrap();
+
+        // let mut size = self.window.inner_size();
+        // size.width = size.width.max(1);
+        // size.height = size.height.max(1);
+
+        let swapchain_capabilities = (self.get_instance)().as_ref()
+            .surface_get_capabilities::<crate::Backend>(surface_id, self.adapter_id)
+            .unwrap();
+        let swapchain_format = swapchain_capabilities.formats[0];
+
+        let config = wgpu_types::SurfaceConfiguration {
+            usage: wgpu_types::TextureUsages::RENDER_ATTACHMENT,
+            format: swapchain_format,
+            width: display.width(),
+            height: display.height(),
+            present_mode: wgpu_types::PresentMode::Fifo,
+            alpha_mode: swapchain_capabilities.alpha_modes[0],
+            view_formats: vec![swapchain_format],
+        };
+
+        (self.get_instance)().as_ref()
+            .surface_configure::<crate::Backend>(surface_id, self.device_id, &config);
+
+        self.surface_id = Some(surface_id);
+
+
+        println!("display_api_ready");
+
+        // let context = self.table.get_mut(&context).unwrap();
+
+        // let instance = Arc::downgrade(&self.instance);
+
+        // let surface = WebGpuSurface {
+        //     get_instance: move || instance.upgrade().unwrap(),
+        //     surface_id: surface,
+        // };
+    }
 }
 
 // ToCore trait used for resources, records, and variants.
@@ -25,6 +127,7 @@ pub trait GpuInstance {
 mod enum_conversions;
 mod to_core_conversions;
 
+// TODO: rename BufferPtr
 pub struct RemoteBuffer {
     // See https://bytecodealliance.zulipchat.com/#narrow/stream/206238-general/topic/Should.20wasi.20resources.20be.20stored.20behind.20a.20mutex.3F
     pub(crate) ptr: *mut u8,
@@ -98,40 +201,53 @@ impl webgpu::HostGpuDevice for HostState {
         device: Resource<Device>,
         context: Resource<GraphicsContext>,
     ) -> wasmtime::Result<()> {
-        let surface = self.instance.instance_create_surface(
-            self.window.raw_display_handle(),
-            self.window.raw_window_handle(),
-            (),
-        );
+        // let surface = self.instance.instance_create_surface(
+        //     self.window.raw_display_handle(),
+        //     self.window.raw_window_handle(),
+        //     (),
+        // );
 
-        let host_device = self.table.get(&device).unwrap();
+        let device = self.table.get(&device).unwrap();
+        let device_id = device.device;
+        let adapter_id = device.adapter;
+        drop(device);
 
-        let mut size = self.window.inner_size();
-        size.width = size.width.max(1);
-        size.height = size.height.max(1);
+        // let mut size = self.window.inner_size();
+        // size.width = size.width.max(1);
+        // size.height = size.height.max(1);
 
-        let swapchain_capabilities = self
-            .instance
-            .surface_get_capabilities::<crate::Backend>(surface, host_device.adapter)
-            .unwrap();
-        let swapchain_format = swapchain_capabilities.formats[0];
+        // let swapchain_capabilities = self
+        //     .instance
+        //     .surface_get_capabilities::<crate::Backend>(surface, host_device.adapter)
+        //     .unwrap();
+        // let swapchain_format = swapchain_capabilities.formats[0];
 
-        let config = wgpu_types::SurfaceConfiguration {
-            usage: wgpu_types::TextureUsages::RENDER_ATTACHMENT,
-            format: swapchain_format,
-            width: size.width,
-            height: size.height,
-            present_mode: wgpu_types::PresentMode::Fifo,
-            alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![swapchain_format],
-        };
+        // let config = wgpu_types::SurfaceConfiguration {
+        //     usage: wgpu_types::TextureUsages::RENDER_ATTACHMENT,
+        //     format: swapchain_format,
+        //     width: size.width,
+        //     height: size.height,
+        //     present_mode: wgpu_types::PresentMode::Fifo,
+        //     alpha_mode: swapchain_capabilities.alpha_modes[0],
+        //     view_formats: vec![swapchain_format],
+        // };
 
-        self.instance
-            .surface_configure::<crate::Backend>(surface, host_device.device, &config);
+        // self.instance
+        //     .surface_configure::<crate::Backend>(surface, host_device.device, &config);
 
         let context = self.table.get_mut(&context).unwrap();
 
-        context.kind = Some(GraphicsContextKind::Webgpu(surface));
+        let instance = Arc::downgrade(&self.instance);
+
+        let surface = WebGpuSurface {
+            get_instance: move || instance.upgrade().unwrap(),
+            device_id,
+            adapter_id,
+            surface_id: None,
+        };
+
+        // context.kind = Some(GraphicsContextKind::Webgpu(surface));
+        context.connect_draw_api(Box::new(surface));
 
         Ok(())
     }
@@ -449,11 +565,14 @@ impl<T: WasiView + GpuInstance> webgpu::HostGpuTexture for T {
         buffer: Resource<GraphicsContextBuffer>,
     ) -> wasmtime::Result<Resource<wgpu_core::id::TextureId>> {
         let host_buffer = self.table_mut().delete(buffer).unwrap();
-        if let GraphicsContextBuffer::Webgpu(host_buffer) = host_buffer {
-            Ok(self.table_mut().push(host_buffer).unwrap())
-        } else {
-            panic!("Context not connected to webgpu");
-        }
+        // if let GraphicsContextBuffer::Webgpu(host_buffer) = host_buffer {
+        //     Ok(self.table_mut().push(host_buffer).unwrap())
+        // } else {
+        //     panic!("Context not connected to webgpu");
+        // }
+        let host_buffer: Box<wgpu_core::id::TextureId> = host_buffer.inner_type();
+        let host_buffer: wgpu_core::id::TextureId = *host_buffer;
+        Ok(self.table_mut().push(host_buffer).unwrap())
     }
 
     fn create_view(

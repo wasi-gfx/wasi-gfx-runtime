@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     wasi::webgpu::pointer_events::{PointerEvent, Pollable},
@@ -32,7 +32,8 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
     }
 
     fn move_listener(&mut self) -> wasmtime::Result<Resource<PointerMoveListener>> {
-        let receiver = self.sender.subscribe();
+        // let receiver = self.sender.subscribe();
+        let receiver = self.message_sender.receivers.pointer_move_event.lock().unwrap().resubscribe();
         Ok(self
             .table_mut()
             .push(PointerMoveListener {
@@ -140,19 +141,15 @@ impl crate::wasi::webgpu::pointer_events::HostPointerMoveListener for HostState 
 
 #[derive(Debug)]
 pub struct PointerMoveListener {
-    receiver: Receiver<HostEvent>,
-    data: Mutex<Option<PointerEvent>>,
+    receiver: Receiver<(u32, PointerEvent)>,
+    data: Arc<Mutex<Option<PointerEvent>>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for PointerMoveListener {
     async fn ready(&mut self) {
-        loop {
-            let event = self.receiver.recv().await.unwrap();
-            if let HostEvent::PointerMoveEvent(event) = event {
-                *self.data.lock().unwrap() = Some(event);
-                return;
-            }
-        }
+        let (id, event) = self.receiver.recv().await.unwrap();
+        // let (id, event) = receiver.await.unwrap();
+        *self.data.lock().unwrap() = Some(event);
     }
 }
