@@ -10,7 +10,8 @@ use wasmtime_wasi::preview2::{self, WasiView};
 
 impl crate::wasi::webgpu::animation_frame::Host for HostState {
     fn listener(&mut self) -> wasmtime::Result<Resource<AnimationFrameListener>> {
-        let receiver = self.sender.subscribe();
+        // let receiver = self.sender.subscribe();
+        let receiver = self.message_sender.receivers.frame.lock().unwrap().resubscribe();
 
         Ok(self
             .table_mut()
@@ -42,20 +43,23 @@ impl HostFrameListener for HostState {
 }
 
 pub struct AnimationFrameListener {
-    receiver: Receiver<HostEvent>,
+    receiver: Receiver<(u32, ())>,
     data: Mutex<Option<FrameEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for AnimationFrameListener {
     async fn ready(&mut self) {
-        loop {
-            if let Ok(event) = self.receiver.recv().await {
-                if let HostEvent::Frame = event {
-                    *self.data.lock().unwrap() = Some(FrameEvent { nothing: false });
-                    return;
-                }
-            }
-        }
+        // loop {
+        //     if let Ok(event) = self.receiver.recv().await {
+        //         if let HostEvent::Frame = event {
+        //             *self.data.lock().unwrap() = Some(FrameEvent { nothing: false });
+        //             return;
+        //         }
+        //     }
+        // }
+        let (id, event) = self.receiver.recv().await.unwrap();
+        // let (id, event) = receiver.await.unwrap();
+        *self.data.lock().unwrap() = Some(FrameEvent { nothing: false });
     }
 }
