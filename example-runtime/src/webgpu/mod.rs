@@ -5,10 +5,8 @@
 // - Implement all the drop handlers.
 
 use core::slice;
-use std::sync::Arc;
-// use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::borrow::Cow;
+use std::sync::Arc;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 

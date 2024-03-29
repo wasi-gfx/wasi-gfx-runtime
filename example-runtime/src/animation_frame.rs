@@ -1,21 +1,26 @@
 use std::sync::Mutex;
 
 use crate::{
+    mini_canvas::MiniCanvasArc,
     wasi::webgpu::animation_frame::{FrameEvent, HostFrameListener, Pollable},
     HostState,
 };
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
+use winit::window::WindowId;
 
 impl crate::wasi::webgpu::animation_frame::Host for HostState {
-    fn listener(&mut self) -> wasmtime::Result<Resource<AnimationFrameListener>> {
-        // let receiver = self.sender.subscribe();
+    fn listener(
+        &mut self,
+        mini_canvas: Resource<MiniCanvasArc>,
+    ) -> wasmtime::Result<Resource<AnimationFrameListener>> {
+        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self.message_sender.receivers.frame.activate_cloned();
-
         Ok(self
             .table_mut()
             .push(AnimationFrameListener {
+                _window_id: window_id,
                 receiver,
                 data: Default::default(),
             })
@@ -43,23 +48,15 @@ impl HostFrameListener for HostState {
 }
 
 pub struct AnimationFrameListener {
-    receiver: Receiver<(u32, ())>,
+    _window_id: WindowId,
+    receiver: Receiver<()>,
     data: Mutex<Option<FrameEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for AnimationFrameListener {
     async fn ready(&mut self) {
-        // loop {
-        //     if let Ok(event) = self.receiver.recv().await {
-        //         if let HostEvent::Frame = event {
-        //             *self.data.lock().unwrap() = Some(FrameEvent { nothing: false });
-        //             return;
-        //         }
-        //     }
-        // }
-        let (id, event) = self.receiver.recv().await.unwrap();
-        // let (id, event) = receiver.await.unwrap();
+        let _ = self.receiver.recv().await.unwrap();
         *self.data.lock().unwrap() = Some(FrameEvent { nothing: false });
     }
 }

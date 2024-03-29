@@ -156,7 +156,7 @@ impl<T: WasiView> crate::wasi::webgpu::graphics_context::HostGraphicsContext for
 }
 
 impl<T: WasiView> crate::wasi::webgpu::graphics_context::HostGraphicsContextBuffer for T {
-    fn drop(&mut self, rep: Resource<GraphicsContextBuffer>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _rep: Resource<GraphicsContextBuffer>) -> wasmtime::Result<()> {
         todo!()
     }
 }

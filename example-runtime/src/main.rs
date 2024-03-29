@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Context;
-use async_broadcast::{InactiveReceiver, Sender};
+use async_broadcast::{InactiveReceiver, Sender, TrySendError};
 use clap::Parser;
 use wasi::webgpu::{key_events::KeyEvent, mini_canvas::ResizeEvent, pointer_events::PointerEvent};
 use wasmtime::{
@@ -13,9 +13,9 @@ use wasmtime::{
 };
 use webgpu::GpuInstance;
 use winit::{
-    event::{ElementState, Event, MouseButton, WindowEvent},
+    event::{ElementState, Event, WindowEvent},
     event_loop::{EventLoop, EventLoopProxy},
-    window::Window,
+    window::{Window, WindowId},
 };
 
 use wasmtime_wasi::preview2::{self, ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
@@ -134,26 +134,26 @@ struct MainThreadMessageSenders {
     // TODO: find better ids than u32
     // new window in an Arc<Mutex<Option<Window>>> becuase broadcast needs everything to be clone. Only the matching should take the window with `Option::take`
     new_window: Sender<(u32, Arc<Mutex<Option<Window>>>)>,
-    pointer_up_event: Sender<(u32, PointerEvent)>,
-    pointer_down_event: Sender<(u32, PointerEvent)>,
-    pointer_move_event: Sender<(u32, PointerEvent)>,
-    key_up_event: Sender<(u32, KeyEvent)>,
-    key_down_event: Sender<(u32, KeyEvent)>,
-    canvas_resize_event: Sender<(u32, ResizeEvent)>,
-    frame: Sender<(u32, ())>,
+    pointer_up_event: Sender<(WindowId, PointerEvent)>,
+    pointer_down_event: Sender<(WindowId, PointerEvent)>,
+    pointer_move_event: Sender<(WindowId, PointerEvent)>,
+    key_up_event: Sender<(WindowId, KeyEvent)>,
+    key_down_event: Sender<(WindowId, KeyEvent)>,
+    canvas_resize_event: Sender<(WindowId, ResizeEvent)>,
+    frame: Sender<()>,
 }
 
 #[derive(Clone)]
 struct MainThreadMessageReceivers {
     // TODO: can probably work around this Arc<Mutex<_>>, have cloneable receivers
     new_window: InactiveReceiver<(u32, Arc<Mutex<Option<Window>>>)>,
-    pointer_up_event: InactiveReceiver<(u32, PointerEvent)>,
-    pointer_down_event: InactiveReceiver<(u32, PointerEvent)>,
-    pointer_move_event: InactiveReceiver<(u32, PointerEvent)>,
-    key_up_event: InactiveReceiver<(u32, KeyEvent)>,
-    key_down_event: InactiveReceiver<(u32, KeyEvent)>,
-    canvas_resize_event: InactiveReceiver<(u32, ResizeEvent)>,
-    frame: InactiveReceiver<(u32, ())>,
+    pointer_up_event: InactiveReceiver<(WindowId, PointerEvent)>,
+    pointer_down_event: InactiveReceiver<(WindowId, PointerEvent)>,
+    pointer_move_event: InactiveReceiver<(WindowId, PointerEvent)>,
+    key_up_event: InactiveReceiver<(WindowId, KeyEvent)>,
+    key_down_event: InactiveReceiver<(WindowId, KeyEvent)>,
+    canvas_resize_event: InactiveReceiver<(WindowId, ResizeEvent)>,
+    frame: InactiveReceiver<()>,
 }
 impl MainThreadMessageReceivers {
     // TODO: enable
@@ -161,6 +161,7 @@ impl MainThreadMessageReceivers {
     //     self.new_window.subscribe()
     // }
 }
+
 #[derive(Clone)]
 pub struct MyMessageSender {
     proxy: EventLoopProxy<MainThreadAction>,
@@ -230,8 +231,18 @@ impl MyEventLoop {
     pub fn run(self) {
         tokio::spawn(async move {
             loop {
-                if let Err(_) = self.senders.frame.try_broadcast((0, ())) {
-                    println!("skipping a frame")
+                if let Err(e) = self.senders.frame.try_broadcast(()) {
+                    match e {
+                        TrySendError::Full(_) => {
+                            println!("skipping a frame")
+                        }
+                        TrySendError::Inactive(_) => {
+                            // don't care
+                        }
+                        TrySendError::Closed(_) => {
+                            panic!("Channel closed")
+                        }
+                    }
                 }
                 tokio::time::sleep(Duration::from_millis(16)).await;
             }
@@ -250,100 +261,116 @@ impl MyEventLoop {
                         match event {
                             MainThreadAction::CreateWindow => {
                                 let window = winit::window::Window::new(event_loop).unwrap();
-                                self.senders
-                                    .new_window
-                                    .try_broadcast((0, Arc::new(Mutex::new(Some(window)))))
-                                    .unwrap();
+                                unwrap_unless_inactive(
+                                    self.senders
+                                        .new_window
+                                        .try_broadcast((0, Arc::new(Mutex::new(Some(window))))),
+                                );
                             }
                         }
                     }
-                    Event::WindowEvent {
-                        event: WindowEvent::CloseRequested,
-                        ..
-                    } => {}
-                    Event::WindowEvent {
-                        event: WindowEvent::Resized(new_size),
-                        ..
-                    } => {
-                        self.senders.canvas_resize_event.try_broadcast((
-                            0,
-                            ResizeEvent {
-                                height: new_size.height,
-                                width: new_size.width,
-                            },
-                        ));
-                    }
-                    Event::WindowEvent {
-                        event:
-                            WindowEvent::MouseInput {
-                                button: MouseButton::Left,
-                                state,
-                                ..
-                            },
-                        ..
-                    } => {
-                        let event = PointerEvent {
-                            x: pointer_x,
-                            y: pointer_y,
-                        };
-                        let event = match state {
-                            ElementState::Pressed => {
-                                self.senders.pointer_down_event.try_broadcast((0, event));
+                    Event::WindowEvent { event, window_id } => match event {
+                        WindowEvent::CursorMoved { position, .. } => {
+                            pointer_x = position.x;
+                            pointer_y = position.y;
+                            let event = PointerEvent {
+                                x: pointer_x,
+                                y: pointer_y,
+                            };
+                            if let Err(e) = self
+                                .senders
+                                .pointer_move_event
+                                .try_broadcast((window_id, event))
+                            {
+                                match e {
+                                    TrySendError::Full(_) => {
+                                        println!("skipping a pointer move event");
+                                    }
+                                    TrySendError::Inactive(_) => {
+                                        // don't care
+                                    }
+                                    TrySendError::Closed(_) => {
+                                        panic!("Channel closed")
+                                    }
+                                }
                             }
-                            ElementState::Released => {
-                                self.senders
-                                    .pointer_up_event
-                                    .try_broadcast((0, event))
-                                    .unwrap();
-                            }
-                        };
-                    }
-                    Event::WindowEvent {
-                        event: WindowEvent::KeyboardInput { input, .. },
-                        ..
-                    } => {
-                        #[allow(deprecated)]
-                        let event = KeyEvent {
-                            code: input
-                                .virtual_keycode
-                                .map(|k| format!("{k:?}"))
-                                .unwrap_or_default(),
-                            key: input.scancode.to_string(),
-                            alt_key: input.modifiers.shift(),
-                            ctrl_key: input.modifiers.ctrl(),
-                            meta_key: input.modifiers.logo(),
-                            shift_key: input.modifiers.shift(),
-                        };
-                        match input.state {
-                            ElementState::Pressed => {
-                                self.senders
-                                    .key_down_event
-                                    .try_broadcast((0, event))
-                                    .unwrap();
-                            }
-                            ElementState::Released => {
-                                self.senders.key_up_event.try_broadcast((0, event)).unwrap();
-                            }
-                        };
-                    }
-                    Event::WindowEvent {
-                        event: WindowEvent::CursorMoved { position, .. },
-                        ..
-                    } => {
-                        pointer_x = position.x;
-                        pointer_y = position.y;
-                        let event = PointerEvent {
-                            x: pointer_x,
-                            y: pointer_y,
-                        };
-                        if let Err(_) = self.senders.pointer_move_event.try_broadcast((0, event)) {
-                            println!("skipping a pointer move event");
                         }
-                    }
-                    _ => (),
+                        WindowEvent::KeyboardInput { input, .. } => {
+                            #[allow(deprecated)]
+                            let event = KeyEvent {
+                                code: input
+                                    .virtual_keycode
+                                    .map(|k| format!("{k:?}"))
+                                    .unwrap_or_default(),
+                                key: input.scancode.to_string(),
+                                alt_key: input.modifiers.shift(),
+                                ctrl_key: input.modifiers.ctrl(),
+                                meta_key: input.modifiers.logo(),
+                                shift_key: input.modifiers.shift(),
+                            };
+                            match input.state {
+                                ElementState::Pressed => {
+                                    unwrap_unless_inactive(
+                                        self.senders
+                                            .key_down_event
+                                            .try_broadcast((window_id, event)),
+                                    );
+                                }
+                                ElementState::Released => {
+                                    unwrap_unless_inactive(
+                                        self.senders.key_up_event.try_broadcast((window_id, event)),
+                                    );
+                                }
+                            };
+                        }
+                        WindowEvent::MouseInput { state, .. } => {
+                            let event = PointerEvent {
+                                x: pointer_x,
+                                y: pointer_y,
+                            };
+                            match state {
+                                ElementState::Pressed => {
+                                    unwrap_unless_inactive(
+                                        self.senders
+                                            .pointer_down_event
+                                            .try_broadcast((window_id, event)),
+                                    );
+                                }
+                                ElementState::Released => {
+                                    unwrap_unless_inactive(
+                                        self.senders
+                                            .pointer_up_event
+                                            .try_broadcast((window_id, event)),
+                                    );
+                                }
+                            };
+                        }
+                        WindowEvent::Resized(new_size) => {
+                            unwrap_unless_inactive(self.senders.canvas_resize_event.try_broadcast(
+                                (
+                                    window_id,
+                                    ResizeEvent {
+                                        height: new_size.height,
+                                        width: new_size.width,
+                                    },
+                                ),
+                            ));
+                        }
+                        _ => {}
+                    },
+                    _ => {}
                 }
             });
     }
+}
+
+fn unwrap_unless_inactive<T>(res: Result<Option<T>, TrySendError<T>>) {
+    if let Err(e) = &res {
+        if let TrySendError::Inactive(_) = e {
+            return;
+        }
+    }
+    res.unwrap();
 }
 
 impl HostState {

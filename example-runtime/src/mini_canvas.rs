@@ -1,7 +1,4 @@
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex, Weak},
-};
+use std::sync::{Arc, Mutex};
 
 use crate::{
     graphics_context::DisplayApi,
@@ -13,7 +10,7 @@ use futures::executor::block_on;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
-use winit::window::Window;
+use winit::window::{Window, WindowId};
 
 #[derive(Debug)]
 pub struct MiniCanvas {
@@ -51,6 +48,7 @@ impl DisplayApi for MiniCanvas {
 }
 
 // TODO: do we need weak refs?
+// TODO: instead of Arc, have a global list of windows and ids? That ways it's same as webgpu, but might be harder to handle?
 #[derive(Clone)]
 pub struct MiniCanvasArc(pub Arc<MiniCanvas>);
 // impl AsRef<MiniCanvas> for MiniCanvasArc {
@@ -143,8 +141,9 @@ impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
 
     fn resize_listener(
         &mut self,
-        _mini_canvas: Resource<MiniCanvasArc>,
+        mini_canvas: Resource<MiniCanvasArc>,
     ) -> wasmtime::Result<Resource<ResizeListener>> {
+        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .message_sender
             .receivers
@@ -153,6 +152,7 @@ impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
         Ok(self
             .table_mut()
             .push(ResizeListener {
+                window_id,
                 receiver,
                 data: Default::default(),
             })
@@ -176,17 +176,21 @@ impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
 
 #[derive(Debug)]
 pub struct ResizeListener {
-    receiver: Receiver<(u32, ResizeEvent)>,
+    window_id: WindowId,
+    receiver: Receiver<(WindowId, ResizeEvent)>,
     data: Mutex<Option<ResizeEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for ResizeListener {
     async fn ready(&mut self) {
-        // loop {
-            let (id, event) = self.receiver.recv().await.unwrap();
-            *self.data.lock().unwrap() = Some(event);
-        // }
+        loop {
+            let (window_id, event) = self.receiver.recv().await.unwrap();
+            if window_id == self.window_id {
+                *self.data.lock().unwrap() = Some(event);
+                return;
+            }
+        }
     }
 }
 
