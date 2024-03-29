@@ -6,8 +6,7 @@ use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 
 use crate::graphics_context::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
-use crate::{HostEvent, HostState};
-
+use crate::HostState;
 
 // TODO: rename to FBBuffer and FBSurface?
 
@@ -48,11 +47,10 @@ impl DrawApi for Surface {
         let buff: GraphicsContextBuffer = buff.into();
         Ok(buff)
     }
-    
+
     fn present(&mut self) -> wasmtime::Result<()> {
         // TODO: should present be on the actual buffer? That's would track better with both softbuffer and wgpu
-        self
-            .surface
+        self.surface
             .lock()
             .unwrap()
             .buffer_mut()
@@ -61,7 +59,7 @@ impl DrawApi for Surface {
             .unwrap();
         Ok(())
     }
-    
+
     fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
         todo!()
     }
@@ -80,7 +78,6 @@ impl From<softbuffer::Buffer<'static>> for FrameBuffer {
         }
     }
 }
-
 
 // wasmtime
 impl crate::wasi::webgpu::frame_buffer::Host for HostState {

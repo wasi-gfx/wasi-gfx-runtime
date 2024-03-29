@@ -2,15 +2,15 @@ use std::sync::Mutex;
 
 use crate::{
     wasi::webgpu::key_events::{KeyEvent, Pollable},
-    HostEvent, HostState,
+    HostState,
 };
-use tokio::sync::broadcast::Receiver;
+use async_broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
 impl crate::wasi::webgpu::key_events::Host for HostState {
     fn up_listener(&mut self) -> wasmtime::Result<Resource<KeyUpListener>> {
-        let receiver = self.sender.subscribe();
+        let receiver = self.message_sender.receivers.key_up_event.activate_cloned();
         Ok(self
             .table_mut()
             .push(KeyUpListener {
@@ -21,7 +21,11 @@ impl crate::wasi::webgpu::key_events::Host for HostState {
     }
 
     fn down_listener(&mut self) -> wasmtime::Result<Resource<KeyDownListener>> {
-        let receiver = self.sender.subscribe();
+        let receiver = self
+            .message_sender
+            .receivers
+            .key_down_event
+            .activate_cloned();
         Ok(self
             .table_mut()
             .push(KeyDownListener {
@@ -50,20 +54,15 @@ impl crate::wasi::webgpu::key_events::HostKeyUpListener for HostState {
 
 #[derive(Debug)]
 pub struct KeyUpListener {
-    receiver: Receiver<HostEvent>,
+    receiver: Receiver<(u32, KeyEvent)>,
     data: Mutex<Option<KeyEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for KeyUpListener {
     async fn ready(&mut self) {
-        loop {
-            let event = self.receiver.recv().await.unwrap();
-            if let HostEvent::KeyUpEvent(event) = event {
-                *self.data.lock().unwrap() = Some(event);
-                return;
-            }
-        }
+        let (id, event) = self.receiver.recv().await.unwrap();
+        *self.data.lock().unwrap() = Some(event);
     }
 }
 
@@ -85,19 +84,14 @@ impl crate::wasi::webgpu::key_events::HostKeyDownListener for HostState {
 
 #[derive(Debug)]
 pub struct KeyDownListener {
-    receiver: Receiver<HostEvent>,
+    receiver: Receiver<(u32, KeyEvent)>,
     data: Mutex<Option<KeyEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for KeyDownListener {
     async fn ready(&mut self) {
-        loop {
-            let event = self.receiver.recv().await.unwrap();
-            if let HostEvent::KeyDownEvent(event) = event {
-                *self.data.lock().unwrap() = Some(event);
-                return;
-            }
-        }
+        let (id, event) = self.receiver.recv().await.unwrap();
+        *self.data.lock().unwrap() = Some(event);
     }
 }

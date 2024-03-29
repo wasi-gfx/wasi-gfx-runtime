@@ -1,16 +1,22 @@
-use std::{borrow::BorrowMut, sync::{Arc, Mutex}, thread::sleep, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use anyhow::Context;
+use async_broadcast::{InactiveReceiver, Sender};
 use clap::Parser;
-use futures::Stream;
-use tokio::sync::broadcast::{Sender, Receiver};
 use wasi::webgpu::{key_events::KeyEvent, mini_canvas::ResizeEvent, pointer_events::PointerEvent};
 use wasmtime::{
     component::{Component, Linker},
     Config, Engine, Store,
 };
 use webgpu::GpuInstance;
-use winit::{event::{ElementState, Event, MouseButton, WindowEvent}, event_loop::{EventLoop, EventLoopProxy}, window::Window};
+use winit::{
+    event::{ElementState, Event, MouseButton, WindowEvent},
+    event_loop::{EventLoop, EventLoopProxy},
+    window::Window,
+};
 
 use wasmtime_wasi::preview2::{self, ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
 mod animation_frame;
@@ -97,12 +103,10 @@ wasmtime::component::bindgen!({
 struct HostState {
     pub table: ResourceTable,
     pub ctx: WasiCtx,
-    pub sender: Sender<HostEvent>,
+    // pub sender: Sender<HostEvent>,
     pub instance: Arc<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
     // pub window: Window,
     // pub event_loop_proxy: EventLoopProxy<()>,
-
-
     pub message_sender: MyMessageSender,
 }
 
@@ -121,15 +125,15 @@ pub struct MyEventLoop {
 
 #[derive(Debug)]
 enum MainThreadAction {
+    // TODO: maybe add a oneshot channel for response.
     CreateWindow,
 }
-
-
 
 // Using seperate event for channel so that not everynoe has to wake up for each event
 struct MainThreadMessageSenders {
     // TODO: find better ids than u32
-    new_window: Sender<(u32, Arc<Window>)>,
+    // new window in an Arc<Mutex<Option<Window>>> becuase broadcast needs everything to be clone. Only the matching should take the window with `Option::take`
+    new_window: Sender<(u32, Arc<Mutex<Option<Window>>>)>,
     pointer_up_event: Sender<(u32, PointerEvent)>,
     pointer_down_event: Sender<(u32, PointerEvent)>,
     pointer_move_event: Sender<(u32, PointerEvent)>,
@@ -138,18 +142,18 @@ struct MainThreadMessageSenders {
     canvas_resize_event: Sender<(u32, ResizeEvent)>,
     frame: Sender<(u32, ())>,
 }
+
 #[derive(Clone)]
 struct MainThreadMessageReceivers {
-
     // TODO: can probably work around this Arc<Mutex<_>>, have cloneable receivers
-    new_window: Arc<Mutex<Receiver<(u32, Arc<Window>)>>>,
-    pointer_up_event: Arc<Mutex<Receiver<(u32, PointerEvent)>>>,
-    pointer_down_event: Arc<Mutex<Receiver<(u32, PointerEvent)>>>,
-    pointer_move_event: Arc<Mutex<Receiver<(u32, PointerEvent)>>>,
-    key_up_event: Arc<Mutex<Receiver<(u32, KeyEvent)>>>,
-    key_down_event: Arc<Mutex<Receiver<(u32, KeyEvent)>>>,
-    canvas_resize_event: Arc<Mutex<Receiver<(u32, ResizeEvent)>>>,
-    frame: Arc<Mutex<Receiver<(u32, ())>>>,
+    new_window: InactiveReceiver<(u32, Arc<Mutex<Option<Window>>>)>,
+    pointer_up_event: InactiveReceiver<(u32, PointerEvent)>,
+    pointer_down_event: InactiveReceiver<(u32, PointerEvent)>,
+    pointer_move_event: InactiveReceiver<(u32, PointerEvent)>,
+    key_up_event: InactiveReceiver<(u32, KeyEvent)>,
+    key_down_event: InactiveReceiver<(u32, KeyEvent)>,
+    canvas_resize_event: InactiveReceiver<(u32, ResizeEvent)>,
+    frame: InactiveReceiver<(u32, ())>,
 }
 impl MainThreadMessageReceivers {
     // TODO: enable
@@ -159,8 +163,6 @@ impl MainThreadMessageReceivers {
 }
 #[derive(Clone)]
 pub struct MyMessageSender {
-    // TODO: don't use tokio broadcast
-    // pub sender: Sender<HostEvent>,
     proxy: EventLoopProxy<MainThreadAction>,
     receivers: MainThreadMessageReceivers,
 }
@@ -168,28 +170,30 @@ impl MyMessageSender {
     // TODO: add message id TO ALL METHODS HERE since more then one guest can request a new window at a time
     pub async fn create_window(&self) -> Window {
         // self.sender.send(HostEvent::CreateWindow).unwrap();
-        self.proxy.send_event(MainThreadAction::CreateWindow).unwrap();
-        let (id, window) = self.receivers.new_window.lock().unwrap().recv().await.unwrap();
-        
+        self.proxy
+            .send_event(MainThreadAction::CreateWindow)
+            .unwrap();
+        let mut receiver = self.receivers.new_window.activate_cloned();
+        let (id, window) = receiver.recv().await.unwrap();
+
         // TODO: validate id
-        assert_eq!(id, 0);
 
-        Arc::try_unwrap(window).unwrap()
+        let window = window.lock().unwrap().take().unwrap();
 
+        window
     }
 }
 
 pub fn create_event_loop() -> (MyEventLoop, MyMessageSender) {
     // TODO: remove Arc only here to make Clone since `broadcast: Clone`
-    let (new_window_sender, new_window_receiver) = tokio::sync::broadcast::channel(10);
-    let (pointer_up_event_sender, pointer_up_event_receiver) = tokio::sync::broadcast::channel(10);
-    let (pointer_down_event_sender, pointer_down_event_receiver) = tokio::sync::broadcast::channel(10);
-    let (pointer_move_event_sender, pointer_move_event_receiver) = tokio::sync::broadcast::channel(10);
-    let (key_up_event_sender, key_up_event_receiver) = tokio::sync::broadcast::channel(10);
-    let (key_down_event_sender, key_down_event_receiver) = tokio::sync::broadcast::channel(10);
-    let (canvas_resize_event_sender, canvas_resize_event_receiver) = tokio::sync::broadcast::channel(10);
-    let (frame_sender, frame_receiver) = tokio::sync::broadcast::channel(10);
-    // let (new_window_sender, new_window_receiver) = tokio::sync::broadcast::channel::<(u32, Arc<Window>)>(10);
+    let (new_window_sender, new_window_receiver) = async_broadcast::broadcast(10);
+    let (pointer_up_event_sender, pointer_up_event_receiver) = async_broadcast::broadcast(10);
+    let (pointer_down_event_sender, pointer_down_event_receiver) = async_broadcast::broadcast(10);
+    let (pointer_move_event_sender, pointer_move_event_receiver) = async_broadcast::broadcast(10);
+    let (key_up_event_sender, key_up_event_receiver) = async_broadcast::broadcast(10);
+    let (key_down_event_sender, key_down_event_receiver) = async_broadcast::broadcast(10);
+    let (canvas_resize_event_sender, canvas_resize_event_receiver) = async_broadcast::broadcast(10);
+    let (frame_sender, frame_receiver) = async_broadcast::broadcast(1);
     let senders = MainThreadMessageSenders {
         new_window: new_window_sender,
         pointer_up_event: pointer_up_event_sender,
@@ -201,17 +205,18 @@ pub fn create_event_loop() -> (MyEventLoop, MyMessageSender) {
         frame: frame_sender,
     };
     let receivers = MainThreadMessageReceivers {
-        new_window: Arc::new(Mutex::new(new_window_receiver)),
-        pointer_up_event: Arc::new(Mutex::new(pointer_up_event_receiver)),
-        pointer_down_event: Arc::new(Mutex::new(pointer_down_event_receiver)),
-        pointer_move_event: Arc::new(Mutex::new(pointer_move_event_receiver)),
-        key_up_event: Arc::new(Mutex::new(key_up_event_receiver)),
-        key_down_event: Arc::new(Mutex::new(key_down_event_receiver)),
-        canvas_resize_event: Arc::new(Mutex::new(canvas_resize_event_receiver)),
-        frame: Arc::new(Mutex::new(frame_receiver)),
+        new_window: new_window_receiver.deactivate(),
+        pointer_up_event: pointer_up_event_receiver.deactivate(),
+        pointer_down_event: pointer_down_event_receiver.deactivate(),
+        pointer_move_event: pointer_move_event_receiver.deactivate(),
+        key_up_event: key_up_event_receiver.deactivate(),
+        key_down_event: key_down_event_receiver.deactivate(),
+        canvas_resize_event: canvas_resize_event_receiver.deactivate(),
+        frame: frame_receiver.deactivate(),
     };
     let event_loop = MyEventLoop {
-        event_loop: winit::event_loop::EventLoopBuilder::<MainThreadAction>::with_user_event().build(),
+        event_loop: winit::event_loop::EventLoopBuilder::<MainThreadAction>::with_user_event()
+            .build(),
         senders,
     };
     let message_sender = MyMessageSender {
@@ -225,8 +230,9 @@ impl MyEventLoop {
     pub fn run(self) {
         tokio::spawn(async move {
             loop {
-                // winit doesn't provide frame callbacks.
-                self.senders.frame.send((0, ())).unwrap();
+                if let Err(_) = self.senders.frame.try_broadcast((0, ())) {
+                    println!("skipping a frame")
+                }
                 tokio::time::sleep(Duration::from_millis(16)).await;
             }
         });
@@ -234,209 +240,117 @@ impl MyEventLoop {
         let mut pointer_x: f64 = 0.0;
         let mut pointer_y: f64 = 0.0;
 
-        self.event_loop.run(move |event, event_loop, _control_flow| {
-            match event {
-                Event::UserEvent(event) => {
-                    // TODO: look at
-                    // https://github.com/rust-windowing/winit/issues/413
+        self.event_loop
+            .run(move |event, event_loop, _control_flow| {
+                match event {
+                    Event::UserEvent(event) => {
+                        // TODO: look at
+                        // https://github.com/rust-windowing/winit/issues/413
 
-                    match event {
-                        MainThreadAction::CreateWindow => {
-                            let window = winit::window::Window::new(event_loop).unwrap();
-                            self.senders.new_window.send((0, Arc::new(window))).unwrap();
-                        },
+                        match event {
+                            MainThreadAction::CreateWindow => {
+                                let window = winit::window::Window::new(event_loop).unwrap();
+                                self.senders
+                                    .new_window
+                                    .try_broadcast((0, Arc::new(Mutex::new(Some(window)))))
+                                    .unwrap();
+                            }
+                        }
                     }
-                    
-                },
-                Event::WindowEvent {
-                    event: WindowEvent::CloseRequested,
-                    ..
-                } => {}
-                Event::WindowEvent {
-                    event: WindowEvent::Resized(new_size),
-                    ..
-                } => {
-                    self.senders.canvas_resize_event.send((0, ResizeEvent {
-                            height: new_size.height,
-                            width: new_size.width,
-                        }))
-                        .unwrap();
+                    Event::WindowEvent {
+                        event: WindowEvent::CloseRequested,
+                        ..
+                    } => {}
+                    Event::WindowEvent {
+                        event: WindowEvent::Resized(new_size),
+                        ..
+                    } => {
+                        self.senders.canvas_resize_event.try_broadcast((
+                            0,
+                            ResizeEvent {
+                                height: new_size.height,
+                                width: new_size.width,
+                            },
+                        ));
+                    }
+                    Event::WindowEvent {
+                        event:
+                            WindowEvent::MouseInput {
+                                button: MouseButton::Left,
+                                state,
+                                ..
+                            },
+                        ..
+                    } => {
+                        let event = PointerEvent {
+                            x: pointer_x,
+                            y: pointer_y,
+                        };
+                        let event = match state {
+                            ElementState::Pressed => {
+                                self.senders.pointer_down_event.try_broadcast((0, event));
+                            }
+                            ElementState::Released => {
+                                self.senders
+                                    .pointer_up_event
+                                    .try_broadcast((0, event))
+                                    .unwrap();
+                            }
+                        };
+                    }
+                    Event::WindowEvent {
+                        event: WindowEvent::KeyboardInput { input, .. },
+                        ..
+                    } => {
+                        #[allow(deprecated)]
+                        let event = KeyEvent {
+                            code: input
+                                .virtual_keycode
+                                .map(|k| format!("{k:?}"))
+                                .unwrap_or_default(),
+                            key: input.scancode.to_string(),
+                            alt_key: input.modifiers.shift(),
+                            ctrl_key: input.modifiers.ctrl(),
+                            meta_key: input.modifiers.logo(),
+                            shift_key: input.modifiers.shift(),
+                        };
+                        match input.state {
+                            ElementState::Pressed => {
+                                self.senders
+                                    .key_down_event
+                                    .try_broadcast((0, event))
+                                    .unwrap();
+                            }
+                            ElementState::Released => {
+                                self.senders.key_up_event.try_broadcast((0, event)).unwrap();
+                            }
+                        };
+                    }
+                    Event::WindowEvent {
+                        event: WindowEvent::CursorMoved { position, .. },
+                        ..
+                    } => {
+                        pointer_x = position.x;
+                        pointer_y = position.y;
+                        let event = PointerEvent {
+                            x: pointer_x,
+                            y: pointer_y,
+                        };
+                        if let Err(_) = self.senders.pointer_move_event.try_broadcast((0, event)) {
+                            println!("skipping a pointer move event");
+                        }
+                    }
+                    _ => (),
                 }
-                Event::WindowEvent {
-                    event:
-                        WindowEvent::MouseInput {
-                            button: MouseButton::Left,
-                            state,
-                            ..
-                        },
-                    ..
-                } => {
-                    let event = PointerEvent {
-                        x: pointer_x,
-                        y: pointer_y,
-                    };
-                    let event = match state {
-                        ElementState::Pressed => {
-                            self.senders.pointer_down_event.send((0, event)).unwrap();
-                        },
-                        ElementState::Released => {
-                            
-                            self.senders.pointer_up_event.send((0, event)).unwrap();
-                        },
-                    };
-                }
-                Event::WindowEvent {
-                    event: WindowEvent::KeyboardInput { input, .. },
-                    ..
-                } => {
-                    #[allow(deprecated)]
-                    let event = KeyEvent {
-                        code: input
-                            .virtual_keycode
-                            .map(|k| format!("{k:?}"))
-                            .unwrap_or_default(),
-                        key: input.scancode.to_string(),
-                        alt_key: input.modifiers.shift(),
-                        ctrl_key: input.modifiers.ctrl(),
-                        meta_key: input.modifiers.logo(),
-                        shift_key: input.modifiers.shift(),
-                    };
-                    match input.state {
-                        ElementState::Pressed => {
-                            self.senders.key_down_event.send((0, event)).unwrap();
-                        },
-                        ElementState::Released => {
-                            self.senders.key_up_event.send((0, event)).unwrap();
-                        },
-                    };
-                }
-                Event::WindowEvent {
-                    event: WindowEvent::CursorMoved { position, .. },
-                    ..
-                } => {
-
-                    pointer_x = position.x;
-                    pointer_y = position.y;
-                    let event = PointerEvent {
-                        x: pointer_x,
-                        y: pointer_y,
-                    };
-                    self.senders.pointer_move_event.send((0, event)).unwrap();
-                }
-                _ => (),
-            }
-        });
+            });
     }
 }
 
-pub fn listen_to_events(event_loop: EventLoop<()>, sender: Sender<HostEvent>) {
-    // use winit::event::{Event, MouseButton, WindowEvent};
-
-    let sender_2 = sender.clone();
-    tokio::spawn(async move {
-        loop {
-            // winit doesn't provide frame callbacks.
-            sender_2.send(HostEvent::Frame).unwrap();
-            tokio::time::sleep(Duration::from_millis(16)).await;
-        }
-    });
-
-    let mut pointer_x: f64 = 0.0;
-    let mut pointer_y: f64 = 0.0;
-
-    event_loop.run(move |event, _target, _control_flow| {
-        // *control_flow = ControlFlow::Poll;
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {}
-            Event::WindowEvent {
-                event: WindowEvent::Resized(new_size),
-                ..
-            } => {
-                sender
-                    .send(HostEvent::CanvasResizeEvent(ResizeEvent {
-                        height: new_size.height,
-                        width: new_size.width,
-                    }))
-                    .unwrap();
-            }
-            Event::WindowEvent {
-                event:
-                    WindowEvent::MouseInput {
-                        button: MouseButton::Left,
-                        state,
-                        ..
-                    },
-                ..
-            } => {
-                let event = match state {
-                    ElementState::Pressed => HostEvent::PointerDownEvent(PointerEvent {
-                        x: pointer_x,
-                        y: pointer_y,
-                    }),
-                    ElementState::Released => HostEvent::PointerUpEvent(PointerEvent {
-                        x: pointer_x,
-                        y: pointer_y,
-                    }),
-                };
-                sender.send(event).unwrap();
-            }
-            Event::WindowEvent {
-                event: WindowEvent::KeyboardInput { input, .. },
-                ..
-            } => {
-                #[allow(deprecated)]
-                let event = match input.state {
-                    ElementState::Pressed => HostEvent::KeyDownEvent(KeyEvent {
-                        code: input
-                            .virtual_keycode
-                            .map(|k| format!("{k:?}"))
-                            .unwrap_or_default(),
-                        key: input.scancode.to_string(),
-                        alt_key: input.modifiers.shift(),
-                        ctrl_key: input.modifiers.ctrl(),
-                        meta_key: input.modifiers.logo(),
-                        shift_key: input.modifiers.shift(),
-                    }),
-                    ElementState::Released => HostEvent::KeyUpEvent(KeyEvent {
-                        code: input
-                            .virtual_keycode
-                            .map(|k| format!("{k:?}"))
-                            .unwrap_or_default(),
-                        key: input.scancode.to_string(),
-                        alt_key: input.modifiers.shift(),
-                        ctrl_key: input.modifiers.ctrl(),
-                        meta_key: input.modifiers.logo(),
-                        shift_key: input.modifiers.shift(),
-                    }),
-                };
-                sender.send(event).unwrap();
-            }
-            Event::WindowEvent {
-                event: WindowEvent::CursorMoved { position, .. },
-                ..
-            } => {
-                pointer_x = position.x;
-                pointer_y = position.y;
-                let event = HostEvent::PointerMoveEvent(PointerEvent {
-                    x: pointer_x,
-                    y: pointer_y,
-                });
-                sender.send(event).unwrap();
-            }
-            _ => (),
-        }
-    });
-}
-
 impl HostState {
-    fn new(message_sender: MyMessageSender, sender: Sender<HostEvent>) -> Self {
+    fn new(message_sender: MyMessageSender) -> Self {
         Self {
             table: ResourceTable::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
-            sender,
             instance: Arc::new(wgpu_core::global::Global::new(
                 "webgpu",
                 wgpu_core::identity::IdentityManagerFactory,
@@ -448,7 +362,6 @@ impl HostState {
                 },
             )),
             message_sender,
-            // window: Window::new(event_loop).unwrap(),
         }
     }
 }
@@ -485,25 +398,11 @@ impl ExampleImports for HostState {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum HostEvent {
-    PointerUpEvent(PointerEvent),
-    PointerDownEvent(PointerEvent),
-    PointerMoveEvent(PointerEvent),
-    KeyUpEvent(KeyEvent),
-    KeyDownEvent(KeyEvent),
-    CanvasResizeEvent(ResizeEvent),
-    Frame,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .init();
-
-    // can't drop receiver right away, that'll cause panics. No idea why.
-    let (sender, _receiver) = tokio::sync::broadcast::channel::<HostEvent>(10);
 
     let args = RuntimeArgs::parse();
 
@@ -526,12 +425,8 @@ async fn main() -> anyhow::Result<()> {
 
     Example::add_root_to_linker(&mut linker, |state: &mut HostState| state)?;
 
-    // let event = winit::event_loop::EventLoopBuilder::new().build();
-
-    // let host_state = HostState::new(&event, sender.clone());
-
     let (event_loop, message_sender) = create_event_loop();
-    let host_state = HostState::new(message_sender, sender.clone());
+    let host_state = HostState::new(message_sender);
 
     let mut store = Store::new(&engine, host_state);
 
@@ -549,10 +444,6 @@ async fn main() -> anyhow::Result<()> {
     });
 
     event_loop.run();
-
-    // listen_to_events(event, sender);
-
-    // sleep(Duration::from_millis(1000000));
 
     Ok(())
 }

@@ -1,14 +1,19 @@
-use std::{ops::Deref, sync::{Arc, Mutex, Weak}};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex, Weak},
+};
 
 use crate::{
-    graphics_context::DisplayApi, wasi::webgpu::mini_canvas::{CreateDesc, GraphicsContext, Pollable, ResizeEvent}, HostEvent, HostState
+    graphics_context::DisplayApi,
+    wasi::webgpu::mini_canvas::{CreateDesc, GraphicsContext, Pollable, ResizeEvent},
+    HostState,
 };
+use async_broadcast::Receiver;
 use futures::executor::block_on;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use tokio::sync::broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
-use winit::{event_loop::{self, EventLoop}, platform::x11::EventLoopBuilderExtX11, window::Window};
+use winit::window::Window;
 
 #[derive(Debug)]
 pub struct MiniCanvas {
@@ -45,7 +50,6 @@ impl DisplayApi for MiniCanvas {
     }
 }
 
-
 // TODO: do we need weak refs?
 #[derive(Clone)]
 pub struct MiniCanvasArc(pub Arc<MiniCanvas>);
@@ -75,7 +79,6 @@ impl DisplayApi for MiniCanvasArc {
     }
 }
 
-
 // pub struct MiniCanvasWeakRef {
 //     inner: Weak<MiniCanvas>,
 // }
@@ -86,8 +89,6 @@ impl DisplayApi for MiniCanvasArc {
 // }
 
 impl crate::wasi::webgpu::mini_canvas::Host for HostState {}
-
-
 
 // struct TempEventLoop (pub EventLoop<()>);
 // unsafe impl Send for TempEventLoop {}
@@ -144,7 +145,11 @@ impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
         &mut self,
         _mini_canvas: Resource<MiniCanvasArc>,
     ) -> wasmtime::Result<Resource<ResizeListener>> {
-        let receiver = self.sender.subscribe();
+        let receiver = self
+            .message_sender
+            .receivers
+            .canvas_resize_event
+            .activate_cloned();
         Ok(self
             .table_mut()
             .push(ResizeListener {
@@ -171,20 +176,17 @@ impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
 
 #[derive(Debug)]
 pub struct ResizeListener {
-    receiver: Receiver<HostEvent>,
+    receiver: Receiver<(u32, ResizeEvent)>,
     data: Mutex<Option<ResizeEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for ResizeListener {
     async fn ready(&mut self) {
-        loop {
-            let event = self.receiver.recv().await.unwrap();
-            if let HostEvent::CanvasResizeEvent(event) = event {
-                *self.data.lock().unwrap() = Some(event);
-                return;
-            }
-        }
+        // loop {
+            let (id, event) = self.receiver.recv().await.unwrap();
+            *self.data.lock().unwrap() = Some(event);
+        // }
     }
 }
 
