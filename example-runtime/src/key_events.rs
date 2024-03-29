@@ -1,26 +1,37 @@
 use std::sync::Mutex;
 
 use crate::{
+    mini_canvas::MiniCanvasArc,
     wasi::webgpu::key_events::{KeyEvent, Pollable},
     HostState,
 };
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
+use winit::window::WindowId;
 
 impl crate::wasi::webgpu::key_events::Host for HostState {
-    fn up_listener(&mut self) -> wasmtime::Result<Resource<KeyUpListener>> {
+    fn up_listener(
+        &mut self,
+        mini_canvas: Resource<MiniCanvasArc>,
+    ) -> wasmtime::Result<Resource<KeyUpListener>> {
+        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self.message_sender.receivers.key_up_event.activate_cloned();
         Ok(self
             .table_mut()
             .push(KeyUpListener {
+                window_id,
                 receiver,
                 data: Default::default(),
             })
             .unwrap())
     }
 
-    fn down_listener(&mut self) -> wasmtime::Result<Resource<KeyDownListener>> {
+    fn down_listener(
+        &mut self,
+        mini_canvas: Resource<MiniCanvasArc>,
+    ) -> wasmtime::Result<Resource<KeyDownListener>> {
+        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .message_sender
             .receivers
@@ -29,6 +40,7 @@ impl crate::wasi::webgpu::key_events::Host for HostState {
         Ok(self
             .table_mut()
             .push(KeyDownListener {
+                window_id,
                 receiver,
                 data: Default::default(),
             })
@@ -54,15 +66,21 @@ impl crate::wasi::webgpu::key_events::HostKeyUpListener for HostState {
 
 #[derive(Debug)]
 pub struct KeyUpListener {
-    receiver: Receiver<(u32, KeyEvent)>,
+    window_id: WindowId,
+    receiver: Receiver<(WindowId, KeyEvent)>,
     data: Mutex<Option<KeyEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for KeyUpListener {
     async fn ready(&mut self) {
-        let (id, event) = self.receiver.recv().await.unwrap();
-        *self.data.lock().unwrap() = Some(event);
+        loop {
+            let (window_id, event) = self.receiver.recv().await.unwrap();
+            if window_id == self.window_id {
+                *self.data.lock().unwrap() = Some(event);
+                return;
+            }
+        }
     }
 }
 
@@ -84,14 +102,20 @@ impl crate::wasi::webgpu::key_events::HostKeyDownListener for HostState {
 
 #[derive(Debug)]
 pub struct KeyDownListener {
-    receiver: Receiver<(u32, KeyEvent)>,
+    window_id: WindowId,
+    receiver: Receiver<(WindowId, KeyEvent)>,
     data: Mutex<Option<KeyEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for KeyDownListener {
     async fn ready(&mut self) {
-        let (id, event) = self.receiver.recv().await.unwrap();
-        *self.data.lock().unwrap() = Some(event);
+        loop {
+            let (window_id, event) = self.receiver.recv().await.unwrap();
+            if window_id == self.window_id {
+                *self.data.lock().unwrap() = Some(event);
+                return;
+            }
+        }
     }
 }

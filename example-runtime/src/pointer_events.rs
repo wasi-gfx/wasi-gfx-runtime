@@ -1,15 +1,21 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{
+    mini_canvas::MiniCanvasArc,
     wasi::webgpu::pointer_events::{PointerEvent, Pollable},
     HostState,
 };
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
+use winit::window::WindowId;
 
 impl crate::wasi::webgpu::pointer_events::Host for HostState {
-    fn up_listener(&mut self) -> wasmtime::Result<Resource<PointerUpListener>> {
+    fn up_listener(
+        &mut self,
+        mini_canvas: Resource<MiniCanvasArc>,
+    ) -> wasmtime::Result<Resource<PointerUpListener>> {
+        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .message_sender
             .receivers
@@ -18,13 +24,18 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
         Ok(self
             .table_mut()
             .push(PointerUpListener {
+                window_id,
                 receiver,
                 data: Default::default(),
             })
             .unwrap())
     }
 
-    fn down_listener(&mut self) -> wasmtime::Result<Resource<PointerDownListener>> {
+    fn down_listener(
+        &mut self,
+        mini_canvas: Resource<MiniCanvasArc>,
+    ) -> wasmtime::Result<Resource<PointerDownListener>> {
+        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .message_sender
             .receivers
@@ -33,13 +44,18 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
         Ok(self
             .table_mut()
             .push(PointerDownListener {
+                window_id,
                 receiver,
                 data: Default::default(),
             })
             .unwrap())
     }
 
-    fn move_listener(&mut self) -> wasmtime::Result<Resource<PointerMoveListener>> {
+    fn move_listener(
+        &mut self,
+        mini_canvas: Resource<MiniCanvasArc>,
+    ) -> wasmtime::Result<Resource<PointerMoveListener>> {
+        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .message_sender
             .receivers
@@ -48,6 +64,7 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
         Ok(self
             .table_mut()
             .push(PointerMoveListener {
+                window_id,
                 receiver,
                 data: Default::default(),
             })
@@ -76,15 +93,21 @@ impl crate::wasi::webgpu::pointer_events::HostPointerUpListener for HostState {
 
 #[derive(Debug)]
 pub struct PointerUpListener {
-    receiver: Receiver<(u32, PointerEvent)>,
+    window_id: WindowId,
+    receiver: Receiver<(WindowId, PointerEvent)>,
     data: Mutex<Option<PointerEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for PointerUpListener {
     async fn ready(&mut self) {
-        let (id, event) = self.receiver.recv().await.unwrap();
-        *self.data.lock().unwrap() = Some(event);
+        loop {
+            let (window_id, event) = self.receiver.recv().await.unwrap();
+            if window_id == self.window_id {
+                *self.data.lock().unwrap() = Some(event);
+                return;
+            }
+        }
     }
 }
 
@@ -109,17 +132,21 @@ impl crate::wasi::webgpu::pointer_events::HostPointerDownListener for HostState 
 
 #[derive(Debug)]
 pub struct PointerDownListener {
-    receiver: Receiver<(u32, PointerEvent)>,
+    window_id: WindowId,
+    receiver: Receiver<(WindowId, PointerEvent)>,
     data: Mutex<Option<PointerEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for PointerDownListener {
     async fn ready(&mut self) {
-        // loop {
-        let (id, event) = self.receiver.recv().await.unwrap();
-        *self.data.lock().unwrap() = Some(event);
-        // }
+        loop {
+            let (window_id, event) = self.receiver.recv().await.unwrap();
+            if window_id == self.window_id {
+                *self.data.lock().unwrap() = Some(event);
+                return;
+            }
+        }
     }
 }
 
@@ -144,16 +171,20 @@ impl crate::wasi::webgpu::pointer_events::HostPointerMoveListener for HostState 
 
 #[derive(Debug)]
 pub struct PointerMoveListener {
-    receiver: Receiver<(u32, PointerEvent)>,
+    window_id: WindowId,
+    receiver: Receiver<(WindowId, PointerEvent)>,
     data: Arc<Mutex<Option<PointerEvent>>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for PointerMoveListener {
     async fn ready(&mut self) {
-        let (id, event) = self.receiver.recv().await.unwrap();
-        // let (id, event) = receiver.await.unwrap();
-        *self.data.lock().unwrap() = Some(event);
-        println!("recv");
+        loop {
+            let (window_id, event) = self.receiver.recv().await.unwrap();
+            if window_id == self.window_id {
+                *self.data.lock().unwrap() = Some(event);
+                return;
+            }
+        }
     }
 }

@@ -50,19 +50,19 @@ fn draw_triangle() {
     canvas.connect_graphics_context(&graphics_context);
     device.connect_graphics_context(&graphics_context);
 
-    let pointer_up_listener = pointer_events::up_listener();
+    let pointer_up_listener = pointer_events::up_listener(&canvas);
     let pointer_up_pollable = pointer_up_listener.subscribe();
-    let pointer_down_listener = pointer_events::down_listener();
+    let pointer_down_listener = pointer_events::down_listener(&canvas);
     let pointer_down_pollable = pointer_down_listener.subscribe();
-    let pointer_move_listener = pointer_events::move_listener();
+    let pointer_move_listener = pointer_events::move_listener(&canvas);
     let pointer_move_pollable = pointer_move_listener.subscribe();
-    let key_up_listener = key_events::up_listener();
+    let key_up_listener = key_events::up_listener(&canvas);
     let key_up_pollable = key_up_listener.subscribe();
-    let key_down_listener = key_events::down_listener();
+    let key_down_listener = key_events::down_listener(&canvas);
     let key_down_pollable = key_down_listener.subscribe();
     let resize_listener = canvas.resize_listener();
     let resize_pollable = resize_listener.subscribe();
-    let frame_listener = animation_frame::listener();
+    let frame_listener = animation_frame::listener(&canvas);
     let frame_pollable = frame_listener.subscribe();
     let pollables = vec![
         &pointer_up_pollable,

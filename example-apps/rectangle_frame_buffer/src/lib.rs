@@ -30,11 +30,11 @@ fn draw_rectangle() {
 
     frame_buffer::connect_graphics_context(&graphics_context);
 
-    let pointer_up_listener = pointer_events::up_listener();
+    let pointer_up_listener = pointer_events::up_listener(&canvas);
     let pointer_up_pollable = pointer_up_listener.subscribe();
     let resize_listener = canvas.resize_listener();
     let resize_pollable = resize_listener.subscribe();
-    let frame_listener = animation_frame::listener();
+    let frame_listener = animation_frame::listener(&canvas);
     let frame_pollable = frame_listener.subscribe();
     let pollables = vec![&pointer_up_pollable, &resize_pollable, &frame_pollable];
     let mut green = false;
