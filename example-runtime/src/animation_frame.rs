@@ -2,16 +2,16 @@ use std::sync::Mutex;
 
 use crate::{
     wasi::webgpu::animation_frame::{FrameEvent, HostFrameListener, Pollable},
-    HostEvent, HostState,
+    HostState,
 };
-use tokio::sync::broadcast::Receiver;
+use async_broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
 impl crate::wasi::webgpu::animation_frame::Host for HostState {
     fn listener(&mut self) -> wasmtime::Result<Resource<AnimationFrameListener>> {
         // let receiver = self.sender.subscribe();
-        let receiver = self.message_sender.receivers.frame.lock().unwrap().resubscribe();
+        let receiver = self.message_sender.receivers.frame.activate_cloned();
 
         Ok(self
             .table_mut()

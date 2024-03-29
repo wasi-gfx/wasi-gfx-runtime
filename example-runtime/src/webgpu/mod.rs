@@ -7,8 +7,8 @@
 use core::slice;
 use std::sync::Arc;
 // use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use std::borrow::Cow;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use std::borrow::Cow;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 
@@ -50,7 +50,8 @@ where
     F: Fn() -> I,
 {
     fn get_current_buffer(&mut self) -> wasmtime::Result<GraphicsContextBuffer> {
-        let texture: wgpu_core::id::TextureId = (self.get_instance)().as_ref()
+        let texture: wgpu_core::id::TextureId = (self.get_instance)()
+            .as_ref()
             .surface_get_current_texture::<crate::Backend>(self.surface_id.unwrap(), ())
             .unwrap()
             .texture_id
@@ -66,14 +67,15 @@ where
         let buff: GraphicsContextBuffer = buff.into();
         Ok(buff)
     }
-    
+
     fn present(&mut self) -> wasmtime::Result<()> {
-        (self.get_instance)().as_ref()
+        (self.get_instance)()
+            .as_ref()
             .surface_present::<crate::Backend>(self.surface_id.unwrap())
             .unwrap();
         Ok(())
     }
-    
+
     fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
         // self.insert(value)
         let surface_id = (self.get_instance)().as_ref().instance_create_surface(
@@ -88,7 +90,8 @@ where
         // size.width = size.width.max(1);
         // size.height = size.height.max(1);
 
-        let swapchain_capabilities = (self.get_instance)().as_ref()
+        let swapchain_capabilities = (self.get_instance)()
+            .as_ref()
             .surface_get_capabilities::<crate::Backend>(surface_id, self.adapter_id)
             .unwrap();
         let swapchain_format = swapchain_capabilities.formats[0];
@@ -103,11 +106,11 @@ where
             view_formats: vec![swapchain_format],
         };
 
-        (self.get_instance)().as_ref()
+        (self.get_instance)()
+            .as_ref()
             .surface_configure::<crate::Backend>(surface_id, self.device_id, &config);
 
         self.surface_id = Some(surface_id);
-
 
         println!("display_api_ready");
 

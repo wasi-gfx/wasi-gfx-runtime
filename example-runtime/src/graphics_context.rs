@@ -81,27 +81,28 @@ where
     T: Any + Send + Sync + 'static,
 {
     fn from(value: Box<T>) -> Self {
-        Self { buffer: Box::new(value) }
+        Self {
+            buffer: Box::new(value),
+        }
     }
 }
 
 impl GraphicsContextBuffer {
-
     // impl<T> From<T> for GraphicsContextBuffer
-// where
-//     T: Any + Send + Sync,
-// {
+    // where
+    //     T: Any + Send + Sync,
+    // {
     // fn new<T>(value: Sized + Any + Send + Sync) -> Self
     // where
     //     T: Any + Send + Sync,
     // {
     //     Self { buffer: Box::new(value) }
     // }
-// }
+    // }
 
     pub fn inner_type<T>(self) -> T
     where
-        T: 'static
+        T: 'static,
     {
         // double box?
         *self.buffer.downcast::<T>().unwrap()
