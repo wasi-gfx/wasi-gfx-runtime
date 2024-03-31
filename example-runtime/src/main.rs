@@ -101,11 +101,8 @@ wasmtime::component::bindgen!({
 struct HostState {
     pub table: ResourceTable,
     pub ctx: WasiCtx,
-    // pub sender: Sender<HostEvent>,
     pub instance: Arc<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
-    // pub window: Window,
-    // pub event_loop_proxy: EventLoopProxy<()>,
-    pub message_sender: MyMessageSender,
+    pub main_thread_proxy: MainThreadProxy,
 }
 
 // new event loop should return (event_loop, message_sender)
@@ -115,9 +112,8 @@ struct HostState {
 // event_loop should be able to reply when done (window, after window creation)
 
 // TODO: move to canvas
-pub struct MyEventLoop {
+pub struct MainThreadLoop {
     event_loop: EventLoop<MainThreadAction>,
-    // proxy: EventLoopProxy<()>,
     senders: MainThreadMessageSenders,
 }
 
@@ -149,11 +145,11 @@ struct MainThreadMessageReceivers {
 }
 
 #[derive(Clone)]
-pub struct MyMessageSender {
+pub struct MainThreadProxy {
     proxy: EventLoopProxy<MainThreadAction>,
     receivers: MainThreadMessageReceivers,
 }
-impl MyMessageSender {
+impl MainThreadProxy {
     pub async fn create_window(&self) -> Window {
         let (sender, receiver) = oneshot::channel();
         self.proxy
@@ -164,7 +160,7 @@ impl MyMessageSender {
     }
 }
 
-pub fn create_event_loop() -> (MyEventLoop, MyMessageSender) {
+pub fn create_event_loop() -> (MainThreadLoop, MainThreadProxy) {
     let (pointer_up_event_sender, pointer_up_event_receiver) = async_broadcast::broadcast(10);
     let (pointer_down_event_sender, pointer_down_event_receiver) = async_broadcast::broadcast(10);
     let (pointer_move_event_sender, pointer_move_event_receiver) = async_broadcast::broadcast(10);
@@ -190,19 +186,19 @@ pub fn create_event_loop() -> (MyEventLoop, MyMessageSender) {
         canvas_resize_event: canvas_resize_event_receiver.deactivate(),
         frame: frame_receiver.deactivate(),
     };
-    let event_loop = MyEventLoop {
+    let event_loop = MainThreadLoop {
         event_loop: winit::event_loop::EventLoopBuilder::<MainThreadAction>::with_user_event()
             .build(),
         senders,
     };
-    let message_sender = MyMessageSender {
+    let message_sender = MainThreadProxy {
         proxy: event_loop.event_loop.create_proxy(),
         receivers,
     };
     (event_loop, message_sender)
 }
 
-impl MyEventLoop {
+impl MainThreadLoop {
     pub fn run(self) {
         tokio::spawn(async move {
             loop {
@@ -343,7 +339,7 @@ fn unwrap_unless_inactive<T>(res: Result<Option<T>, TrySendError<T>>) {
 }
 
 impl HostState {
-    fn new(message_sender: MyMessageSender) -> Self {
+    fn new(main_thread_proxy: MainThreadProxy) -> Self {
         Self {
             table: ResourceTable::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
@@ -357,7 +353,7 @@ impl HostState {
                     gles_minor_version: wgpu_types::Gles3MinorVersion::default(),
                 },
             )),
-            message_sender,
+            main_thread_proxy,
         }
     }
 }
@@ -423,8 +419,8 @@ async fn main() -> anyhow::Result<()> {
 
     Example::add_root_to_linker(&mut linker, |state: &mut HostState| state)?;
 
-    let (event_loop, message_sender) = create_event_loop();
-    let host_state = HostState::new(message_sender);
+    let (main_thread_loop, main_thread_proxy) = create_event_loop();
+    let host_state = HostState::new(main_thread_proxy);
 
     let mut store = Store::new(&engine, host_state);
 
@@ -441,7 +437,7 @@ async fn main() -> anyhow::Result<()> {
         instance.call_start(&mut store).await.unwrap();
     });
 
-    event_loop.run();
+    main_thread_loop.run();
 
     Ok(())
 }

@@ -16,7 +16,11 @@ impl key_events::Host for HostState {
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> wasmtime::Result<Resource<KeyUpListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
-        let receiver = self.message_sender.receivers.key_up_event.activate_cloned();
+        let receiver = self
+            .main_thread_proxy
+            .receivers
+            .key_up_event
+            .activate_cloned();
         Ok(self
             .table_mut()
             .push(KeyUpListener {
@@ -33,7 +37,7 @@ impl key_events::Host for HostState {
     ) -> wasmtime::Result<Resource<KeyDownListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .message_sender
+            .main_thread_proxy
             .receivers
             .key_down_event
             .activate_cloned();

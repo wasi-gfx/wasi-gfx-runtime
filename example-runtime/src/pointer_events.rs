@@ -17,7 +17,7 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
     ) -> wasmtime::Result<Resource<PointerUpListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .message_sender
+            .main_thread_proxy
             .receivers
             .pointer_up_event
             .activate_cloned();
@@ -37,7 +37,7 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
     ) -> wasmtime::Result<Resource<PointerDownListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .message_sender
+            .main_thread_proxy
             .receivers
             .pointer_down_event
             .activate_cloned();
@@ -57,7 +57,7 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
     ) -> wasmtime::Result<Resource<PointerMoveListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .message_sender
+            .main_thread_proxy
             .receivers
             .pointer_move_event
             .activate_cloned();

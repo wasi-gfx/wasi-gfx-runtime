@@ -89,7 +89,7 @@ impl mini_canvas::Host for HostState {}
 
 impl mini_canvas::HostMiniCanvas for HostState {
     fn new(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvasArc>> {
-        let window = block_on(self.message_sender.create_window());
+        let window = block_on(self.main_thread_proxy.create_window());
         let mini_canvas = MiniCanvasArc(Arc::new(MiniCanvas {
             offscreen: desc.offscreen,
             window,
@@ -115,7 +115,7 @@ impl mini_canvas::HostMiniCanvas for HostState {
     ) -> wasmtime::Result<Resource<ResizeListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .message_sender
+            .main_thread_proxy
             .receivers
             .canvas_resize_event
             .activate_cloned();
