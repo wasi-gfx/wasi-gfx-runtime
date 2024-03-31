@@ -202,39 +202,9 @@ impl webgpu::HostGpuDevice for HostState {
         device: Resource<Device>,
         context: Resource<GraphicsContext>,
     ) -> wasmtime::Result<()> {
-        // let surface = self.instance.instance_create_surface(
-        //     self.window.raw_display_handle(),
-        //     self.window.raw_window_handle(),
-        //     (),
-        // );
-
         let device = self.table.get(&device).unwrap();
         let device_id = device.device;
         let adapter_id = device.adapter;
-        // drop(device);
-
-        // let mut size = self.window.inner_size();
-        // size.width = size.width.max(1);
-        // size.height = size.height.max(1);
-
-        // let swapchain_capabilities = self
-        //     .instance
-        //     .surface_get_capabilities::<crate::Backend>(surface, host_device.adapter)
-        //     .unwrap();
-        // let swapchain_format = swapchain_capabilities.formats[0];
-
-        // let config = wgpu_types::SurfaceConfiguration {
-        //     usage: wgpu_types::TextureUsages::RENDER_ATTACHMENT,
-        //     format: swapchain_format,
-        //     width: size.width,
-        //     height: size.height,
-        //     present_mode: wgpu_types::PresentMode::Fifo,
-        //     alpha_mode: swapchain_capabilities.alpha_modes[0],
-        //     view_formats: vec![swapchain_format],
-        // };
-
-        // self.instance
-        //     .surface_configure::<crate::Backend>(surface, host_device.device, &config);
 
         let context = self.table.get_mut(&context).unwrap();
 
@@ -247,7 +217,6 @@ impl webgpu::HostGpuDevice for HostState {
             surface_id: None,
         };
 
-        // context.kind = Some(GraphicsContextKind::Webgpu(surface));
         context.connect_draw_api(Box::new(surface));
 
         Ok(())
@@ -566,13 +535,7 @@ impl<T: WasiView + GpuInstance> webgpu::HostGpuTexture for T {
         buffer: Resource<GraphicsContextBuffer>,
     ) -> wasmtime::Result<Resource<wgpu_core::id::TextureId>> {
         let host_buffer = self.table_mut().delete(buffer).unwrap();
-        // if let GraphicsContextBuffer::Webgpu(host_buffer) = host_buffer {
-        //     Ok(self.table_mut().push(host_buffer).unwrap())
-        // } else {
-        //     panic!("Context not connected to webgpu");
-        // }
-        let host_buffer: Box<wgpu_core::id::TextureId> = host_buffer.inner_type();
-        let host_buffer: wgpu_core::id::TextureId = *host_buffer;
+        let host_buffer: wgpu_core::id::TextureId = host_buffer.inner_type();
         Ok(self.table_mut().push(host_buffer).unwrap())
     }
 
