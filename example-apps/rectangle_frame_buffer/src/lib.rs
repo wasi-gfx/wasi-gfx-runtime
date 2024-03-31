@@ -28,7 +28,8 @@ fn draw_rectangle() {
     let graphics_context = graphics_context::GraphicsContext::new();
     canvas.connect_graphics_context(&graphics_context);
 
-    frame_buffer::connect_graphics_context(&graphics_context);
+    let surface = frame_buffer::Surface::new();
+    surface.connect_graphics_context(&graphics_context);
 
     let pointer_up_listener = pointer_events::up_listener(&canvas);
     let pointer_up_pollable = pointer_up_listener.subscribe();
