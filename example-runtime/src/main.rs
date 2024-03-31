@@ -83,6 +83,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu/gpu-texture": wgpu_core::id::TextureId,
         "wasi:webgpu/webgpu/gpu-bind-group": wgpu_core::id::BindGroupId,
         "wasi:webgpu/webgpu/gpu-texture-view": wgpu_core::id::TextureViewId,
+        "wasi:webgpu/frame-buffer/surface": frame_buffer::SurfaceArc,
         "wasi:webgpu/frame-buffer/frame-buffer": frame_buffer::FrameBuffer,
         "wasi:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
         "wasi:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,

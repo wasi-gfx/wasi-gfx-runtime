@@ -211,7 +211,7 @@ impl webgpu::HostGpuDevice for HostState {
         let device = self.table.get(&device).unwrap();
         let device_id = device.device;
         let adapter_id = device.adapter;
-        drop(device);
+        // drop(device);
 
         // let mut size = self.window.inner_size();
         // size.width = size.width.max(1);
