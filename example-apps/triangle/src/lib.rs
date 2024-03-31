@@ -161,7 +161,7 @@ fn draw_triangle() {
                     view,
                     depth_slice: None,
                     resolve_target: None,
-                    clear_value: Some(webgpu::GpuColorDictOrListFloat64::GpuColorDict(
+                    clear_value: Some(webgpu::GpuColorDictOrListF64::GpuColorDict(
                         webgpu::GpuColorDict {
                             r: 0.0,
                             g: 0.0,
