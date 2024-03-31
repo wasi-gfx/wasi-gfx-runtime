@@ -6,35 +6,35 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "4.3.19", features = ["derive"] }
-wasmtime = { version = "17.0", features = ['component-model'] }
-wasmtime-wasi = "17.0"
-anyhow = "1.0.72"
-winit = { version = "0.28", features = [ "android-native-activity" ] }
-wgpu-types = "0.18"
-raw-window-handle = "0.5"
-async-trait = "0.1.74"
-rand = "0.8.5"
-futures = "0.3.29"
-tokio = { version = "1.35.0", features = ["full"] }
-softbuffer = "0.3.0"
-env_logger = "0.11.0"
-log = "0.4.8"
-async-broadcast = "0.7.0"
-oneshot = "0.1.3"
+clap.workspace = true
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+anyhow.workspace = true
+winit.workspace = true
+wgpu-types.workspace = true
+raw-window-handle.workspace = true
+async-trait.workspace = true
+rand.workspace = true
+futures.workspace = true
+tokio.workspace = true
+softbuffer.workspace = true
+env_logger.workspace = true
+log.workspace = true
+async-broadcast.workspace = true
+oneshot.workspace = true
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
-version = "0.18"
+workspace = true
 features = ["wgsl", "raw-window-handle", "vulkan"]
 
 [target.'cfg(target_os = "windows")'.dependencies.wgpu-core]
-version = "0.18"
+workspace = true
 features = ["wgsl", "raw-window-handle", "dx12"]
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies.wgpu-core]
-version = "0.18"
+workspace = true
 features = ["wgsl", "raw-window-handle", "metal"]
 
 [target.'cfg(all(not(target_os = "linux"), not(target_os = "android"), not(target_os = "windows"), not(target_os = "macos"), not(target_os = "ios")))'.dependencies.wgpu-core]
-version = "0.18"
+workspace = true
 features = ["wgsl", "raw-window-handle", "gles"]
