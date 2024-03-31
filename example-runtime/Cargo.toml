@@ -21,6 +21,7 @@ softbuffer = "0.3.0"
 env_logger = "0.11.0"
 log = "0.4.8"
 async-broadcast = "0.7.0"
+oneshot = { version = "0.1.3", feature = ["async"] }
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 version = "0.18"
