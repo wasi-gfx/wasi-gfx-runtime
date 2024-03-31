@@ -126,7 +126,7 @@ enum MainThreadAction {
     CreateWindow(oneshot::Sender<Window>),
 }
 
-// Using seperate event for channel so that not everynoe has to wake up for each event
+// Using separate event for channel so that not everyone has to wake up for each event
 struct MainThreadMessageSenders {
     pointer_up_event: Sender<(WindowId, PointerEvent)>,
     pointer_down_event: Sender<(WindowId, PointerEvent)>,
