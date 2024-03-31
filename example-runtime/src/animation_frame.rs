@@ -16,7 +16,7 @@ impl crate::wasi::webgpu::animation_frame::Host for HostState {
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> wasmtime::Result<Resource<AnimationFrameListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
-        let receiver = self.message_sender.receivers.frame.activate_cloned();
+        let receiver = self.main_thread_proxy.receivers.frame.activate_cloned();
         Ok(self
             .table_mut()
             .push(AnimationFrameListener {
