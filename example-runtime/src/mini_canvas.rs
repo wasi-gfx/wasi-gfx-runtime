@@ -10,7 +10,7 @@ use futures::executor::block_on;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
-use winit::window::{Window, WindowId};
+use winit::window::Window;
 
 #[derive(Debug)]
 pub struct MiniCanvas {
@@ -66,27 +66,22 @@ impl DisplayApi for MiniCanvasArc {
 
 #[derive(Debug)]
 pub struct ResizeListener {
-    window_id: WindowId,
-    receiver: Receiver<(WindowId, ResizeEvent)>,
+    receiver: Receiver<ResizeEvent>,
     data: Mutex<Option<ResizeEvent>>,
 }
 
 #[async_trait::async_trait]
 impl preview2::Subscribe for ResizeListener {
     async fn ready(&mut self) {
-        loop {
-            let (window_id, event) = self.receiver.recv().await.unwrap();
-            if window_id == self.window_id {
-                *self.data.lock().unwrap() = Some(event);
-                return;
-            }
-        }
+        let event = self.receiver.recv().await.unwrap();
+        *self.data.lock().unwrap() = Some(event);
     }
 }
 
 // wasmtime
 impl mini_canvas::Host for HostState {}
 
+#[async_trait::async_trait]
 impl mini_canvas::HostMiniCanvas for HostState {
     fn new(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvasArc>> {
         let window = block_on(self.main_thread_proxy.create_window());
@@ -114,15 +109,14 @@ impl mini_canvas::HostMiniCanvas for HostState {
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> wasmtime::Result<Resource<ResizeListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
-        let receiver = self
-            .main_thread_proxy
-            .receivers
-            .canvas_resize_event
-            .activate_cloned();
+        // TODO: await instead of block_on
+        let receiver = block_on(
+            self.main_thread_proxy
+                .create_canvas_resize_listener(window_id),
+        );
         Ok(self
             .table_mut()
             .push(ResizeListener {
-                window_id,
                 receiver,
                 data: Default::default(),
             })

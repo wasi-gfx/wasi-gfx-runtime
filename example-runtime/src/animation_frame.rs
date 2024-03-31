@@ -8,19 +8,21 @@ use crate::{
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
-use winit::window::WindowId;
 
+#[async_trait::async_trait]
 impl crate::wasi::webgpu::animation_frame::Host for HostState {
-    fn listener(
+    async fn listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> wasmtime::Result<Resource<AnimationFrameListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
-        let receiver = self.main_thread_proxy.receivers.frame.activate_cloned();
+        let receiver = self
+            .main_thread_proxy
+            .create_frame_listener(window_id)
+            .await;
         Ok(self
             .table_mut()
             .push(AnimationFrameListener {
-                _window_id: window_id,
                 receiver,
                 data: Default::default(),
             })
@@ -47,8 +49,8 @@ impl HostFrameListener for HostState {
     }
 }
 
+#[derive(Debug)]
 pub struct AnimationFrameListener {
-    _window_id: WindowId,
     receiver: Receiver<()>,
     data: Mutex<Option<FrameEvent>>,
 }
