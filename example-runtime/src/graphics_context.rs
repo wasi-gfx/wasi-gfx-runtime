@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use crate::wasi::webgpu::graphics_context::ConfigureContextDesc;
+use crate::wasi::webgpu::graphics_context::{self, ConfigureContextDesc};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
@@ -8,8 +8,6 @@ use wasmtime_wasi::preview2::WasiView;
 pub struct GraphicsContext {
     draw_api: Option<Box<dyn DrawApi + Send + Sync>>,
     display_api: Option<Box<dyn DisplayApi + Send + Sync>>,
-    // has_display_handle: Option<Box<dyn HasDisplayHandle + Send + Sync>>,
-    // has_window_handle: Option<Box<dyn HasWindowHandle + Send + Sync>>,
 }
 
 impl GraphicsContext {
@@ -17,10 +15,6 @@ impl GraphicsContext {
         Self {
             display_api: None,
             draw_api: None,
-            // has_display_handle: None,
-            // has_window_handle: None,
-            // height: None,
-            // width: None,
         }
     }
 
@@ -28,24 +22,11 @@ impl GraphicsContext {
         Ok(())
     }
 
-    pub fn connect_display_api(
-        &mut self,
-        display_api: Box<dyn DisplayApi + Send + Sync>,
-        // has_display_handle: Box<dyn HasRawDisplayHandle + Send + Sync>,
-        // has_window_handle: Box<dyn HasRawWindowHandle + Send + Sync>,
-        // height: u32,
-        // width: u32,
-    ) {
-        // self.has_display_handle = Some(has_display_handle);
-        // self.has_window_handle = Some(has_window_handle);
-        // self.height = Some(height);
-        // self.width = Some(width);
-
+    pub fn connect_display_api(&mut self, display_api: Box<dyn DisplayApi + Send + Sync>) {
         if let Some(draw_api) = &mut self.draw_api {
             draw_api.display_api_ready(&display_api)
         }
         self.display_api = Some(display_api);
-        // self.draw_api = Some(draw_api);
     }
 
     // pub fn resize(&mut self, height: u32, width: u32) {
@@ -97,9 +78,9 @@ impl GraphicsContextBuffer {
 }
 
 // wasmtime
-impl<T: WasiView> crate::wasi::webgpu::graphics_context::Host for T {}
+impl<T: WasiView> graphics_context::Host for T {}
 
-impl<T: WasiView> crate::wasi::webgpu::graphics_context::HostGraphicsContext for T {
+impl<T: WasiView> graphics_context::HostGraphicsContext for T {
     fn new(&mut self) -> wasmtime::Result<Resource<GraphicsContext>> {
         Ok(self.table_mut().push(GraphicsContext::new()).unwrap())
     }
@@ -142,7 +123,7 @@ impl<T: WasiView> crate::wasi::webgpu::graphics_context::HostGraphicsContext for
     }
 }
 
-impl<T: WasiView> crate::wasi::webgpu::graphics_context::HostGraphicsContextBuffer for T {
+impl<T: WasiView> graphics_context::HostGraphicsContextBuffer for T {
     fn drop(&mut self, _rep: Resource<GraphicsContextBuffer>) -> wasmtime::Result<()> {
         todo!()
     }

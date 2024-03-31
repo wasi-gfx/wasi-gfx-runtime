@@ -6,7 +6,7 @@ use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 
 use crate::graphics_context::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
-use crate::HostState;
+use crate::wasi::webgpu::frame_buffer;
 
 pub struct FBSurface {
     pub(super) surface: Option<softbuffer::Surface>,
@@ -108,9 +108,9 @@ impl From<softbuffer::Buffer<'static>> for FBBuffer {
 }
 
 // wasmtime
-impl crate::wasi::webgpu::frame_buffer::Host for HostState {}
+impl<T: WasiView> frame_buffer::Host for T {}
 
-impl crate::wasi::webgpu::frame_buffer::HostSurface for HostState {
+impl<T: WasiView> frame_buffer::HostSurface for T {
     fn new(&mut self) -> wasmtime::Result<Resource<crate::wasi::webgpu::frame_buffer::Surface>> {
         Ok(self.table_mut().push(FBSurfaceArc::new()).unwrap())
     }
@@ -120,8 +120,8 @@ impl crate::wasi::webgpu::frame_buffer::HostSurface for HostState {
         surface: Resource<FBSurfaceArc>,
         graphics_context: Resource<GraphicsContext>,
     ) -> wasmtime::Result<()> {
-        let surface = FBSurfaceArc(Arc::clone(&self.table.get(&surface).unwrap().0));
-        let graphics_context = self.table.get_mut(&graphics_context).unwrap();
+        let surface = FBSurfaceArc(Arc::clone(&self.table().get(&surface).unwrap().0));
+        let graphics_context = self.table_mut().get_mut(&graphics_context).unwrap();
         graphics_context.connect_draw_api(Box::new(surface));
         Ok(())
     }
@@ -131,7 +131,8 @@ impl crate::wasi::webgpu::frame_buffer::HostSurface for HostState {
     }
 }
 
-impl<T: WasiView> crate::wasi::webgpu::frame_buffer::HostFrameBuffer for T {
+impl<T: WasiView> frame_buffer::HostFrameBuffer for T {
+    // impl<T: WasiView> frame_buffer::HostFrameBuffer for T {
     fn from_graphics_buffer(
         &mut self,
         buffer: Resource<crate::graphics_context::GraphicsContextBuffer>,

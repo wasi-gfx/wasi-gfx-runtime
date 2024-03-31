@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     graphics_context::DisplayApi,
-    wasi::webgpu::mini_canvas::{CreateDesc, GraphicsContext, Pollable, ResizeEvent},
+    wasi::webgpu::mini_canvas::{self, CreateDesc, GraphicsContext, Pollable, ResizeEvent},
     HostState,
 };
 use async_broadcast::Receiver;
@@ -14,17 +14,9 @@ use winit::window::{Window, WindowId};
 
 #[derive(Debug)]
 pub struct MiniCanvas {
-    // pub height: u32,
-    // pub width: u32,
     pub offscreen: bool,
-    // let event_loop: EventLoop<()>
     pub window: Window,
 }
-// impl AsRef<MiniCanvas> for Weak<MiniCanvas> {
-//     fn as_ref(&self) -> &MiniCanvas {
-//         self.upgrade().unwrap().as_ref()
-//     }
-// }
 
 unsafe impl HasRawDisplayHandle for MiniCanvas {
     fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
@@ -47,7 +39,7 @@ impl DisplayApi for MiniCanvas {
     }
 }
 
-// TODO: instead of Arc, have a global list of windows and ids? That ways it's same as webgpu, but might be harder to handle? Would likely also require a Mutex.
+// TODO: instead of Arc, maybe have a global list of windows and ids? That ways it's same as webgpu, but might be harder to handle? Would likely also require a Mutex.
 #[derive(Clone)]
 pub struct MiniCanvasArc(pub Arc<MiniCanvas>);
 
@@ -72,9 +64,30 @@ impl DisplayApi for MiniCanvasArc {
     }
 }
 
-impl crate::wasi::webgpu::mini_canvas::Host for HostState {}
+#[derive(Debug)]
+pub struct ResizeListener {
+    window_id: WindowId,
+    receiver: Receiver<(WindowId, ResizeEvent)>,
+    data: Mutex<Option<ResizeEvent>>,
+}
 
-impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
+#[async_trait::async_trait]
+impl preview2::Subscribe for ResizeListener {
+    async fn ready(&mut self) {
+        loop {
+            let (window_id, event) = self.receiver.recv().await.unwrap();
+            if window_id == self.window_id {
+                *self.data.lock().unwrap() = Some(event);
+                return;
+            }
+        }
+    }
+}
+
+// wasmtime
+impl mini_canvas::Host for HostState {}
+
+impl mini_canvas::HostMiniCanvas for HostState {
     fn new(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvasArc>> {
         let window = block_on(self.message_sender.create_window());
         let mini_canvas = MiniCanvasArc(Arc::new(MiniCanvas {
@@ -93,7 +106,6 @@ impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
         let graphics_context = self.table.get_mut(&context).unwrap();
 
         graphics_context.connect_display_api(Box::new(mini_canvas));
-        // noop for now, will do the surface creation once window is part min-canvas instead of a singleton.
         Ok(())
     }
 
@@ -132,27 +144,7 @@ impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
     }
 }
 
-#[derive(Debug)]
-pub struct ResizeListener {
-    window_id: WindowId,
-    receiver: Receiver<(WindowId, ResizeEvent)>,
-    data: Mutex<Option<ResizeEvent>>,
-}
-
-#[async_trait::async_trait]
-impl preview2::Subscribe for ResizeListener {
-    async fn ready(&mut self) {
-        loop {
-            let (window_id, event) = self.receiver.recv().await.unwrap();
-            if window_id == self.window_id {
-                *self.data.lock().unwrap() = Some(event);
-                return;
-            }
-        }
-    }
-}
-
-impl crate::wasi::webgpu::mini_canvas::HostResizeListener for HostState {
+impl mini_canvas::HostResizeListener for HostState {
     fn subscribe(
         &mut self,
         pointer_down: Resource<ResizeListener>,

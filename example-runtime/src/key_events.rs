@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use crate::{
     mini_canvas::MiniCanvasArc,
-    wasi::webgpu::key_events::{KeyEvent, Pollable},
+    wasi::webgpu::key_events::{self, KeyEvent, Pollable},
     HostState,
 };
 use async_broadcast::Receiver;
@@ -10,7 +10,7 @@ use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 use winit::window::WindowId;
 
-impl crate::wasi::webgpu::key_events::Host for HostState {
+impl key_events::Host for HostState {
     fn up_listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
@@ -48,7 +48,7 @@ impl crate::wasi::webgpu::key_events::Host for HostState {
     }
 }
 
-impl crate::wasi::webgpu::key_events::HostKeyUpListener for HostState {
+impl key_events::HostKeyUpListener for HostState {
     fn subscribe(
         &mut self,
         key_up: Resource<KeyUpListener>,
@@ -84,7 +84,7 @@ impl preview2::Subscribe for KeyUpListener {
     }
 }
 
-impl crate::wasi::webgpu::key_events::HostKeyDownListener for HostState {
+impl key_events::HostKeyDownListener for HostState {
     fn subscribe(
         &mut self,
         key_down: Resource<KeyDownListener>,
