@@ -8,7 +8,7 @@ use wasmtime::{
     component::{Component, Linker},
     Config, Engine, Store,
 };
-use webgpu::GpuInstance;
+use webgpu::HasGpuInstance;
 use winit::{
     event::{ElementState, Event, WindowEvent},
     event_loop::{EventLoop, EventLoopProxy},
@@ -83,8 +83,8 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu/gpu-texture": wgpu_core::id::TextureId,
         "wasi:webgpu/webgpu/gpu-bind-group": wgpu_core::id::BindGroupId,
         "wasi:webgpu/webgpu/gpu-texture-view": wgpu_core::id::TextureViewId,
-        "wasi:webgpu/frame-buffer/surface": frame_buffer::SurfaceArc,
-        "wasi:webgpu/frame-buffer/frame-buffer": frame_buffer::FrameBuffer,
+        "wasi:webgpu/frame-buffer/surface": frame_buffer::FBSurfaceArc,
+        "wasi:webgpu/frame-buffer/frame-buffer": frame_buffer::FBBuffer,
         "wasi:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
         "wasi:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
         "wasi:webgpu/pointer-events/pointer-move-listener": pointer_events::PointerMoveListener,
@@ -381,9 +381,11 @@ impl WasiView for HostState {
     }
 }
 
-impl GpuInstance for HostState {
-    fn instance(&self) -> &wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory> {
-        &self.instance
+impl HasGpuInstance for HostState {
+    fn instance(
+        &self,
+    ) -> Arc<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>> {
+        Arc::clone(&self.instance)
     }
 }
 
