@@ -1,7 +1,4 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use async_broadcast::{InactiveReceiver, Sender, TrySendError};
@@ -125,15 +122,11 @@ pub struct MyEventLoop {
 
 #[derive(Debug)]
 enum MainThreadAction {
-    // TODO: maybe add a oneshot channel for response.
-    CreateWindow,
+    CreateWindow(oneshot::Sender<Window>),
 }
 
 // Using seperate event for channel so that not everynoe has to wake up for each event
 struct MainThreadMessageSenders {
-    // TODO: find better ids than u32
-    // new window in an Arc<Mutex<Option<Window>>> becuase broadcast needs everything to be clone. Only the matching should take the window with `Option::take`
-    new_window: Sender<(u32, Arc<Mutex<Option<Window>>>)>,
     pointer_up_event: Sender<(WindowId, PointerEvent)>,
     pointer_down_event: Sender<(WindowId, PointerEvent)>,
     pointer_move_event: Sender<(WindowId, PointerEvent)>,
@@ -145,8 +138,6 @@ struct MainThreadMessageSenders {
 
 #[derive(Clone)]
 struct MainThreadMessageReceivers {
-    // TODO: can probably work around this Arc<Mutex<_>>, have cloneable receivers
-    new_window: InactiveReceiver<(u32, Arc<Mutex<Option<Window>>>)>,
     pointer_up_event: InactiveReceiver<(WindowId, PointerEvent)>,
     pointer_down_event: InactiveReceiver<(WindowId, PointerEvent)>,
     pointer_move_event: InactiveReceiver<(WindowId, PointerEvent)>,
@@ -155,12 +146,6 @@ struct MainThreadMessageReceivers {
     canvas_resize_event: InactiveReceiver<(WindowId, ResizeEvent)>,
     frame: InactiveReceiver<()>,
 }
-impl MainThreadMessageReceivers {
-    // TODO: enable
-    // fn new_window(&self, id: u32) -> Stream<Window> {
-    //     self.new_window.subscribe()
-    // }
-}
 
 #[derive(Clone)]
 pub struct MyMessageSender {
@@ -168,26 +153,17 @@ pub struct MyMessageSender {
     receivers: MainThreadMessageReceivers,
 }
 impl MyMessageSender {
-    // TODO: add message id TO ALL METHODS HERE since more then one guest can request a new window at a time
     pub async fn create_window(&self) -> Window {
-        // self.sender.send(HostEvent::CreateWindow).unwrap();
+        let (sender, receiver) = oneshot::channel();
         self.proxy
-            .send_event(MainThreadAction::CreateWindow)
+            .send_event(MainThreadAction::CreateWindow(sender))
             .unwrap();
-        let mut receiver = self.receivers.new_window.activate_cloned();
-        let (id, window) = receiver.recv().await.unwrap();
-
-        // TODO: validate id
-
-        let window = window.lock().unwrap().take().unwrap();
-
+        let window = receiver.await.unwrap();
         window
     }
 }
 
 pub fn create_event_loop() -> (MyEventLoop, MyMessageSender) {
-    // TODO: remove Arc only here to make Clone since `broadcast: Clone`
-    let (new_window_sender, new_window_receiver) = async_broadcast::broadcast(10);
     let (pointer_up_event_sender, pointer_up_event_receiver) = async_broadcast::broadcast(10);
     let (pointer_down_event_sender, pointer_down_event_receiver) = async_broadcast::broadcast(10);
     let (pointer_move_event_sender, pointer_move_event_receiver) = async_broadcast::broadcast(10);
@@ -196,7 +172,6 @@ pub fn create_event_loop() -> (MyEventLoop, MyMessageSender) {
     let (canvas_resize_event_sender, canvas_resize_event_receiver) = async_broadcast::broadcast(10);
     let (frame_sender, frame_receiver) = async_broadcast::broadcast(1);
     let senders = MainThreadMessageSenders {
-        new_window: new_window_sender,
         pointer_up_event: pointer_up_event_sender,
         pointer_down_event: pointer_down_event_sender,
         pointer_move_event: pointer_move_event_sender,
@@ -206,7 +181,6 @@ pub fn create_event_loop() -> (MyEventLoop, MyMessageSender) {
         frame: frame_sender,
     };
     let receivers = MainThreadMessageReceivers {
-        new_window: new_window_receiver.deactivate(),
         pointer_up_event: pointer_up_event_receiver.deactivate(),
         pointer_down_event: pointer_down_event_receiver.deactivate(),
         pointer_move_event: pointer_move_event_receiver.deactivate(),
@@ -248,34 +222,27 @@ impl MyEventLoop {
             }
         });
 
-        let mut pointer_x: f64 = 0.0;
-        let mut pointer_y: f64 = 0.0;
+        let mut pointer_pos: HashMap<WindowId, (f64, f64)> = HashMap::new();
 
         self.event_loop
             .run(move |event, event_loop, _control_flow| {
                 match event {
-                    Event::UserEvent(event) => {
-                        // TODO: look at
-                        // https://github.com/rust-windowing/winit/issues/413
-
-                        match event {
-                            MainThreadAction::CreateWindow => {
-                                let window = winit::window::Window::new(event_loop).unwrap();
-                                unwrap_unless_inactive(
-                                    self.senders
-                                        .new_window
-                                        .try_broadcast((0, Arc::new(Mutex::new(Some(window))))),
-                                );
-                            }
+                    Event::UserEvent(event) => match event {
+                        MainThreadAction::CreateWindow(response_channel) => {
+                            let window = winit::window::Window::new(event_loop).unwrap();
+                            // TODO: remove when window is drooped.
+                            pointer_pos.insert(window.id(), (0.0, 0.0));
+                            response_channel.send(window).unwrap();
                         }
-                    }
+                    },
                     Event::WindowEvent { event, window_id } => match event {
                         WindowEvent::CursorMoved { position, .. } => {
-                            pointer_x = position.x;
-                            pointer_y = position.y;
+                            pointer_pos
+                                .insert(window_id, (position.x, position.y))
+                                .unwrap();
                             let event = PointerEvent {
-                                x: pointer_x,
-                                y: pointer_y,
+                                x: position.x,
+                                y: position.y,
                             };
                             if let Err(e) = self
                                 .senders
@@ -324,9 +291,10 @@ impl MyEventLoop {
                             };
                         }
                         WindowEvent::MouseInput { state, .. } => {
+                            let (pointer_x, pointer_y) = pointer_pos.get(&window_id).unwrap();
                             let event = PointerEvent {
-                                x: pointer_x,
-                                y: pointer_y,
+                                x: *pointer_x,
+                                y: *pointer_y,
                             };
                             match state {
                                 ElementState::Pressed => {
