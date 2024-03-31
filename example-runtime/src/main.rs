@@ -1,7 +1,11 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use anyhow::Context;
-use async_broadcast::{InactiveReceiver, Sender, TrySendError};
+use async_broadcast::TrySendError;
 use clap::Parser;
 use wasi::webgpu::{key_events::KeyEvent, mini_canvas::ResizeEvent, pointer_events::PointerEvent};
 use wasmtime::{
@@ -59,6 +63,11 @@ wasmtime::component::bindgen!({
     async: {
         only_imports: [
             "poll",
+            "up-listener",
+            "down-listener",
+            "move-listener",
+            "listener",
+            // "resize-listener",
         ],
     },
     with: {
@@ -114,40 +123,41 @@ struct HostState {
 // TODO: move to canvas
 pub struct MainThreadLoop {
     event_loop: EventLoop<MainThreadAction>,
-    senders: MainThreadMessageSenders,
 }
 
 #[derive(Debug)]
 enum MainThreadAction {
     CreateWindow(oneshot::Sender<Window>),
-}
-
-// Using separate event for channel so that not everyone has to wake up for each event
-struct MainThreadMessageSenders {
-    pointer_up_event: Sender<(WindowId, PointerEvent)>,
-    pointer_down_event: Sender<(WindowId, PointerEvent)>,
-    pointer_move_event: Sender<(WindowId, PointerEvent)>,
-    key_up_event: Sender<(WindowId, KeyEvent)>,
-    key_down_event: Sender<(WindowId, KeyEvent)>,
-    canvas_resize_event: Sender<(WindowId, ResizeEvent)>,
-    frame: Sender<()>,
-}
-
-#[derive(Clone)]
-struct MainThreadMessageReceivers {
-    pointer_up_event: InactiveReceiver<(WindowId, PointerEvent)>,
-    pointer_down_event: InactiveReceiver<(WindowId, PointerEvent)>,
-    pointer_move_event: InactiveReceiver<(WindowId, PointerEvent)>,
-    key_up_event: InactiveReceiver<(WindowId, KeyEvent)>,
-    key_down_event: InactiveReceiver<(WindowId, KeyEvent)>,
-    canvas_resize_event: InactiveReceiver<(WindowId, ResizeEvent)>,
-    frame: InactiveReceiver<()>,
+    CreatePointerUpListener(
+        WindowId,
+        oneshot::Sender<async_broadcast::Receiver<PointerEvent>>,
+    ),
+    CreatePointerDownListener(
+        WindowId,
+        oneshot::Sender<async_broadcast::Receiver<PointerEvent>>,
+    ),
+    CreatePointerMoveListener(
+        WindowId,
+        oneshot::Sender<async_broadcast::Receiver<PointerEvent>>,
+    ),
+    CreateKeyUpListener(
+        WindowId,
+        oneshot::Sender<async_broadcast::Receiver<KeyEvent>>,
+    ),
+    CreateKeyDownListener(
+        WindowId,
+        oneshot::Sender<async_broadcast::Receiver<KeyEvent>>,
+    ),
+    CreateCanvasResizeListener(
+        WindowId,
+        oneshot::Sender<async_broadcast::Receiver<ResizeEvent>>,
+    ),
+    CreateFrameListener(WindowId, oneshot::Sender<async_broadcast::Receiver<()>>),
 }
 
 #[derive(Clone)]
 pub struct MainThreadProxy {
     proxy: EventLoopProxy<MainThreadAction>,
-    receivers: MainThreadMessageReceivers,
 }
 impl MainThreadProxy {
     pub async fn create_window(&self) -> Window {
@@ -155,71 +165,138 @@ impl MainThreadProxy {
         self.proxy
             .send_event(MainThreadAction::CreateWindow(sender))
             .unwrap();
-        let window = receiver.await.unwrap();
-        window
+        receiver.await.unwrap()
+    }
+    pub async fn create_pointer_up_listener(
+        &self,
+        window_id: WindowId,
+    ) -> async_broadcast::Receiver<PointerEvent> {
+        let (sender, receiver) = oneshot::channel();
+        self.proxy
+            .send_event(MainThreadAction::CreatePointerUpListener(window_id, sender))
+            .unwrap();
+        receiver.await.unwrap()
+    }
+    pub async fn create_pointer_down_listener(
+        &self,
+        window_id: WindowId,
+    ) -> async_broadcast::Receiver<PointerEvent> {
+        let (sender, receiver) = oneshot::channel();
+        self.proxy
+            .send_event(MainThreadAction::CreatePointerDownListener(
+                window_id, sender,
+            ))
+            .unwrap();
+        receiver.await.unwrap()
+    }
+    pub async fn create_pointer_move_listener(
+        &self,
+        window_id: WindowId,
+    ) -> async_broadcast::Receiver<PointerEvent> {
+        let (sender, receiver) = oneshot::channel();
+        self.proxy
+            .send_event(MainThreadAction::CreatePointerMoveListener(
+                window_id, sender,
+            ))
+            .unwrap();
+        receiver.await.unwrap()
+    }
+    pub async fn create_key_up_listener(
+        &self,
+        window_id: WindowId,
+    ) -> async_broadcast::Receiver<KeyEvent> {
+        let (sender, receiver) = oneshot::channel();
+        self.proxy
+            .send_event(MainThreadAction::CreateKeyUpListener(window_id, sender))
+            .unwrap();
+        receiver.await.unwrap()
+    }
+    pub async fn create_key_down_listener(
+        &self,
+        window_id: WindowId,
+    ) -> async_broadcast::Receiver<KeyEvent> {
+        let (sender, receiver) = oneshot::channel();
+        self.proxy
+            .send_event(MainThreadAction::CreateKeyDownListener(window_id, sender))
+            .unwrap();
+        receiver.await.unwrap()
+    }
+    pub async fn create_canvas_resize_listener(
+        &self,
+        window_id: WindowId,
+    ) -> async_broadcast::Receiver<ResizeEvent> {
+        let (sender, receiver) = oneshot::channel();
+        self.proxy
+            .send_event(MainThreadAction::CreateCanvasResizeListener(
+                window_id, sender,
+            ))
+            .unwrap();
+        receiver.await.unwrap()
+    }
+    pub async fn create_frame_listener(
+        &self,
+        window_id: WindowId,
+    ) -> async_broadcast::Receiver<()> {
+        let (sender, receiver) = oneshot::channel();
+        self.proxy
+            .send_event(MainThreadAction::CreateFrameListener(window_id, sender))
+            .unwrap();
+        receiver.await.unwrap()
     }
 }
 
 pub fn create_event_loop() -> (MainThreadLoop, MainThreadProxy) {
-    let (pointer_up_event_sender, pointer_up_event_receiver) = async_broadcast::broadcast(10);
-    let (pointer_down_event_sender, pointer_down_event_receiver) = async_broadcast::broadcast(10);
-    let (pointer_move_event_sender, pointer_move_event_receiver) = async_broadcast::broadcast(10);
-    let (key_up_event_sender, key_up_event_receiver) = async_broadcast::broadcast(10);
-    let (key_down_event_sender, key_down_event_receiver) = async_broadcast::broadcast(10);
-    let (canvas_resize_event_sender, canvas_resize_event_receiver) = async_broadcast::broadcast(10);
-    let (frame_sender, frame_receiver) = async_broadcast::broadcast(1);
-    let senders = MainThreadMessageSenders {
-        pointer_up_event: pointer_up_event_sender,
-        pointer_down_event: pointer_down_event_sender,
-        pointer_move_event: pointer_move_event_sender,
-        key_up_event: key_up_event_sender,
-        key_down_event: key_down_event_sender,
-        canvas_resize_event: canvas_resize_event_sender,
-        frame: frame_sender,
-    };
-    let receivers = MainThreadMessageReceivers {
-        pointer_up_event: pointer_up_event_receiver.deactivate(),
-        pointer_down_event: pointer_down_event_receiver.deactivate(),
-        pointer_move_event: pointer_move_event_receiver.deactivate(),
-        key_up_event: key_up_event_receiver.deactivate(),
-        key_down_event: key_down_event_receiver.deactivate(),
-        canvas_resize_event: canvas_resize_event_receiver.deactivate(),
-        frame: frame_receiver.deactivate(),
-    };
     let event_loop = MainThreadLoop {
         event_loop: winit::event_loop::EventLoopBuilder::<MainThreadAction>::with_user_event()
             .build(),
-        senders,
     };
     let message_sender = MainThreadProxy {
         proxy: event_loop.event_loop.create_proxy(),
-        receivers,
     };
     (event_loop, message_sender)
 }
 
 impl MainThreadLoop {
     pub fn run(self) {
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = self.senders.frame.try_broadcast(()) {
-                    match e {
-                        TrySendError::Full(_) => {
-                            println!("skipping a frame")
-                        }
-                        TrySendError::Inactive(_) => {
-                            // don't care
-                        }
-                        TrySendError::Closed(_) => {
-                            panic!("Channel closed")
+        let mut pointer_pos: HashMap<WindowId, (f64, f64)> = HashMap::new();
+        let mut pointer_up_senders: HashMap<WindowId, async_broadcast::Sender<PointerEvent>> =
+            HashMap::new();
+        let mut pointer_down_senders: HashMap<WindowId, async_broadcast::Sender<PointerEvent>> =
+            HashMap::new();
+        let mut pointer_move_senders: HashMap<WindowId, async_broadcast::Sender<PointerEvent>> =
+            HashMap::new();
+        let mut key_up_senders: HashMap<WindowId, async_broadcast::Sender<KeyEvent>> =
+            HashMap::new();
+        let mut key_down_senders: HashMap<WindowId, async_broadcast::Sender<KeyEvent>> =
+            HashMap::new();
+        let mut canvas_resize_senders: HashMap<WindowId, async_broadcast::Sender<ResizeEvent>> =
+            HashMap::new();
+        let frame_senders: Arc<Mutex<HashMap<WindowId, async_broadcast::Sender<()>>>> =
+            Default::default();
+
+        {
+            let frame_senders = Arc::clone(&frame_senders);
+            tokio::spawn(async move {
+                loop {
+                    for (_, sender) in frame_senders.lock().unwrap().iter() {
+                        if let Err(e) = sender.try_broadcast(()) {
+                            match e {
+                                TrySendError::Full(_) => {
+                                    println!("skipping a pointer move event");
+                                }
+                                TrySendError::Inactive(_) => {
+                                    // don't care
+                                }
+                                TrySendError::Closed(_) => {
+                                    panic!("Channel closed")
+                                }
+                            }
                         }
                     }
+                    tokio::time::sleep(Duration::from_millis(16)).await;
                 }
-                tokio::time::sleep(Duration::from_millis(16)).await;
-            }
-        });
-
-        let mut pointer_pos: HashMap<WindowId, (f64, f64)> = HashMap::new();
+            });
+        }
 
         self.event_loop
             .run(move |event, event_loop, _control_flow| {
@@ -231,6 +308,41 @@ impl MainThreadLoop {
                             pointer_pos.insert(window.id(), (0.0, 0.0));
                             response_channel.send(window).unwrap();
                         }
+                        MainThreadAction::CreatePointerUpListener(window_id, res) => {
+                            let (sender, receiver) = async_broadcast::broadcast(5);
+                            pointer_up_senders.insert(window_id, sender);
+                            res.send(receiver).unwrap();
+                        }
+                        MainThreadAction::CreatePointerDownListener(window_id, res) => {
+                            let (sender, receiver) = async_broadcast::broadcast(5);
+                            pointer_down_senders.insert(window_id, sender);
+                            res.send(receiver).unwrap();
+                        }
+                        MainThreadAction::CreatePointerMoveListener(window_id, res) => {
+                            let (sender, receiver) = async_broadcast::broadcast(5);
+                            pointer_move_senders.insert(window_id, sender);
+                            res.send(receiver).unwrap();
+                        }
+                        MainThreadAction::CreateKeyUpListener(window_id, res) => {
+                            let (sender, receiver) = async_broadcast::broadcast(5);
+                            key_up_senders.insert(window_id, sender);
+                            res.send(receiver).unwrap();
+                        }
+                        MainThreadAction::CreateKeyDownListener(window_id, res) => {
+                            let (sender, receiver) = async_broadcast::broadcast(5);
+                            key_down_senders.insert(window_id, sender);
+                            res.send(receiver).unwrap();
+                        }
+                        MainThreadAction::CreateCanvasResizeListener(window_id, res) => {
+                            let (sender, receiver) = async_broadcast::broadcast(5);
+                            canvas_resize_senders.insert(window_id, sender);
+                            res.send(receiver).unwrap();
+                        }
+                        MainThreadAction::CreateFrameListener(window_id, res) => {
+                            let (sender, receiver) = async_broadcast::broadcast(5);
+                            frame_senders.lock().unwrap().insert(window_id, sender);
+                            res.send(receiver).unwrap();
+                        }
                     },
                     Event::WindowEvent { event, window_id } => match event {
                         WindowEvent::CursorMoved { position, .. } => {
@@ -241,20 +353,19 @@ impl MainThreadLoop {
                                 x: position.x,
                                 y: position.y,
                             };
-                            if let Err(e) = self
-                                .senders
-                                .pointer_move_event
-                                .try_broadcast((window_id, event))
-                            {
-                                match e {
-                                    TrySendError::Full(_) => {
-                                        println!("skipping a pointer move event");
-                                    }
-                                    TrySendError::Inactive(_) => {
-                                        // don't care
-                                    }
-                                    TrySendError::Closed(_) => {
-                                        panic!("Channel closed")
+
+                            if let Some(sender) = pointer_move_senders.get(&window_id) {
+                                if let Err(e) = sender.try_broadcast(event) {
+                                    match e {
+                                        TrySendError::Full(_) => {
+                                            println!("skipping a pointer move event");
+                                        }
+                                        TrySendError::Inactive(_) => {
+                                            // don't care
+                                        }
+                                        TrySendError::Closed(_) => {
+                                            panic!("Channel closed")
+                                        }
                                     }
                                 }
                             }
@@ -274,16 +385,14 @@ impl MainThreadLoop {
                             };
                             match input.state {
                                 ElementState::Pressed => {
-                                    unwrap_unless_inactive(
-                                        self.senders
-                                            .key_down_event
-                                            .try_broadcast((window_id, event)),
-                                    );
+                                    if let Some(sender) = key_down_senders.get(&window_id) {
+                                        unwrap_unless_inactive(sender.try_broadcast(event));
+                                    }
                                 }
                                 ElementState::Released => {
-                                    unwrap_unless_inactive(
-                                        self.senders.key_up_event.try_broadcast((window_id, event)),
-                                    );
+                                    if let Some(sender) = key_up_senders.get(&window_id) {
+                                        unwrap_unless_inactive(sender.try_broadcast(event));
+                                    }
                                 }
                             };
                         }
@@ -295,31 +404,24 @@ impl MainThreadLoop {
                             };
                             match state {
                                 ElementState::Pressed => {
-                                    unwrap_unless_inactive(
-                                        self.senders
-                                            .pointer_down_event
-                                            .try_broadcast((window_id, event)),
-                                    );
+                                    if let Some(sender) = pointer_down_senders.get(&window_id) {
+                                        unwrap_unless_inactive(sender.try_broadcast(event));
+                                    }
                                 }
                                 ElementState::Released => {
-                                    unwrap_unless_inactive(
-                                        self.senders
-                                            .pointer_up_event
-                                            .try_broadcast((window_id, event)),
-                                    );
+                                    if let Some(sender) = pointer_up_senders.get(&window_id) {
+                                        unwrap_unless_inactive(sender.try_broadcast(event));
+                                    }
                                 }
                             };
                         }
                         WindowEvent::Resized(new_size) => {
-                            unwrap_unless_inactive(self.senders.canvas_resize_event.try_broadcast(
-                                (
-                                    window_id,
-                                    ResizeEvent {
-                                        height: new_size.height,
-                                        width: new_size.width,
-                                    },
-                                ),
-                            ));
+                            if let Some(sender) = canvas_resize_senders.get(&window_id) {
+                                unwrap_unless_inactive(sender.try_broadcast(ResizeEvent {
+                                    height: new_size.height,
+                                    width: new_size.width,
+                                }));
+                            }
                         }
                         _ => {}
                     },
