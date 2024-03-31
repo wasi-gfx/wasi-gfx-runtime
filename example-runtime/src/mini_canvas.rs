@@ -47,15 +47,10 @@ impl DisplayApi for MiniCanvas {
     }
 }
 
-// TODO: do we need weak refs?
-// TODO: instead of Arc, have a global list of windows and ids? That ways it's same as webgpu, but might be harder to handle?
+// TODO: instead of Arc, have a global list of windows and ids? That ways it's same as webgpu, but might be harder to handle? Would likely also require a Mutex.
 #[derive(Clone)]
 pub struct MiniCanvasArc(pub Arc<MiniCanvas>);
-// impl AsRef<MiniCanvas> for MiniCanvasArc {
-//     fn as_ref(&self) -> &MiniCanvas {
-//         self.inner.as_ref()
-//     }
-// }
+
 unsafe impl HasRawDisplayHandle for MiniCanvasArc {
     fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
         self.0.raw_display_handle()
@@ -77,53 +72,16 @@ impl DisplayApi for MiniCanvasArc {
     }
 }
 
-// pub struct MiniCanvasWeakRef {
-//     inner: Weak<MiniCanvas>,
-// }
-// impl MiniCanvasWeakRef {
-//     pub fn upgrade(&self) -> Option<MiniCanvasRef> {
-//         self.inner.upgrade().map(|r| MiniCanvasRef(r))
-//     }
-// }
-
 impl crate::wasi::webgpu::mini_canvas::Host for HostState {}
-
-// struct TempEventLoop (pub EventLoop<()>);
-// unsafe impl Send for TempEventLoop {}
-// unsafe impl Sync for TempEventLoop {}
 
 impl crate::wasi::webgpu::mini_canvas::HostMiniCanvas for HostState {
     fn new(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvasArc>> {
-        // let event_loop = winit::event_loop::EventLoopBuilder::new().with_any_thread(true).build();
         let window = block_on(self.message_sender.create_window());
-        let res = Ok(self
-            .table
-            .push(MiniCanvasArc(Arc::new(MiniCanvas {
-                // height: desc.height,
-                // width: desc.width,
-                offscreen: desc.offscreen,
-
-                // TODO: remove any thread
-                // window: Window::new(&winit::event_loop::EventLoopBuilder::new().build()).unwrap(),
-                // window: Window::new(&event_loop).unwrap(),
-                window,
-            })))
-            .unwrap());
-
-        // let event_loop = TempEventLoop(event_loop);
-
-        // tokio::spawn(async move {
-        //     // &event_loop.0;
-        //     // event_loop.0.run(|a, b, c| {});
-        //     fn g(el: TempEventLoop) {
-        //         el.0.run(|a, b, c| {});
-        //     }
-        //     g(event_loop);
-        // });
-
-        res
-
-        // listen_to_events(event, sender);
+        let mini_canvas = MiniCanvasArc(Arc::new(MiniCanvas {
+            offscreen: desc.offscreen,
+            window,
+        }));
+        Ok(self.table.push(mini_canvas).unwrap())
     }
 
     fn connect_graphics_context(
