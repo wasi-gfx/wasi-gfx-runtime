@@ -88,24 +88,11 @@ where
 }
 
 impl GraphicsContextBuffer {
-    // impl<T> From<T> for GraphicsContextBuffer
-    // where
-    //     T: Any + Send + Sync,
-    // {
-    // fn new<T>(value: Sized + Any + Send + Sync) -> Self
-    // where
-    //     T: Any + Send + Sync,
-    // {
-    //     Self { buffer: Box::new(value) }
-    // }
-    // }
-
     pub fn inner_type<T>(self) -> T
     where
         T: 'static,
     {
-        // double box?
-        *self.buffer.downcast::<T>().unwrap()
+        **self.buffer.downcast::<Box<T>>().unwrap()
     }
 }
 

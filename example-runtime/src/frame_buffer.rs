@@ -17,7 +17,9 @@ pub struct Surface {
     // pub(super) surface: Arc<Mutex<Option<softbuffer::Surface>>>,
     pub(super) surface: Option<softbuffer::Surface>,
 }
-
+// TODO: ensure safety
+unsafe impl Send for Surface {}
+unsafe impl Sync for Surface {}
 impl Surface {
     pub fn new() -> Self {
         Self { surface: None }
@@ -41,31 +43,13 @@ impl DrawApi for SurfaceArc {
 }
 
 // impl Surface {
-//     // pub fn buffer_mut<'a>(&'a mut self) -> FrameBuffer {
-//     //     let mut surface = self.surface.lock().unwrap();
-//     //     let buff = surface.buffer_mut().unwrap();
-//     //     // TODO: use ouroboros?
-//     //     let buff: softbuffer::Buffer<'static> = unsafe { mem::transmute(buff) };
-//     //     buff.into()
-//     // }
-
 //     pub fn resize(&mut self, width: NonZeroU32, height: NonZeroU32) {
 //         self.surface.lock().unwrap().resize(width, height).unwrap();
 //     }
 // }
-unsafe impl Send for Surface {}
-unsafe impl Sync for Surface {}
-// impl From<softbuffer::Surface> for Surface {
-//     fn from(surface: softbuffer::Surface) -> Self {
-//         Self {
-//             // surface: Arc::new(Mutex::new(surface)),
-//             surface: None,
-//         }
-//     }
-// }
+
 impl DrawApi for Surface {
     fn get_current_buffer(&mut self) -> wasmtime::Result<GraphicsContextBuffer> {
-        // let mut surface = self.surface.lock().unwrap();
         let surface = self.surface.as_mut().unwrap();
         let buff = surface.buffer_mut().unwrap();
         // TODO: use ouroboros?
@@ -77,10 +61,8 @@ impl DrawApi for Surface {
     }
 
     fn present(&mut self) -> wasmtime::Result<()> {
-        // TODO: should present be on the actual buffer? That's would track better with both softbuffer and wgpu
         self.surface
             .as_mut()
-            // .lock()
             .unwrap()
             .buffer_mut()
             .unwrap()
@@ -147,39 +129,6 @@ impl crate::wasi::webgpu::frame_buffer::HostSurface for HostState {
         let graphics_context = self.table.get_mut(&graphics_context).unwrap();
         graphics_context.connect_draw_api(Box::new(surface));
         Ok(())
-
-        // todo!()
-        // let context = unsafe { softbuffer::Context::new(&self.window) }.unwrap();
-        // let mut surface = unsafe { softbuffer::Surface::new(&context, &self.window) }.unwrap();
-
-        // let size = self.window.inner_size();
-
-        // let _ = surface.resize(
-        //     size.width.try_into().unwrap(),
-        //     size.height.try_into().unwrap(),
-        // );
-
-        // let surface: Surface = surface.into();
-
-        // let mut receiver = self.sender.subscribe();
-        // let mut surface_clone = surface.clone();
-
-        // tokio::spawn(async move {
-        //     loop {
-        //         let event = receiver.recv().await.unwrap();
-        //         if let HostEvent::CanvasResizeEvent(event) = event {
-        //             surface_clone.resize(
-        //                 event.width.try_into().unwrap(),
-        //                 event.height.try_into().unwrap(),
-        //             );
-        //         }
-        //     }
-        // });
-
-        // let graphics_context = self.table.get_mut(&graphics_context).unwrap();
-        // // graphics_context.kind = Some(GraphicsContextKind::FrameBuffer(surface));
-        // graphics_context.connect_draw_api(Box::new(surface));
-        // Ok(())
     }
 
     fn drop(&mut self, _rep: Resource<SurfaceArc>) -> wasmtime::Result<()> {
@@ -193,9 +142,7 @@ impl<T: WasiView> crate::wasi::webgpu::frame_buffer::HostFrameBuffer for T {
         buffer: Resource<crate::graphics_context::GraphicsContextBuffer>,
     ) -> wasmtime::Result<Resource<FrameBuffer>> {
         let host_buffer: GraphicsContextBuffer = self.table_mut().delete(buffer).unwrap();
-        // TODO: get rid of Box
-        let host_buffer: Box<FrameBuffer> = host_buffer.inner_type();
-        let host_buffer: FrameBuffer = *host_buffer;
+        let host_buffer: FrameBuffer = host_buffer.inner_type();
         Ok(self.table_mut().push(host_buffer).unwrap())
     }
 
