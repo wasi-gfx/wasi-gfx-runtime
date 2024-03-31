@@ -364,13 +364,10 @@ impl From<webgpu::GpuStoreOp> for wgpu_core::command::StoreOp {
 impl From<webgpu::GpuColor> for wgpu_types::Color {
     fn from(value: webgpu::GpuColor) -> Self {
         match value {
-            webgpu::GpuColorDictOrListFloat64::GpuColorDict(webgpu::GpuColorDict {
-                r,
-                g,
-                b,
-                a,
-            }) => wgpu_types::Color { r, g, b, a },
-            webgpu::GpuColorDictOrListFloat64::ListFloat64(list) => wgpu_types::Color {
+            webgpu::GpuColorDictOrListF64::GpuColorDict(webgpu::GpuColorDict { r, g, b, a }) => {
+                wgpu_types::Color { r, g, b, a }
+            }
+            webgpu::GpuColorDictOrListF64::ListF64(list) => wgpu_types::Color {
                 r: list[0],
                 g: list[1],
                 b: list[2],
