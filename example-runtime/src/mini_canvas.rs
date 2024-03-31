@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    thread::{self, sleep},
     time::Duration,
 };
 
@@ -204,8 +205,7 @@ impl MainThreadLoop {
 
         {
             let frame_senders = Arc::clone(&frame_senders);
-            // TODO: don't use tokio here
-            tokio::spawn(async move {
+            thread::spawn(move || {
                 loop {
                     for (_, sender) in frame_senders.lock().unwrap().iter() {
                         if let Err(e) = sender.try_broadcast(()) {
@@ -222,7 +222,7 @@ impl MainThreadLoop {
                             }
                         }
                     }
-                    tokio::time::sleep(Duration::from_millis(16)).await;
+                    sleep(Duration::from_millis(16));
                 }
             });
         }
