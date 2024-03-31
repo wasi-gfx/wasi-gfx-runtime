@@ -1,23 +1,22 @@
 use std::sync::Mutex;
 
 use crate::{
-    mini_canvas::MiniCanvasArc,
+    mini_canvas::{HasMainThreadProxy, MiniCanvasArc},
     wasi::webgpu::key_events::{self, KeyEvent, Pollable},
-    HostState,
 };
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
 #[async_trait::async_trait]
-impl key_events::Host for HostState {
+impl<T: WasiView + HasMainThreadProxy> key_events::Host for T {
     async fn up_listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> wasmtime::Result<Resource<KeyUpListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .main_thread_proxy
+            .main_thread_proxy()
             .create_key_up_listener(window_id)
             .await;
         Ok(self
@@ -35,7 +34,7 @@ impl key_events::Host for HostState {
     ) -> wasmtime::Result<Resource<KeyDownListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .main_thread_proxy
+            .main_thread_proxy()
             .create_key_down_listener(window_id)
             .await;
         Ok(self
@@ -48,7 +47,7 @@ impl key_events::Host for HostState {
     }
 }
 
-impl key_events::HostKeyUpListener for HostState {
+impl<T: WasiView + HasMainThreadProxy> key_events::HostKeyUpListener for T {
     fn subscribe(
         &mut self,
         key_up: Resource<KeyUpListener>,
@@ -56,7 +55,7 @@ impl key_events::HostKeyUpListener for HostState {
         Ok(preview2::subscribe(self.table_mut(), key_up).unwrap())
     }
     fn get(&mut self, key_up: Resource<KeyUpListener>) -> wasmtime::Result<Option<KeyEvent>> {
-        let key_up = self.table.get(&key_up).unwrap();
+        let key_up = self.table().get(&key_up).unwrap();
         Ok(key_up.data.lock().unwrap().take())
     }
     fn drop(&mut self, _self_: Resource<KeyUpListener>) -> wasmtime::Result<()> {
@@ -77,8 +76,7 @@ impl preview2::Subscribe for KeyUpListener {
         *self.data.lock().unwrap() = Some(event);
     }
 }
-
-impl key_events::HostKeyDownListener for HostState {
+impl<T: WasiView + HasMainThreadProxy> key_events::HostKeyDownListener for T {
     fn subscribe(
         &mut self,
         key_down: Resource<KeyDownListener>,
@@ -86,7 +84,7 @@ impl key_events::HostKeyDownListener for HostState {
         Ok(preview2::subscribe(self.table_mut(), key_down).unwrap())
     }
     fn get(&mut self, key_down: Resource<KeyDownListener>) -> wasmtime::Result<Option<KeyEvent>> {
-        let key_down = self.table.get(&key_down).unwrap();
+        let key_down = self.table().get(&key_down).unwrap();
         Ok(key_down.data.lock().unwrap().take())
     }
     fn drop(&mut self, _self_: Resource<KeyDownListener>) -> wasmtime::Result<()> {

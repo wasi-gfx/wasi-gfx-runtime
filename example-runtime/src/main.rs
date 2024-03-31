@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
-use mini_canvas::MainThreadProxy;
+use mini_canvas::{HasMainThreadProxy, MainThreadProxy};
 use wasmtime::{
     component::{Component, Linker},
     Config, Engine, Store,
@@ -148,6 +148,12 @@ impl HasGpuInstance for HostState {
         &self,
     ) -> Arc<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>> {
         Arc::clone(&self.instance)
+    }
+}
+
+impl HasMainThreadProxy for HostState {
+    fn main_thread_proxy(&self) -> &MainThreadProxy {
+        &self.main_thread_proxy
     }
 }
 
