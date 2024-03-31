@@ -1,23 +1,22 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    mini_canvas::MiniCanvasArc,
-    wasi::webgpu::pointer_events::{PointerEvent, Pollable},
-    HostState,
+    mini_canvas::{HasMainThreadProxy, MiniCanvasArc},
+    wasi::webgpu::pointer_events::{self, PointerEvent, Pollable},
 };
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
 #[async_trait::async_trait]
-impl crate::wasi::webgpu::pointer_events::Host for HostState {
+impl<T: WasiView + HasMainThreadProxy> pointer_events::Host for T {
     async fn up_listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> wasmtime::Result<Resource<PointerUpListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .main_thread_proxy
+            .main_thread_proxy()
             .create_pointer_up_listener(window_id)
             .await;
         Ok(self
@@ -35,7 +34,7 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
     ) -> wasmtime::Result<Resource<PointerDownListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .main_thread_proxy
+            .main_thread_proxy()
             .create_pointer_down_listener(window_id)
             .await;
         Ok(self
@@ -53,7 +52,7 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
     ) -> wasmtime::Result<Resource<PointerMoveListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .main_thread_proxy
+            .main_thread_proxy()
             .create_pointer_move_listener(window_id)
             .await;
         Ok(self
@@ -66,7 +65,7 @@ impl crate::wasi::webgpu::pointer_events::Host for HostState {
     }
 }
 
-impl crate::wasi::webgpu::pointer_events::HostPointerUpListener for HostState {
+impl<T: WasiView + HasMainThreadProxy> pointer_events::HostPointerUpListener for T {
     fn subscribe(
         &mut self,
         pointer_up: Resource<PointerUpListener>,
@@ -77,7 +76,7 @@ impl crate::wasi::webgpu::pointer_events::HostPointerUpListener for HostState {
         &mut self,
         pointer_up: Resource<PointerUpListener>,
     ) -> wasmtime::Result<Option<PointerEvent>> {
-        let pointer_up = self.table.get(&pointer_up).unwrap();
+        let pointer_up = self.table().get(&pointer_up).unwrap();
         Ok(pointer_up.data.lock().unwrap().take())
     }
     fn drop(&mut self, _self_: Resource<PointerUpListener>) -> wasmtime::Result<()> {
@@ -99,7 +98,7 @@ impl preview2::Subscribe for PointerUpListener {
     }
 }
 
-impl crate::wasi::webgpu::pointer_events::HostPointerDownListener for HostState {
+impl<T: WasiView + HasMainThreadProxy> pointer_events::HostPointerDownListener for T {
     fn subscribe(
         &mut self,
         pointer_down: Resource<PointerDownListener>,
@@ -110,7 +109,7 @@ impl crate::wasi::webgpu::pointer_events::HostPointerDownListener for HostState 
         &mut self,
         pointer_down: Resource<PointerDownListener>,
     ) -> wasmtime::Result<Option<PointerEvent>> {
-        let pointer_down = self.table.get(&pointer_down).unwrap();
+        let pointer_down = self.table().get(&pointer_down).unwrap();
         Ok(pointer_down.data.lock().unwrap().take())
     }
     fn drop(&mut self, _self_: Resource<PointerDownListener>) -> wasmtime::Result<()> {
@@ -132,7 +131,7 @@ impl preview2::Subscribe for PointerDownListener {
     }
 }
 
-impl crate::wasi::webgpu::pointer_events::HostPointerMoveListener for HostState {
+impl<T: WasiView + HasMainThreadProxy> pointer_events::HostPointerMoveListener for T {
     fn subscribe(
         &mut self,
         pointer_move: Resource<PointerMoveListener>,
@@ -143,7 +142,7 @@ impl crate::wasi::webgpu::pointer_events::HostPointerMoveListener for HostState 
         &mut self,
         pointer_move: Resource<PointerMoveListener>,
     ) -> wasmtime::Result<Option<PointerEvent>> {
-        let pointer_move = self.table.get(&pointer_move).unwrap();
+        let pointer_move = self.table().get(&pointer_move).unwrap();
         Ok(pointer_move.data.lock().unwrap().take())
     }
     fn drop(&mut self, _self_: Resource<PointerMoveListener>) -> wasmtime::Result<()> {

@@ -1,23 +1,22 @@
 use std::sync::Mutex;
 
 use crate::{
-    mini_canvas::MiniCanvasArc,
-    wasi::webgpu::animation_frame::{FrameEvent, HostFrameListener, Pollable},
-    HostState,
+    mini_canvas::{HasMainThreadProxy, MiniCanvasArc},
+    wasi::webgpu::animation_frame::{self, FrameEvent, Pollable},
 };
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::{self, WasiView};
 
 #[async_trait::async_trait]
-impl crate::wasi::webgpu::animation_frame::Host for HostState {
+impl<T: WasiView + HasMainThreadProxy> animation_frame::Host for T {
     async fn listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> wasmtime::Result<Resource<AnimationFrameListener>> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
-            .main_thread_proxy
+            .main_thread_proxy()
             .create_frame_listener(window_id)
             .await;
         Ok(self
@@ -30,7 +29,7 @@ impl crate::wasi::webgpu::animation_frame::Host for HostState {
     }
 }
 
-impl HostFrameListener for HostState {
+impl<T: WasiView + HasMainThreadProxy> animation_frame::HostFrameListener for T {
     fn subscribe(
         &mut self,
         frame_listener: Resource<AnimationFrameListener>,
@@ -41,7 +40,7 @@ impl HostFrameListener for HostState {
         &mut self,
         frame_listener: Resource<AnimationFrameListener>,
     ) -> wasmtime::Result<Option<FrameEvent>> {
-        let frame_listener = self.table.get(&frame_listener).unwrap();
+        let frame_listener = self.table().get(&frame_listener).unwrap();
         Ok(frame_listener.data.lock().unwrap().take())
     }
     fn drop(&mut self, _self_: Resource<AnimationFrameListener>) -> wasmtime::Result<()> {
