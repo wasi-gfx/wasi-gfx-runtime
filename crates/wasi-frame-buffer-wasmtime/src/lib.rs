@@ -5,11 +5,26 @@ use std::sync::{Arc, Mutex};
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 
-use crate::graphics_context::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
 use crate::wasi::webgpu::frame_buffer;
+use wasi_graphics_context_wasmtime::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
+
+pub use wasi::webgpu::frame_buffer::add_to_linker;
+
+wasmtime::component::bindgen!({
+    path: "../../wit/",
+    world: "example",
+    async: {
+        only_imports: [],
+    },
+    with: {
+        "wasi:webgpu/frame-buffer/surface": FBSurfaceArc,
+        "wasi:webgpu/frame-buffer/frame-buffer": FBBuffer,
+        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
+    },
+});
 
 pub struct FBSurface {
-    pub(super) surface: Option<softbuffer::Surface>,
+    pub(crate) surface: Option<softbuffer::Surface>,
 }
 // TODO: actually ensure safety
 unsafe impl Send for FBSurface {}
@@ -135,7 +150,7 @@ impl<T: WasiView> frame_buffer::HostFrameBuffer for T {
     // impl<T: WasiView> frame_buffer::HostFrameBuffer for T {
     fn from_graphics_buffer(
         &mut self,
-        buffer: Resource<crate::graphics_context::GraphicsContextBuffer>,
+        buffer: Resource<GraphicsContextBuffer>,
     ) -> wasmtime::Result<Resource<FBBuffer>> {
         let host_buffer: GraphicsContextBuffer = self.table_mut().delete(buffer).unwrap();
         let host_buffer: FBBuffer = host_buffer.inner_type();

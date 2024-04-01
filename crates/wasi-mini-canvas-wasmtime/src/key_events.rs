@@ -1,8 +1,8 @@
 use std::sync::Mutex;
 
 use crate::{
-    mini_canvas::{HasMainThreadProxy, MiniCanvasArc},
     wasi::webgpu::key_events::{self, KeyEvent, Pollable},
+    HasMainThreadProxy, MiniCanvasArc,
 };
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
