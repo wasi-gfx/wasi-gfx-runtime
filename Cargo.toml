@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/wasi-frame-buffer-wasmtime",
+    "crates/wasi-mini-canvas-wasmtime",
+    "crates/wasi-graphics-context-wasmtime",
+    "crates/wasi-webgpu-wasmtime",
     "example-apps/rectangle_frame_buffer",
     "example-apps/triangle",
     "example-apps/skybox",

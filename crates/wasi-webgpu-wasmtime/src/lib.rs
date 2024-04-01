@@ -10,10 +10,64 @@ use std::sync::Arc;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 
-use crate::graphics_context::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
+use wasi_graphics_context_wasmtime::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
 use crate::wasi::webgpu::webgpu;
 
 use self::to_core_conversions::ToCore;
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(crate) type Backend = wgpu_core::api::Vulkan;
+
+#[cfg(target_os = "windows")]
+pub(crate) type Backend = wgpu_core::api::Dx12;
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub(crate) type Backend = wgpu_core::api::Metal;
+
+#[cfg(all(
+    not(target_os = "linux"),
+    not(target_os = "android"),
+    not(target_os = "windows"),
+    not(target_os = "macos"),
+    not(target_os = "ios"),
+))]
+pub(crate) type Backend = wgpu_core::api::Gl;
+
+pub use wasi::webgpu::webgpu::add_to_linker;
+
+
+// needed for wasmtime::component::bindgen! as it only looks in the current crate.
+pub(crate) use wgpu_core;
+pub(crate) use wgpu_types;
+wasmtime::component::bindgen!({
+    path: "../../wit/",
+    world: "example",
+    async: {
+        only_imports: [],
+    },
+    with: {
+        "wasi:webgpu/webgpu/gpu-adapter": wgpu_core::id::AdapterId,
+        "wasi:webgpu/webgpu/gpu-device": Device,
+        // queue is same as device
+        "wasi:webgpu/webgpu/gpu-queue": Device,
+        "wasi:webgpu/webgpu/gpu-command-encoder": wgpu_core::id::CommandEncoderId,
+        "wasi:webgpu/webgpu/gpu-render-pass-encoder": wgpu_core::command::RenderPass,
+        "wasi:webgpu/webgpu/gpu-shader-module": wgpu_core::id::ShaderModuleId,
+        "wasi:webgpu/webgpu/gpu-render-pipeline": wgpu_core::id::RenderPipelineId,
+        "wasi:webgpu/webgpu/gpu-command-buffer": wgpu_core::id::CommandBufferId,
+        // "wasi:webgpu/webgpu/gpu-buffer": wgpu_core::id::BufferId,
+        "wasi:webgpu/webgpu/gpu-buffer": Buffer,
+        "wasi:webgpu/webgpu/remote-buffer": Buffer,
+        "wasi:webgpu/webgpu/gpu-pipeline-layout": wgpu_core::id::PipelineLayoutId,
+        "wasi:webgpu/webgpu/gpu-bind-group-layout": wgpu_core::id::BindGroupLayoutId,
+        "wasi:webgpu/webgpu/gpu-sampler": wgpu_core::id::SamplerId,
+        "wasi:webgpu/webgpu/gpu-supported-features": wgpu_types::Features,
+        "wasi:webgpu/webgpu/gpu-texture": wgpu_core::id::TextureId,
+        "wasi:webgpu/webgpu/gpu-bind-group": wgpu_core::id::BindGroupId,
+        "wasi:webgpu/webgpu/gpu-texture-view": wgpu_core::id::TextureViewId,
+        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
+    },
+});
 
 pub trait HasGpuInstance {
     fn instance(

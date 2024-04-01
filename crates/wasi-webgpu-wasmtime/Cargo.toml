@@ -1,31 +1,15 @@
 [package]
-name = "example-runtime"
+name = "wasi-webgpu-wasmtime"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-clap.workspace = true
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
-anyhow.workspace = true
-winit.workspace = true
-wgpu-types.workspace = true
 raw-window-handle.workspace = true
-async-trait.workspace = true
-rand.workspace = true
-futures.workspace = true
-tokio.workspace = true
-softbuffer.workspace = true
-env_logger.workspace = true
-log.workspace = true
-async-broadcast.workspace = true
-oneshot.workspace = true
-wasi-graphics-context-wasmtime = { path = "../crates/wasi-graphics-context-wasmtime" }
-wasi-mini-canvas-wasmtime = { path = "../crates/wasi-mini-canvas-wasmtime" }
-wasi-frame-buffer-wasmtime = { path = "../crates/wasi-frame-buffer-wasmtime" }
-wasi-webgpu-wasmtime = { path = "../crates/wasi-webgpu-wasmtime" }
+wgpu-core.workspace = true
+wgpu-types.workspace = true
+wasi-graphics-context-wasmtime = { path = "../wasi-graphics-context-wasmtime" }
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 workspace = true

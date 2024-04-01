@@ -793,7 +793,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16e44ab292b1dddfdaf7be62cfd8877df52f2f3fde5858d95bab606be259f20"
 dependencies = [
  "bitflags 2.5.0",
- "libloading 0.8.3",
+ "libloading 0.7.4",
  "winapi",
 ]
 
@@ -1008,6 +1008,10 @@ dependencies = [
  "raw-window-handle",
  "softbuffer",
  "tokio",
+ "wasi-frame-buffer-wasmtime",
+ "wasi-graphics-context-wasmtime",
+ "wasi-mini-canvas-wasmtime",
+ "wasi-webgpu-wasmtime",
  "wasmtime",
  "wasmtime-wasi",
  "wgpu-core",
@@ -3051,6 +3055,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasi-frame-buffer-wasmtime"
+version = "0.1.0"
+dependencies = [
+ "raw-window-handle",
+ "softbuffer",
+ "wasi-graphics-context-wasmtime",
+ "wasmtime",
+ "wasmtime-wasi",
+]
+
+[[package]]
+name = "wasi-graphics-context-wasmtime"
+version = "0.1.0"
+dependencies = [
+ "raw-window-handle",
+ "wasmtime",
+ "wasmtime-wasi",
+]
+
+[[package]]
+name = "wasi-mini-canvas-wasmtime"
+version = "0.1.0"
+dependencies = [
+ "async-broadcast",
+ "async-trait",
+ "futures",
+ "oneshot",
+ "raw-window-handle",
+ "wasi-graphics-context-wasmtime",
+ "wasmtime",
+ "wasmtime-wasi",
+ "winit",
+]
+
+[[package]]
+name = "wasi-webgpu-wasmtime"
+version = "0.1.0"
+dependencies = [
+ "raw-window-handle",
+ "wasi-graphics-context-wasmtime",
+ "wasmtime",
+ "wasmtime-wasi",
+ "wgpu-core",
+ "wgpu-types",
+]
+
+[[package]]
 name = "wasm-bindgen"
 version = "0.2.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3738,7 +3789,7 @@ dependencies = [
  "js-sys",
  "khronos-egl",
  "libc",
- "libloading 0.8.3",
+ "libloading 0.7.4",
  "log",
  "metal",
  "naga",

@@ -4,14 +4,12 @@ use std::{
     thread::{self, sleep},
     time::Duration,
 };
+use wasi_graphics_context_wasmtime::DisplayApi;
 
-use crate::{
-    graphics_context::DisplayApi,
-    wasi::webgpu::{
-        key_events::KeyEvent,
-        mini_canvas::{self, CreateDesc, GraphicsContext, Pollable, ResizeEvent},
-        pointer_events::PointerEvent,
-    },
+use crate::wasi::webgpu::{
+    key_events::KeyEvent,
+    mini_canvas::{self, CreateDesc, GraphicsContext, Pollable, ResizeEvent},
+    pointer_events::PointerEvent,
 };
 use async_broadcast::{Receiver, TrySendError};
 use futures::executor::block_on;
@@ -23,6 +21,59 @@ use winit::{
     event_loop::{EventLoop, EventLoopProxy},
     window::{Window, WindowId},
 };
+
+mod animation_frame;
+mod key_events;
+mod pointer_events;
+
+// pub use wasi::webgpu::mini_canvas::add_to_linker;
+pub fn add_to_linker<T, U>(
+    linker: &mut wasmtime::component::Linker<T>,
+    get: impl Fn(&mut T) -> &mut U + Send + Sync + Copy + 'static,
+) -> wasmtime::Result<()>
+where
+    U: wasi::webgpu::mini_canvas::Host
+        + wasi::webgpu::animation_frame::Host
+        + wasi::webgpu::pointer_events::Host
+        + wasi::webgpu::key_events::Host
+        + Send,
+    T: Send,
+{
+    wasi::webgpu::mini_canvas::add_to_linker(linker, get)?;
+    wasi::webgpu::animation_frame::add_to_linker(linker, get)?;
+    wasi::webgpu::pointer_events::add_to_linker(linker, get)?;
+    wasi::webgpu::key_events::add_to_linker(linker, get)?;
+    Ok(())
+}
+
+wasmtime::component::bindgen!({
+    path: "../../wit/",
+    world: "example",
+    async: {
+        only_imports: [
+            "poll",
+            "up-listener",
+            "down-listener",
+            "move-listener",
+            "listener",
+            // "resize-listener",
+        ],
+    },
+    with: {
+        "wasi:io/poll": preview2::bindings::io::poll,
+        "wasi:io/streams": preview2::bindings::io::stream,
+        "wasi:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
+        "wasi:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
+        "wasi:webgpu/pointer-events/pointer-move-listener": pointer_events::PointerMoveListener,
+        "wasi:webgpu/key-events/key-up-listener": key_events::KeyUpListener,
+        "wasi:webgpu/key-events/key-down-listener": key_events::KeyDownListener,
+        "wasi:webgpu/animation-frame/frame-listener": animation_frame::AnimationFrameListener,
+        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
+        "wasi:webgpu/mini-canvas/mini-canvas": MiniCanvasArc,
+        "wasi:webgpu/mini-canvas/resize-listener": ResizeListener,
+    },
+    
+});
 
 #[derive(Debug)]
 pub struct MiniCanvas {

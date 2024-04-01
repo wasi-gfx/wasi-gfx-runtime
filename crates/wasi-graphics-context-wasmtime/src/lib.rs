@@ -5,6 +5,18 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 
+pub use wasi::webgpu::graphics_context::add_to_linker;
+
+wasmtime::component::bindgen!({
+    path: "../../wit/",
+    world: "example",
+    async: false,
+    with: {
+        "wasi:webgpu/graphics-context/graphics-context": GraphicsContext,
+        "wasi:webgpu/graphics-context/graphics-context-buffer": GraphicsContextBuffer,
+    },
+});
+
 pub struct GraphicsContext {
     draw_api: Option<Box<dyn DrawApi + Send + Sync>>,
     display_api: Option<Box<dyn DisplayApi + Send + Sync>>,
