@@ -642,3 +642,49 @@ impl ToCore<wgpu_types::ImageDataLayout> for webgpu::GpuImageDataLayout {
         }
     }
 }
+
+impl<'a> ToCore<wgpu_core::pipeline::ComputePipelineDescriptor<'a>>
+    for webgpu::GpuComputePipelineDescriptor
+{
+    fn to_core(self, table: &ResourceTable) -> wgpu_core::pipeline::ComputePipelineDescriptor<'a> {
+        wgpu_core::pipeline::ComputePipelineDescriptor {
+            label: Default::default(), //TODO: enable: self.compute.label.map(|l| l.into()),
+            layout: match self.layout {
+                webgpu::GpuPipelineLayoutOrGpuAutoLayoutMode::GpuPipelineLayout(layout) => {
+                    Some(layout.to_core(table))
+                }
+                webgpu::GpuPipelineLayoutOrGpuAutoLayoutMode::GpuAutoLayoutMode(mode) => match mode
+                {
+                    webgpu::GpuAutoLayoutMode::Auto => None,
+                },
+            },
+            stage: self.compute.to_core(table),
+        }
+    }
+}
+
+impl<'a> ToCore<wgpu_core::pipeline::ProgrammableStageDescriptor<'a>>
+    for webgpu::GpuProgrammableStage
+{
+    fn to_core(
+        self,
+        table: &ResourceTable,
+    ) -> wgpu_core::pipeline::ProgrammableStageDescriptor<'a> {
+        wgpu_core::pipeline::ProgrammableStageDescriptor {
+            module: self.module.to_core(table),
+            entry_point: self.entry_point.map(|ep| ep.into()).unwrap(),
+        }
+    }
+}
+
+impl ToCore<wgpu_core::command::ComputePassTimestampWrites>
+    for webgpu::GpuComputePassTimestampWrites
+{
+    fn to_core(self, table: &ResourceTable) -> wgpu_core::command::ComputePassTimestampWrites {
+        wgpu_core::command::ComputePassTimestampWrites {
+            query_set: self.query_set.to_core(table),
+            beginning_of_pass_write_index: self.beginning_of_pass_write_index,
+            end_of_pass_write_index: self.end_of_pass_write_index,
+        }
+    }
+}
