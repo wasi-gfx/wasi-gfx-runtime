@@ -72,7 +72,6 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/mini-canvas/mini-canvas": MiniCanvasArc,
         "wasi:webgpu/mini-canvas/resize-listener": ResizeListener,
     },
-    
 });
 
 #[derive(Debug)]

@@ -115,7 +115,7 @@ impl<T: WasiView> graphics_context::HostGraphicsContext for T {
         let next_frame = context_kind
             .draw_api
             .as_mut()
-            .unwrap()
+            .expect("draw_api not set")
             .get_current_buffer()
             .unwrap();
         let next_frame = self.table_mut().push(next_frame).unwrap();

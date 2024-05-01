@@ -4,14 +4,15 @@
 // - Remove all unwraps.
 // - Implement all the drop handlers.
 
+use callback_future::CallbackFuture;
 use core::slice;
 use std::borrow::Cow;
 use std::sync::Arc;
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 
-use wasi_graphics_context_wasmtime::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
 use crate::wasi::webgpu::webgpu;
+use wasi_graphics_context_wasmtime::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
 
 use self::to_core_conversions::ToCore;
 
@@ -35,7 +36,6 @@ pub(crate) type Backend = wgpu_core::api::Gl;
 
 pub use wasi::webgpu::webgpu::add_to_linker;
 
-
 // needed for wasmtime::component::bindgen! as it only looks in the current crate.
 pub(crate) use wgpu_core;
 pub(crate) use wgpu_types;
@@ -43,7 +43,9 @@ wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
     async: {
-        only_imports: [],
+        only_imports: [
+            "[method]gpu-buffer.map-async",
+        ],
     },
     with: {
         "wasi:webgpu/webgpu/gpu-adapter": wgpu_core::id::AdapterId,
@@ -52,6 +54,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu/gpu-queue": Device,
         "wasi:webgpu/webgpu/gpu-command-encoder": wgpu_core::id::CommandEncoderId,
         "wasi:webgpu/webgpu/gpu-render-pass-encoder": wgpu_core::command::RenderPass,
+        "wasi:webgpu/webgpu/gpu-compute-pass-encoder": wgpu_core::command::ComputePass,
         "wasi:webgpu/webgpu/gpu-shader-module": wgpu_core::id::ShaderModuleId,
         "wasi:webgpu/webgpu/gpu-render-pipeline": wgpu_core::id::RenderPipelineId,
         "wasi:webgpu/webgpu/gpu-command-buffer": wgpu_core::id::CommandBufferId,
@@ -63,8 +66,12 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu/gpu-sampler": wgpu_core::id::SamplerId,
         "wasi:webgpu/webgpu/gpu-supported-features": wgpu_types::Features,
         "wasi:webgpu/webgpu/gpu-texture": wgpu_core::id::TextureId,
+        "wasi:webgpu/webgpu/gpu-compute-pipeline": wgpu_core::id::ComputePipelineId,
         "wasi:webgpu/webgpu/gpu-bind-group": wgpu_core::id::BindGroupId,
         "wasi:webgpu/webgpu/gpu-texture-view": wgpu_core::id::TextureViewId,
+        "wasi:webgpu/webgpu/gpu-adapter-info": wgpu_types::AdapterInfo,
+        "wasi:webgpu/webgpu/gpu-query-set": wgpu_core::id::QuerySetId,
+        "wasi:webgpu/webgpu/gpu-supported-limits": wgpu_types::Limits,
         "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
     },
 });
@@ -338,9 +345,14 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuDevice for T {
 
     fn limits(
         &mut self,
-        _device: Resource<webgpu::GpuDevice>,
+        device: Resource<webgpu::GpuDevice>,
     ) -> wasmtime::Result<Resource<webgpu::GpuSupportedLimits>> {
-        todo!()
+        let device = self.table().get(&device).unwrap();
+        let limits = self
+            .instance()
+            .device_limits::<crate::Backend>(device.device)
+            .unwrap();
+        Ok(self.table_mut().push(limits).unwrap())
     }
 
     fn destroy(&mut self, _device: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
@@ -471,10 +483,32 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuDevice for T {
 
     fn create_compute_pipeline(
         &mut self,
-        _device: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuComputePipelineDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuComputePipelineDescriptor,
     ) -> wasmtime::Result<Resource<webgpu::GpuComputePipeline>> {
-        todo!()
+        let device = self.table().get(&device).unwrap();
+
+        let implicit_pipeline_ids = match &descriptor.layout {
+            webgpu::GpuPipelineLayoutOrGpuAutoLayoutMode::GpuPipelineLayout(_) => None,
+            webgpu::GpuPipelineLayoutOrGpuAutoLayoutMode::GpuAutoLayoutMode(mode) => match mode {
+                webgpu::GpuAutoLayoutMode::Auto => Some(wgpu_core::device::ImplicitPipelineIds {
+                    root_id: (),
+                    group_ids: &[(); wgpu_core::MAX_BIND_GROUPS],
+                }),
+            },
+        };
+
+        let compute_pipeline = core_result(
+            self.instance()
+                .device_create_compute_pipeline::<crate::Backend>(
+                    device.device,
+                    &descriptor.to_core(&self.table()),
+                    (),
+                    implicit_pipeline_ids,
+                ),
+        )
+        .unwrap();
+        Ok(self.table_mut().push(compute_pipeline).unwrap())
     }
 
     // fn create_compute_pipeline_async(
@@ -811,9 +845,14 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuAdapter for T {
 
     fn limits(
         &mut self,
-        _self_: wasmtime::component::Resource<wgpu_core::id::AdapterId>,
-    ) -> wasmtime::Result<wasmtime::component::Resource<webgpu::GpuSupportedLimits>> {
-        todo!()
+        adapter: Resource<wgpu_core::id::AdapterId>,
+    ) -> wasmtime::Result<Resource<webgpu::GpuSupportedLimits>> {
+        let adapter = self.table().get(&adapter).unwrap();
+        let limits = self
+            .instance()
+            .adapter_limits::<crate::Backend>(*adapter)
+            .unwrap();
+        Ok(self.table_mut().push(limits).unwrap())
     }
 
     fn is_fallback_adapter(
@@ -825,9 +864,15 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuAdapter for T {
 
     fn request_adapter_info(
         &mut self,
-        _self_: wasmtime::component::Resource<wgpu_core::id::AdapterId>,
-    ) -> wasmtime::Result<wasmtime::component::Resource<webgpu::GpuAdapterInfo>> {
-        todo!()
+        adapter: Resource<wgpu_core::id::AdapterId>,
+    ) -> wasmtime::Result<Resource<webgpu::GpuAdapterInfo>> {
+        let adapter_id = self.table().get(&adapter).unwrap();
+        let info = self
+            .instance()
+            .adapter_get_info::<crate::Backend>(*adapter_id)
+            .unwrap();
+        let info = self.table_mut().push(info).unwrap();
+        Ok(info)
     }
 }
 
@@ -983,22 +1028,46 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuCommandEncoder for T {
 
     fn begin_compute_pass(
         &mut self,
-        _self_: Resource<wgpu_core::id::CommandEncoderId>,
-        _descriptor: Option<webgpu::GpuComputePassDescriptor>,
+        command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
+        descriptor: Option<webgpu::GpuComputePassDescriptor>,
     ) -> wasmtime::Result<Resource<webgpu::GpuComputePassEncoder>> {
-        todo!()
+        let command_encoder = self.table().get(&command_encoder).unwrap();
+        let compute_pass = wgpu_core::command::ComputePass::new(
+            *command_encoder,
+            &wgpu_core::command::ComputePassDescriptor {
+                label: Default::default(),
+                timestamp_writes: descriptor
+                    .map(|d| d.timestamp_writes.map(|tw| tw.to_core(&self.table())))
+                    .flatten()
+                    .as_ref(),
+            },
+        );
+        Ok(self.table_mut().push(compute_pass).unwrap())
     }
 
     fn copy_buffer_to_buffer(
         &mut self,
-        _self_: Resource<wgpu_core::id::CommandEncoderId>,
-        _source: Resource<webgpu::GpuBuffer>,
-        _source_offset: webgpu::GpuSize64,
-        _destination: Resource<webgpu::GpuBuffer>,
-        _destination_offset: webgpu::GpuSize64,
-        _size: webgpu::GpuSize64,
+        command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
+        source: Resource<webgpu::GpuBuffer>,
+        source_offset: webgpu::GpuSize64,
+        destination: Resource<webgpu::GpuBuffer>,
+        destination_offset: webgpu::GpuSize64,
+        size: webgpu::GpuSize64,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let command_encoder = *self.table().get(&command_encoder).unwrap();
+        let source = self.table().get(&source).unwrap();
+        let destination = self.table().get(&destination).unwrap();
+        self.instance()
+            .command_encoder_copy_buffer_to_buffer::<crate::Backend>(
+                command_encoder,
+                source.buffer,
+                source_offset,
+                destination.buffer,
+                destination_offset,
+                size,
+            )
+            .unwrap();
+        Ok(())
     }
 
     fn copy_buffer_to_texture(
@@ -1475,20 +1544,30 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuRenderBundle for T {
 impl<T: WasiView + HasGpuInstance> webgpu::HostGpuComputePassEncoder for T {
     fn set_pipeline(
         &mut self,
-        _self_: Resource<webgpu::GpuComputePassEncoder>,
-        _pipeline: Resource<webgpu::GpuComputePipeline>,
+        encoder: Resource<webgpu::GpuComputePassEncoder>,
+        pipeline: Resource<webgpu::GpuComputePipeline>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let pipeline = *self.table().get(&pipeline).unwrap();
+        let encoder = self.table_mut().get_mut(&encoder).unwrap();
+        wgpu_core::command::compute_ffi::wgpu_compute_pass_set_pipeline(encoder, pipeline);
+        Ok(())
     }
 
     fn dispatch_workgroups(
         &mut self,
-        _self_: Resource<webgpu::GpuComputePassEncoder>,
-        _workgroup_count_x: webgpu::GpuSize32,
-        _workgroup_count_y: Option<webgpu::GpuSize32>,
-        _workgroup_count_z: Option<webgpu::GpuSize32>,
+        encoder: Resource<webgpu::GpuComputePassEncoder>,
+        workgroup_count_x: webgpu::GpuSize32,
+        workgroup_count_y: Option<webgpu::GpuSize32>,
+        workgroup_count_z: Option<webgpu::GpuSize32>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let encoder = self.table_mut().get_mut(&encoder).unwrap();
+        wgpu_core::command::compute_ffi::wgpu_compute_pass_dispatch_workgroups(
+            encoder,
+            workgroup_count_x,
+            workgroup_count_y.unwrap(),
+            workgroup_count_z.unwrap(),
+        );
+        Ok(())
     }
 
     fn dispatch_workgroups_indirect(
@@ -1500,8 +1579,17 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuComputePassEncoder for T {
         todo!()
     }
 
-    fn end(&mut self, _self_: Resource<webgpu::GpuComputePassEncoder>) -> wasmtime::Result<()> {
-        todo!()
+    fn end(
+        &mut self,
+        cpass: Resource<wgpu_core::command::ComputePass>,
+        non_standard_encoder: Resource<wgpu_core::id::CommandEncoderId>,
+    ) -> wasmtime::Result<()> {
+        let encoder = *self.table().get(&non_standard_encoder).unwrap();
+        let cpass = self.table_mut().delete(cpass).unwrap();
+        self.instance()
+            .command_encoder_run_compute_pass::<crate::Backend>(encoder, &cpass)
+            .unwrap();
+        Ok(())
     }
 
     fn label(
@@ -1544,12 +1632,24 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuComputePassEncoder for T {
 
     fn set_bind_group(
         &mut self,
-        _self_: Resource<webgpu::GpuComputePassEncoder>,
-        _index: webgpu::GpuIndex32,
-        _bind_group: Resource<webgpu::GpuBindGroup>,
-        _dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
+        encoder: Resource<webgpu::GpuComputePassEncoder>,
+        index: webgpu::GpuIndex32,
+        bind_group: Resource<webgpu::GpuBindGroup>,
+        dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let bind_group = *self.table().get(&bind_group).unwrap();
+        let encoder = self.table_mut().get_mut(&encoder).unwrap();
+        let dynamic_offsets = dynamic_offsets.unwrap();
+        unsafe {
+            wgpu_core::command::compute_ffi::wgpu_compute_pass_set_bind_group(
+                encoder,
+                index,
+                bind_group,
+                dynamic_offsets.as_ptr(),
+                dynamic_offsets.len(),
+            )
+        }
+        Ok(())
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuComputePassEncoder>) -> wasmtime::Result<()> {
@@ -1804,14 +1904,21 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuComputePipeline for T {
 
     fn get_bind_group_layout(
         &mut self,
-        _self_: Resource<webgpu::GpuComputePipeline>,
-        _index: u32,
+        compute_pipeline: Resource<webgpu::GpuComputePipeline>,
+        index: u32,
     ) -> wasmtime::Result<Resource<webgpu::GpuBindGroupLayout>> {
-        todo!()
+        let pipeline_id = self.table().get(&compute_pipeline).unwrap();
+        let bind_group_layout = core_result(
+            self.instance()
+                .compute_pipeline_get_bind_group_layout::<crate::Backend>(*pipeline_id, index, ()),
+        )
+        .unwrap();
+        Ok(self.table_mut().push(bind_group_layout).unwrap())
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuComputePipeline>) -> wasmtime::Result<()> {
-        todo!()
+        // TODO:
+        Ok(())
     }
 }
 impl<T: WasiView + HasGpuInstance> webgpu::HostGpuBindGroup for T {
@@ -1862,7 +1969,8 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuBindGroupLayout for T {
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuBindGroupLayout>) -> wasmtime::Result<()> {
-        todo!()
+        // TODO:
+        Ok(())
     }
 }
 impl<T: WasiView + HasGpuInstance> webgpu::HostGpuExternalTexture for T {
@@ -1896,9 +2004,12 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuSampler for T {
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuSampler>) -> wasmtime::Result<()> {
-        todo!()
+        // TODO:
+        Ok(())
     }
 }
+
+#[async_trait::async_trait]
 impl<T: WasiView + HasGpuInstance> webgpu::HostGpuBuffer for T {
     fn size(
         &mut self,
@@ -1921,14 +2032,46 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuBuffer for T {
         todo!()
     }
 
-    fn map_async(
+    async fn map_async(
         &mut self,
-        _self_: Resource<webgpu::GpuBuffer>,
-        _mode: webgpu::GpuMapModeFlags,
-        _offset: Option<webgpu::GpuSize64>,
-        _size: Option<webgpu::GpuSize64>,
+        buffer: Resource<webgpu::GpuBuffer>,
+        mode: webgpu::GpuMapModeFlags,
+        offset: Option<webgpu::GpuSize64>,
+        size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let buffer = self.table().get(&buffer).unwrap().buffer;
+        let instance = self.instance();
+        CallbackFuture::new(Box::new(
+            move |resolve: Box<
+                dyn FnOnce(Box<Result<(), wgpu_core::resource::BufferAccessError>>) + Send,
+            >| {
+                // source: https://www.w3.org/TR/webgpu/#typedefdef-gpumapmodeflags
+                let host = match mode {
+                    0 => wgpu_core::device::HostMap::Read,
+                    1 => wgpu_core::device::HostMap::Write,
+                    _ => panic!(),
+                };
+                let op = wgpu_core::resource::BufferMapOperation {
+                    host,
+                    callback: wgpu_core::resource::BufferMapCallback::from_rust(Box::new(
+                        move |result| {
+                            resolve(Box::new(result));
+                        },
+                    )),
+                };
+
+                let offset = offset.unwrap();
+                let size = size.unwrap();
+                instance
+                    .buffer_map_async::<crate::Backend>(buffer, offset..offset + size, op)
+                    .unwrap();
+                // TODO: only poll this device.
+                instance.poll_all_devices(true).unwrap();
+            },
+        ))
+        .await
+        .unwrap();
+        Ok(())
     }
 
     fn get_mapped_range(
@@ -2037,7 +2180,8 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuAdapterInfo for T {
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuAdapterInfo>) -> wasmtime::Result<()> {
-        todo!()
+        // TODO:
+        Ok(())
     }
 }
 impl<T: WasiView + HasGpuInstance> webgpu::HostWgslLanguageFeatures for T {
@@ -2096,230 +2240,259 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuSupportedFeatures for T {
 impl<T: WasiView + HasGpuInstance> webgpu::HostGpuSupportedLimits for T {
     fn max_texture_dimension1_d(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_texture_dimension_1d)
     }
 
     fn max_texture_dimension2_d(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_texture_dimension_2d)
     }
 
     fn max_texture_dimension3_d(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_texture_dimension_3d)
     }
 
     fn max_texture_array_layers(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_texture_array_layers)
     }
 
     fn max_bind_groups(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_bind_groups)
     }
 
     fn max_bind_groups_plus_vertex_buffers(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        _limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
         todo!()
     }
 
     fn max_bindings_per_bind_group(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_bindings_per_bind_group)
     }
 
     fn max_dynamic_uniform_buffers_per_pipeline_layout(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_dynamic_uniform_buffers_per_pipeline_layout)
     }
 
     fn max_dynamic_storage_buffers_per_pipeline_layout(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_dynamic_storage_buffers_per_pipeline_layout)
     }
 
     fn max_sampled_textures_per_shader_stage(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_sampled_textures_per_shader_stage)
     }
 
     fn max_samplers_per_shader_stage(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_samplers_per_shader_stage)
     }
 
     fn max_storage_buffers_per_shader_stage(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_storage_buffers_per_shader_stage)
     }
 
     fn max_storage_textures_per_shader_stage(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_storage_textures_per_shader_stage)
     }
 
     fn max_uniform_buffers_per_shader_stage(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_uniform_buffers_per_shader_stage)
     }
 
     fn max_uniform_buffer_binding_size(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u64> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_uniform_buffer_binding_size as u64)
     }
 
     fn max_storage_buffer_binding_size(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u64> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_storage_buffer_binding_size as u64)
     }
 
     fn min_uniform_buffer_offset_alignment(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.min_uniform_buffer_offset_alignment)
     }
 
     fn min_storage_buffer_offset_alignment(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.min_storage_buffer_offset_alignment)
     }
 
     fn max_vertex_buffers(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_vertex_buffers)
     }
 
     fn max_buffer_size(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u64> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_buffer_size)
     }
 
     fn max_vertex_attributes(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_vertex_attributes)
     }
 
     fn max_vertex_buffer_array_stride(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_vertex_buffer_array_stride)
     }
 
     fn max_inter_stage_shader_components(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_inter_stage_shader_components)
     }
 
     fn max_inter_stage_shader_variables(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        _limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
         todo!()
     }
 
     fn max_color_attachments(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        _limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
         todo!()
     }
 
     fn max_color_attachment_bytes_per_sample(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        _limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
         todo!()
     }
 
     fn max_compute_workgroup_storage_size(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_compute_workgroup_storage_size)
     }
 
     fn max_compute_invocations_per_workgroup(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_compute_invocations_per_workgroup)
     }
 
     fn max_compute_workgroup_size_x(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_compute_workgroup_size_x)
     }
 
     fn max_compute_workgroup_size_y(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_compute_workgroup_size_y)
     }
 
     fn max_compute_workgroup_size_z(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_compute_workgroup_size_z)
     }
 
     fn max_compute_workgroups_per_dimension(
         &mut self,
-        _self_: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        Ok(limits.max_compute_workgroups_per_dimension)
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuSupportedLimits>) -> wasmtime::Result<()> {
-        todo!()
+        // TODO:
+        Ok(())
     }
 }
 impl<T: WasiView + HasGpuInstance> webgpu::HostAllowSharedBufferSource for T {
