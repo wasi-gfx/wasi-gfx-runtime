@@ -500,7 +500,7 @@ impl Example {
             array_layer_count: None,
         }));
         let bind_group = device.create_bind_group(webgpu::GpuBindGroupDescriptor {
-            layout: bind_group_layout,
+            layout: &bind_group_layout,
             entries: vec![
                 webgpu::GpuBindGroupEntry {
                     binding: 0,
@@ -516,11 +516,11 @@ impl Example {
                 },
                 webgpu::GpuBindGroupEntry {
                     binding: 1,
-                    resource: webgpu::GpuBindingResource::GpuTextureView(texture_view),
+                    resource: webgpu::GpuBindingResource::GpuTextureView(&texture_view),
                 },
                 webgpu::GpuBindGroupEntry {
                     binding: 2,
-                    resource: webgpu::GpuBindingResource::GpuSampler(sampler),
+                    resource: webgpu::GpuBindingResource::GpuSampler(&sampler),
                 },
             ],
             label: None,

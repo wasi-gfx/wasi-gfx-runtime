@@ -14,10 +14,8 @@ impl Guest for Example {
     }
 }
 
-use wasi::webgpu::{
-    animation_frame, frame_buffer, graphics_context, mini_canvas, pointer_events,
-};
 use std::cmp::min;
+use wasi::webgpu::{animation_frame, frame_buffer, graphics_context, mini_canvas, pointer_events};
 
 fn draw_rectangle() {
     let canvas = mini_canvas::MiniCanvas::new(mini_canvas::CreateDesc {
