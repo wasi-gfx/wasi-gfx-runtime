@@ -98,11 +98,11 @@ fn draw_triangle() {
                 }
             }
             .to_string(),
-            targets: vec![webgpu::GpuColorTargetState {
+            targets: vec![Some(webgpu::GpuColorTargetState {
                 format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
                 blend: None,
                 write_mask: None,
-            }],
+            })],
         };
         let pipeline_description = webgpu::GpuRenderPipelineDescriptor {
             vertex,

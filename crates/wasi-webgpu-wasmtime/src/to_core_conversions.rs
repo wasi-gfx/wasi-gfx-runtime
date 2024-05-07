@@ -251,7 +251,7 @@ impl<'a> ToCore<wgpu_core::pipeline::FragmentState<'a>> for webgpu::GpuFragmentS
             targets: self
                 .targets
                 .into_iter()
-                .map(|t| Some(t.to_core(table)))
+                .map(|t| t.map(|t| t.to_core(table)))
                 .collect::<Vec<_>>()
                 .into(),
         }

@@ -320,11 +320,11 @@ impl Example {
             fragment: Some(webgpu::GpuFragmentState {
                 module: &shader,
                 entry_point: "fs_sky".into(),
-                targets: vec![webgpu::GpuColorTargetState {
+                targets: vec![Some(webgpu::GpuColorTargetState {
                     format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
                     blend: None,
                     write_mask: Some(ColorWrites::ALL.bits()),
-                }],
+                })],
             }),
             primitive: Some(webgpu::GpuPrimitiveState {
                 front_face: Some(webgpu::GpuFrontFace::Cw),
@@ -380,11 +380,11 @@ impl Example {
             fragment: Some(webgpu::GpuFragmentState {
                 module: &shader,
                 entry_point: "fs_entity".into(),
-                targets: vec![webgpu::GpuColorTargetState {
+                targets: vec![Some(webgpu::GpuColorTargetState {
                     format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
                     blend: None,
                     write_mask: Some(ColorWrites::ALL.bits()),
-                }],
+                })],
                 // targets: &[Some(config.view_formats[0].into())],
             }),
             primitive: Some(webgpu::GpuPrimitiveState {

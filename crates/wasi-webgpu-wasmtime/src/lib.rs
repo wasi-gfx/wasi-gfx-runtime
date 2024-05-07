@@ -1124,9 +1124,11 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuCommandEncoder for T {
 
     fn label(
         &mut self,
-        _self_: Resource<wgpu_core::id::CommandEncoderId>,
+        command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
     ) -> wasmtime::Result<String> {
-        todo!()
+        let _command_encoder = self.table().get(&command_encoder).unwrap();
+        // TODO: return real label
+        Ok(String::new())
     }
 
     fn set_label(
@@ -1624,10 +1626,19 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuComputePassEncoder for T {
 
     fn insert_debug_marker(
         &mut self,
-        _self_: Resource<webgpu::GpuComputePassEncoder>,
-        _marker_label: String,
+        cpass: Resource<webgpu::GpuComputePassEncoder>,
+        label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let cpass = self.table_mut().get_mut(&cpass).unwrap();
+        unsafe {
+            let label = std::ffi::CString::new(label).unwrap();
+            wgpu_core::command::compute_ffi::wgpu_compute_pass_insert_debug_marker(
+                cpass,
+                label.as_ptr(),
+                0,
+            );
+        }
+        Ok(())
     }
 
     fn set_bind_group(
@@ -2204,7 +2215,6 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuSupportedFeatures for T {
         query: String,
     ) -> wasmtime::Result<bool> {
         let features = self.table().get(&features).unwrap();
-        // TODO: what other options should be here?
         Ok(match query.as_str() {
             "depth-clip-control" => features.contains(wgpu_types::Features::DEPTH_CLIP_CONTROL),
             "timestamp-query" => features.contains(wgpu_types::Features::TIMESTAMP_QUERY),
