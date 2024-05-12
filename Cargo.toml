@@ -5,10 +5,10 @@ members = [
     "crates/wasi-mini-canvas-wasmtime",
     "crates/wasi-graphics-context-wasmtime",
     "crates/wasi-webgpu-wasmtime",
-    "example-apps/rectangle_frame_buffer",
-    "example-apps/triangle",
-    "example-apps/skybox",
-    "example-runtime",
+    "examples/apps/rectangle_frame_buffer",
+    "examples/apps/triangle",
+    "examples/apps/skybox",
+    "examples/runtime",
 ]
 
 [workspace.dependencies]

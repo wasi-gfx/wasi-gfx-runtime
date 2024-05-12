@@ -1002,33 +1002,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "example-runtime"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-broadcast",
- "async-trait",
- "clap",
- "env_logger",
- "futures",
- "log",
- "oneshot",
- "rand",
- "raw-window-handle",
- "softbuffer",
- "tokio",
- "wasi-frame-buffer-wasmtime",
- "wasi-graphics-context-wasmtime",
- "wasi-mini-canvas-wasmtime",
- "wasi-webgpu-wasmtime",
- "wasmtime",
- "wasmtime-wasi",
- "wgpu-core",
- "wgpu-types",
- "winit",
-]
-
-[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2279,7 +2252,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rectangle-frame-buffer"
+name = "rectangle_simple_buffer"
 version = "0.1.0"
 dependencies = [
  "wit-bindgen",
@@ -2370,6 +2343,33 @@ name = "regex-syntax"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adad44e29e4c806119491a7f06f03de4d1af22c3a680dd47f1e6e179439d1f56"
+
+[[package]]
+name = "runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-broadcast",
+ "async-trait",
+ "clap",
+ "env_logger",
+ "futures",
+ "log",
+ "oneshot",
+ "rand",
+ "raw-window-handle",
+ "softbuffer",
+ "tokio",
+ "wasi-frame-buffer-wasmtime",
+ "wasi-graphics-context-wasmtime",
+ "wasi-mini-canvas-wasmtime",
+ "wasi-webgpu-wasmtime",
+ "wasmtime",
+ "wasmtime-wasi",
+ "wgpu-core",
+ "wgpu-types",
+ "winit",
+]
 
 [[package]]
 name = "rustc-demangle"

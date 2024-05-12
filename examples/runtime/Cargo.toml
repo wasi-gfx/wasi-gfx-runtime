@@ -1,5 +1,5 @@
 [package]
-name = "example-runtime"
+name = "runtime"
 version = "0.1.0"
 edition = "2021"
 
@@ -22,10 +22,10 @@ env_logger.workspace = true
 log.workspace = true
 async-broadcast.workspace = true
 oneshot.workspace = true
-wasi-graphics-context-wasmtime = { path = "../crates/wasi-graphics-context-wasmtime" }
-wasi-mini-canvas-wasmtime = { path = "../crates/wasi-mini-canvas-wasmtime" }
-wasi-frame-buffer-wasmtime = { path = "../crates/wasi-frame-buffer-wasmtime" }
-wasi-webgpu-wasmtime = { path = "../crates/wasi-webgpu-wasmtime" }
+wasi-graphics-context-wasmtime = { path = "../../crates/wasi-graphics-context-wasmtime" }
+wasi-mini-canvas-wasmtime = { path = "../../crates/wasi-mini-canvas-wasmtime" }
+wasi-frame-buffer-wasmtime = { path = "../../crates/wasi-frame-buffer-wasmtime" }
+wasi-webgpu-wasmtime = { path = "../../crates/wasi-webgpu-wasmtime" }
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 workspace = true

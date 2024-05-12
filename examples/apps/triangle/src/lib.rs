@@ -1,5 +1,5 @@
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../../../wit",
     world: "example:example/example",
     exports: {
         world: ExampleTriangle,

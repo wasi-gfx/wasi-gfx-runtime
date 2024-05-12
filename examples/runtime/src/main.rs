@@ -19,7 +19,7 @@ struct RuntimeArgs {
 }
 
 wasmtime::component::bindgen!({
-    path: "../wit/",
+    path: "../../wit/",
     world: "example",
     async: {
         only_imports: [],
@@ -129,7 +129,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut store = Store::new(&engine, host_state);
 
-    let wasm_path = format!("../example-apps/{}/out.wasm", args.example);
+    let wasm_path = format!("./target/example-{}.wasm", args.example);
 
     let component =
         Component::from_file(&engine, &wasm_path).context("Component file not found")?;
