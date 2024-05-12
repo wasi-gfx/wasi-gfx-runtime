@@ -1,7 +1,7 @@
 // This example is shamelessly stolen from https://github.com/gfx-rs/wgpu/tree/trunk/examples/src/skybox
 
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../../../wit",
     world: "example:example/example",
     exports: {
         world: ExampleSkybox,
