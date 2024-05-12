@@ -19,7 +19,7 @@ use wasi::webgpu::{
 
 impl Guest for ExampleSkybox {
     fn start() {
-        let mut example = Example::init();
+        let mut example = Example::init(WIDTH, HEIGHT);
         example.render();
         let pointer_up_listener = pointer_events::up_listener(&example.canvas);
         let pointer_up_pollable = pointer_up_listener.subscribe();
@@ -160,11 +160,13 @@ impl Example {
         // config: &webgpu::GpuSurfaceConfiguration,
         // config: &webgpu::GpuCanvasConfiguration,
         device: &webgpu::GpuDevice,
+        width: u32,
+        height: u32,
     ) -> webgpu::GpuTextureView {
         let depth_texture = device.create_texture(&webgpu::GpuTextureDescriptor {
             size: webgpu::GpuExtent3D::GpuExtent3DDict(webgpu::GpuExtent3DDict {
-                width: WIDTH,
-                height: Some(HEIGHT),
+                width,
+                height: Some(height),
                 depth_or_array_layers: Some(1),
             }),
             mip_level_count: Some(1),
@@ -188,11 +190,11 @@ impl Example {
         }))
     }
 
-    fn init() -> Self {
+    fn init(width: u32, height: u32) -> Self {
         let device = webgpu::get_gpu().request_adapter(None).request_device(None);
         let canvas = mini_canvas::MiniCanvas::new(mini_canvas::CreateDesc {
-            height: HEIGHT,
-            width: WIDTH,
+            height,
+            width,
             offscreen: false,
         });
         let graphics_context = graphics_context::GraphicsContext::new();
@@ -287,7 +289,7 @@ impl Example {
         });
 
         let camera = Camera {
-            screen_size: (WIDTH, HEIGHT),
+            screen_size: (width, height),
             // screen_size: (config.width, config.height),
             angle_xz: 0.2,
             angle_y: 0.2,
@@ -446,6 +448,19 @@ impl Example {
             log::info!("Using rgba8");
             webgpu::GpuTextureFormat::Rgba8unormSrgb
         };
+        // let skybox_format = if device_features.has(webgpu::GpuFeatureName::TextureCompressionAstc) {
+        //     log::info!("Using astc");
+        //     webgpu::GpuTextureFormat::Astc4x4UnormSrgb
+        // } else if device_features.has(webgpu::GpuFeatureName::TextureCompressionEtc2) {
+        //     log::info!("Using etc2");
+        //     webgpu::GpuTextureFormat::Etc2Rgb8a1unormSrgb
+        // } else if device_features.has(webgpu::GpuFeatureName::TextureCompressionBc) {
+        //     log::info!("Using bc7");
+        //     webgpu::GpuTextureFormat::Bc7RgbaUnormSrgb
+        // } else {
+        //     log::info!("Using rgba8");
+        //     webgpu::GpuTextureFormat::Rgba8unormSrgb
+        // };
         // let skybox_format = webgpu::GpuTextureFormat::Rgba8unormSrgb;
 
         let size = webgpu::GpuExtent3DDict {
@@ -526,7 +541,7 @@ impl Example {
             label: None,
         });
 
-        let depth_view = Self::create_depth_texture(&device);
+        let depth_view = Self::create_depth_texture(&device, width, height);
 
         Example {
             device,
