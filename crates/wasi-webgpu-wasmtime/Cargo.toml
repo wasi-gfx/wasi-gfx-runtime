@@ -10,8 +10,10 @@ raw-window-handle.workspace = true
 wgpu-core.workspace = true
 wgpu-types.workspace = true
 wasi-graphics-context-wasmtime = { path = "../wasi-graphics-context-wasmtime" }
+wasi-mini-canvas-wasmtime = { path = "../wasi-mini-canvas-wasmtime" }
 async-trait.workspace = true
 callback-future.workspace = true
+futures = "0.3"
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 workspace = true

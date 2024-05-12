@@ -1,9 +1,7 @@
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    thread::{self, sleep},
-    time::Duration,
+    any::Any, collections::HashMap, fmt::Debug, sync::{Arc, Mutex}, thread::{self, sleep}, time::Duration
 };
+use once_cell::sync::OnceCell;
 use wasi_graphics_context_wasmtime::DisplayApi;
 
 use crate::wasi::webgpu::{
@@ -25,6 +23,38 @@ use winit::{
 mod animation_frame;
 mod key_events;
 mod pointer_events;
+
+// static MAIN_THREAD_PROXY: OnceCell<Mutex<Option<MainThreadProxy>>> = OnceCell::new();
+static MAIN_THREAD_PROXY: OnceCell<MainThreadProxy> = OnceCell::new();
+
+
+
+pub async fn spawn_main_thread<F, T>(f: F) -> T
+where
+    F: FnOnce() -> T,
+    F: Send + Sync + 'static,
+    T: Send + Sync + 'static,
+{
+    // MAIN_THREAD_PROXY.get().unwrap().lock().unwrap().as_ref().unwrap().spawn(f).await
+    MAIN_THREAD_PROXY.get().unwrap().spawn(f).await
+}
+
+// pub async fn spawn<F, T>(&self, f: F) -> T
+// where
+//     F: FnOnce() -> T,
+//     F: Send + 'static,
+//     T: Send + 'static,
+// {
+//     let boxed = Box::new(|| {
+//         let res = f();
+//         Box::new(res) as Box<dyn Any + Send>
+//     });
+//     let (sender, receiver) = oneshot::channel();
+//     self.proxy
+//         .send_event(MainThreadAction::Spawn(boxed, sender))
+//         .unwrap();
+//     *receiver.await.unwrap().downcast().unwrap()
+// }
 
 // pub use wasi::webgpu::mini_canvas::add_to_linker;
 pub fn add_to_linker<T, U>(
@@ -89,6 +119,10 @@ impl MiniCanvas {
         let message_sender = MainThreadProxy {
             proxy: event_loop.event_loop.create_proxy(),
         };
+        // MAIN_THREAD_PROXY.get().unwrap().lock().unwrap().replace(message_sender.clone());
+        MAIN_THREAD_PROXY.get_or_init(|| {
+            message_sender.clone()
+        });
         (event_loop, message_sender)
     }
 }
@@ -142,6 +176,8 @@ impl DisplayApi for MiniCanvasArc {
 pub struct MainThreadLoop {
     event_loop: EventLoop<MainThreadAction>,
 }
+unsafe impl Send for MainThreadLoop {}
+unsafe impl Sync for MainThreadLoop {}
 
 impl MainThreadLoop {
     /// This has to be run on the main thread.
@@ -197,6 +233,9 @@ impl MainThreadLoop {
                             pointer_pos.insert(window.id(), (0.0, 0.0));
                             response_channel.send(window).unwrap();
                         }
+                        MainThreadAction::Spawn(f, res) => {
+                            res.send(f()).unwrap();
+                        },
                         MainThreadAction::CreatePointerUpListener(window_id, res) => {
                             let (sender, receiver) = async_broadcast::broadcast(5);
                             pointer_up_senders.insert(window_id, sender);
@@ -324,6 +363,8 @@ impl MainThreadLoop {
 pub struct MainThreadProxy {
     proxy: EventLoopProxy<MainThreadAction>,
 }
+unsafe impl Send for MainThreadProxy {}
+unsafe impl Sync for MainThreadProxy {}
 
 impl MainThreadProxy {
     pub async fn create_window(&self) -> Window {
@@ -332,6 +373,22 @@ impl MainThreadProxy {
             .send_event(MainThreadAction::CreateWindow(sender))
             .unwrap();
         receiver.await.unwrap()
+    }
+    pub async fn spawn<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce() -> T,
+        F: Send + Sync + 'static,
+        T: Send + Sync + 'static,
+    {
+        let boxed = Box::new(|| {
+            let res = f();
+            Box::new(res) as Box<dyn Any + Send + Sync>
+        });
+        let (sender, receiver) = oneshot::channel();
+        self.proxy
+            .send_event(MainThreadAction::Spawn(boxed, sender))
+            .unwrap();
+        *receiver.await.unwrap().downcast().unwrap()
     }
     pub async fn create_pointer_up_listener(
         &self,
@@ -415,9 +472,10 @@ pub trait HasMainThreadProxy {
     fn main_thread_proxy(&self) -> &MainThreadProxy;
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 enum MainThreadAction {
     CreateWindow(oneshot::Sender<Window>),
+    Spawn(Box<dyn FnOnce() -> Box<dyn Any + Send + Sync> + Send + Sync>, oneshot::Sender<Box<dyn Any + Send + Sync>>),
     CreatePointerUpListener(
         WindowId,
         oneshot::Sender<async_broadcast::Receiver<PointerEvent>>,
@@ -443,6 +501,22 @@ enum MainThreadAction {
         oneshot::Sender<async_broadcast::Receiver<ResizeEvent>>,
     ),
     CreateFrameListener(WindowId, oneshot::Sender<async_broadcast::Receiver<()>>),
+}
+impl Debug for MainThreadAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CreateWindow(arg0) => f.debug_tuple("CreateWindow").field(arg0).finish(),
+            // Self::Spawn(arg0, arg1) => f.debug_tuple("Spawn").field(arg0).field(arg1).finish(),
+            Self::Spawn(arg0, arg1) => f.debug_tuple("Spawn").finish(),
+            Self::CreatePointerUpListener(arg0, arg1) => f.debug_tuple("CreatePointerUpListener").field(arg0).field(arg1).finish(),
+            Self::CreatePointerDownListener(arg0, arg1) => f.debug_tuple("CreatePointerDownListener").field(arg0).field(arg1).finish(),
+            Self::CreatePointerMoveListener(arg0, arg1) => f.debug_tuple("CreatePointerMoveListener").field(arg0).field(arg1).finish(),
+            Self::CreateKeyUpListener(arg0, arg1) => f.debug_tuple("CreateKeyUpListener").field(arg0).field(arg1).finish(),
+            Self::CreateKeyDownListener(arg0, arg1) => f.debug_tuple("CreateKeyDownListener").field(arg0).field(arg1).finish(),
+            Self::CreateCanvasResizeListener(arg0, arg1) => f.debug_tuple("CreateCanvasResizeListener").field(arg0).field(arg1).finish(),
+            Self::CreateFrameListener(arg0, arg1) => f.debug_tuple("CreateFrameListener").field(arg0).field(arg1).finish(),
+        }
+    }
 }
 
 fn unwrap_unless_inactive<T>(res: Result<Option<T>, TrySendError<T>>) {

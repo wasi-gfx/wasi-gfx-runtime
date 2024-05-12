@@ -5,6 +5,7 @@
 // - Implement all the drop handlers.
 
 use callback_future::CallbackFuture;
+use wasi_mini_canvas_wasmtime::spawn_main_thread;
 use core::slice;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -82,10 +83,20 @@ pub trait HasGpuInstance {
     ) -> Arc<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>;
 }
 
-pub struct WebGpuSurface<F, I>
+// pub struct WebGpuSurface<F, I>
+// where
+//     I: AsRef<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
+//     F: Fn() -> I,
+// {
+//     get_instance: F,
+//     device_id: wgpu_core::id::DeviceId,
+//     adapter_id: wgpu_core::id::AdapterId,
+//     surface_id: Option<wgpu_core::id::SurfaceId>,
+// }
+
+pub struct WebGpuSurface<F>
 where
-    I: AsRef<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
-    F: Fn() -> I,
+    F: Fn() -> Arc<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
 {
     get_instance: F,
     device_id: wgpu_core::id::DeviceId,
@@ -93,10 +104,15 @@ where
     surface_id: Option<wgpu_core::id::SurfaceId>,
 }
 
-impl<F, I> DrawApi for WebGpuSurface<F, I>
+// impl<F, I> DrawApi for WebGpuSurface<F, I>
+// where
+//     I: AsRef<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
+//     F: Fn() -> I,
+// {
+
+impl<F> DrawApi for WebGpuSurface<F>
 where
-    I: AsRef<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
-    F: Fn() -> I,
+    F: Fn() -> Arc<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
 {
     fn get_current_buffer(&mut self) -> wasmtime::Result<GraphicsContextBuffer> {
         let texture: wgpu_core::id::TextureId = (self.get_instance)()
@@ -119,12 +135,24 @@ where
     }
 
     fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
+        let instance = (self.get_instance)();
         // self.insert(value)
-        let surface_id = (self.get_instance)().as_ref().instance_create_surface(
-            display.raw_display_handle(),
-            display.raw_window_handle(),
-            (),
-        );
+
+        // I think that something will have to become send or sync (e.g. raw window handle?) Maybe by ensuring that it's only used from main thread
+        let display_handle = display.display_handle();
+        let window_handle = display.window_handle();
+
+        let surface_id = futures::executor::block_on(spawn_main_thread(move || {
+            // let g = fdsa;
+            // let g = display.raw_display_handle();
+            instance.instance_create_surface(
+                display_handle.get(),
+                window_handle.get(),
+                (),
+            )
+            // let g = instance;
+            // let g = display_handle.get();
+        }));
 
         let swapchain_capabilities = (self.get_instance)()
             .as_ref()
@@ -594,9 +622,11 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuTexture for T {
         &mut self,
         buffer: Resource<GraphicsContextBuffer>,
     ) -> wasmtime::Result<Resource<wgpu_core::id::TextureId>> {
+        // ) -> wasmtime::Result<Resource<()>> {
         let host_buffer = self.table_mut().delete(buffer).unwrap();
         let host_buffer: wgpu_core::id::TextureId = host_buffer.inner_type();
         Ok(self.table_mut().push(host_buffer).unwrap())
+        // panic!("fdsaf");
     }
 
     fn create_view(
@@ -2238,9 +2268,42 @@ impl<T: WasiView + HasGpuInstance> webgpu::HostGpuSupportedFeatures for T {
                 features.contains(wgpu_types::Features::RG11B10UFLOAT_RENDERABLE)
             }
             "bgra8unorm-storage" => features.contains(wgpu_types::Features::BGRA8UNORM_STORAGE),
-            // "float32-filterable" => features.contains(wgpu_types::Features::FLOAT32_FILTERABLE),
-            _ => todo!(),
+            "float32-filterable" => todo!(),
+            _ => false,
         })
+        // Ok(match query {
+        //     webgpu::GpuFeatureName::DepthClipControl => {
+        //         features.contains(wgpu_types::Features::DEPTH_CLIP_CONTROL)
+        //     }
+        //     webgpu::GpuFeatureName::Depth32floatStencil8 => {
+        //         features.contains(wgpu_types::Features::DEPTH32FLOAT_STENCIL8)
+        //     }
+        //     webgpu::GpuFeatureName::TextureCompressionBc => {
+        //         features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_BC)
+        //     }
+        //     webgpu::GpuFeatureName::TextureCompressionEtc2 => {
+        //         features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_ETC2)
+        //     }
+        //     webgpu::GpuFeatureName::TextureCompressionAstc => {
+        //         features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_ASTC)
+        //     }
+        //     webgpu::GpuFeatureName::TimestampQuery => {
+        //         features.contains(wgpu_types::Features::TIMESTAMP_QUERY)
+        //     }
+        //     webgpu::GpuFeatureName::IndirectFirstInstance => {
+        //         features.contains(wgpu_types::Features::INDIRECT_FIRST_INSTANCE)
+        //     }
+        //     webgpu::GpuFeatureName::ShaderF16 => {
+        //         features.contains(wgpu_types::Features::SHADER_F16)
+        //     }
+        //     webgpu::GpuFeatureName::Rg11b10ufloatRenderable => {
+        //         features.contains(wgpu_types::Features::RG11B10UFLOAT_RENDERABLE)
+        //     }
+        //     webgpu::GpuFeatureName::Bgra8unormStorage => {
+        //         features.contains(wgpu_types::Features::BGRA8UNORM_STORAGE)
+        //     }
+        //     webgpu::GpuFeatureName::Float32Filterable => todo!(),
+        // })
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuSupportedFeatures>) -> wasmtime::Result<()> {

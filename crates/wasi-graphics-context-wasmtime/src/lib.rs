@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use crate::wasi::webgpu::graphics_context::{self, ConfigureContextDesc};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle};
 use wasmtime::component::Resource;
 use wasmtime_wasi::preview2::WasiView;
 
@@ -64,6 +64,29 @@ pub trait DrawApi {
 pub trait DisplayApi: HasRawDisplayHandle + HasRawWindowHandle {
     fn height(&self) -> u32;
     fn width(&self) -> u32;
+    fn display_handle(&self) -> DisplayHandle {
+        DisplayHandle(self.raw_display_handle())
+    }
+    fn window_handle(&self) -> WindowHandle {
+        WindowHandle(self.raw_window_handle())
+    }
+}
+
+pub struct DisplayHandle(RawDisplayHandle);
+unsafe impl Send for DisplayHandle {}
+unsafe impl Sync for DisplayHandle {}
+impl DisplayHandle {
+    pub fn get(self) -> RawDisplayHandle {
+        self.0
+    }
+}
+pub struct WindowHandle(pub RawWindowHandle);
+unsafe impl Send for WindowHandle {}
+unsafe impl Sync for WindowHandle {}
+impl WindowHandle {
+    pub fn get(self) -> RawWindowHandle {
+        self.0
+    }
 }
 
 pub struct GraphicsContextBuffer {

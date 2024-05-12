@@ -13,3 +13,5 @@ async-trait.workspace = true
 winit.workspace = true
 futures.workspace = true
 wasi-graphics-context-wasmtime = { path = "../wasi-graphics-context-wasmtime" }
+
+once_cell = "1.19"
