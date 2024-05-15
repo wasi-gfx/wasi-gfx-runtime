@@ -201,6 +201,9 @@ impl Example {
         canvas.connect_graphics_context(&graphics_context);
         device.connect_graphics_context(&graphics_context);
 
+        let height = canvas.height();
+        let width = canvas.width();
+
         let mut entities = Vec::new();
         {
             let source = include_bytes!("models/teslacyberv3.0.obj");
