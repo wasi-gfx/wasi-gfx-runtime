@@ -246,7 +246,9 @@ impl<'a> ToCore<wgpu_core::pipeline::FragmentState<'a>> for webgpu::GpuFragmentS
         wgpu_core::pipeline::FragmentState {
             stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
                 module: self.module.to_core(table),
-                entry_point: self.entry_point.into(),
+                entry_point: Some(self.entry_point.into()),
+                constants: Default::default(),
+                zero_initialize_workgroup_memory: true,
             },
             targets: self
                 .targets
@@ -305,7 +307,9 @@ impl<'a> ToCore<wgpu_core::pipeline::VertexState<'a>> for webgpu::GpuVertexState
         wgpu_core::pipeline::VertexState {
             stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
                 module: self.module.to_core(table),
-                entry_point: self.entry_point.into(),
+                entry_point: Some(self.entry_point.into()),
+                constants: Default::default(),
+                zero_initialize_workgroup_memory: true,
             },
             buffers: self
                 .buffers
@@ -672,7 +676,9 @@ impl<'a> ToCore<wgpu_core::pipeline::ProgrammableStageDescriptor<'a>>
     ) -> wgpu_core::pipeline::ProgrammableStageDescriptor<'a> {
         wgpu_core::pipeline::ProgrammableStageDescriptor {
             module: self.module.to_core(table),
-            entry_point: self.entry_point.map(|ep| ep.into()).unwrap(),
+            entry_point: self.entry_point.map(|ep| ep.into()),
+            constants: Default::default(),
+            zero_initialize_workgroup_memory: true,
         }
     }
 }

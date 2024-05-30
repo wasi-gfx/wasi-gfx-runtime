@@ -13,36 +13,42 @@ use crate::wasi::webgpu::{
 };
 use async_broadcast::{Receiver, TrySendError};
 use futures::executor::block_on;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use wasmtime::component::Resource;
-use wasmtime_wasi::preview2::{self, WasiView};
+use wasmtime_wasi::WasiView;
 use winit::{
-    event::{ElementState, Event, WindowEvent},
-    event_loop::{EventLoop, EventLoopProxy},
-    window::{Window, WindowId},
+    application::ApplicationHandler,
+    event::{ElementState, WindowEvent},
+    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
+    keyboard::ModifiersState,
+    window::{Window, WindowAttributes, WindowId},
 };
 
 mod animation_frame;
 mod key_events;
 mod pointer_events;
 
-// pub use wasi::webgpu::mini_canvas::add_to_linker;
-pub fn add_to_linker<T, U>(
-    linker: &mut wasmtime::component::Linker<T>,
-    get: impl Fn(&mut T) -> &mut U + Send + Sync + Copy + 'static,
-) -> wasmtime::Result<()>
+pub trait WasiMiniCanvasView: WasiView {
+    fn main_thread_proxy(&self) -> &MainThreadProxy;
+}
+
+pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
 where
-    U: wasi::webgpu::mini_canvas::Host
-        + wasi::webgpu::animation_frame::Host
-        + wasi::webgpu::pointer_events::Host
-        + wasi::webgpu::key_events::Host
-        + Send,
-    T: Send,
+    T: WasiMiniCanvasView,
 {
-    wasi::webgpu::mini_canvas::add_to_linker(linker, get)?;
-    wasi::webgpu::animation_frame::add_to_linker(linker, get)?;
-    wasi::webgpu::pointer_events::add_to_linker(linker, get)?;
-    wasi::webgpu::key_events::add_to_linker(linker, get)?;
+    fn type_annotate<T, F>(val: F) -> F
+    where
+        F: Fn(&mut T) -> &mut dyn WasiMiniCanvasView,
+    {
+        val
+    }
+    let closure = type_annotate::<T, _>(|t| t);
+    wasi::webgpu::mini_canvas::add_to_linker_get_host(l, closure)?;
+    wasi::webgpu::animation_frame::add_to_linker_get_host(l, closure)?;
+    wasi::webgpu::pointer_events::add_to_linker_get_host(l, closure)?;
+    wasi::webgpu::key_events::add_to_linker_get_host(l, closure)?;
+    wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(l, closure)?;
+    wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(l, closure)?;
     Ok(())
 }
 
@@ -60,8 +66,7 @@ wasmtime::component::bindgen!({
         ],
     },
     with: {
-        "wasi:io/poll": preview2::bindings::io::poll,
-        "wasi:io/streams": preview2::bindings::io::stream,
+        "wasi:io": wasmtime_wasi::bindings::io,
         "wasi:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
         "wasi:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
         "wasi:webgpu/pointer-events/pointer-move-listener": pointer_events::PointerMoveListener,
@@ -83,8 +88,9 @@ pub struct MiniCanvas {
 impl MiniCanvas {
     pub fn create_event_loop() -> (MainThreadLoop, MainThreadProxy) {
         let event_loop = MainThreadLoop {
-            event_loop: winit::event_loop::EventLoopBuilder::<MainThreadAction>::with_user_event()
-                .build(),
+            event_loop: winit::event_loop::EventLoop::<MainThreadAction>::with_user_event()
+                .build()
+                .unwrap(),
         };
         let message_sender = MainThreadProxy {
             proxy: event_loop.event_loop.create_proxy(),
@@ -93,14 +99,18 @@ impl MiniCanvas {
     }
 }
 
-unsafe impl HasRawDisplayHandle for MiniCanvas {
-    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
-        self.window.raw_display_handle()
+impl HasDisplayHandle for MiniCanvas {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle, raw_window_handle::HandleError> {
+        self.window.display_handle()
     }
 }
-unsafe impl HasRawWindowHandle for MiniCanvas {
-    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
-        self.window.raw_window_handle()
+impl HasWindowHandle for MiniCanvas {
+    fn window_handle(
+        &self,
+    ) -> Result<raw_window_handle::WindowHandle, raw_window_handle::HandleError> {
+        self.window.window_handle()
     }
 }
 
@@ -118,14 +128,18 @@ impl DisplayApi for MiniCanvas {
 #[derive(Clone)]
 pub struct MiniCanvasArc(pub Arc<MiniCanvas>);
 
-unsafe impl HasRawDisplayHandle for MiniCanvasArc {
-    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
-        self.0.raw_display_handle()
+impl HasDisplayHandle for MiniCanvasArc {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        self.0.display_handle()
     }
 }
-unsafe impl HasRawWindowHandle for MiniCanvasArc {
-    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
-        self.0.raw_window_handle()
+impl HasWindowHandle for MiniCanvasArc {
+    fn window_handle(
+        &self,
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        self.0.window_handle()
     }
 }
 
@@ -147,19 +161,6 @@ impl MainThreadLoop {
     /// This has to be run on the main thread.
     /// This call will block the tread.
     pub fn run(self) {
-        let mut pointer_pos: HashMap<WindowId, (f64, f64)> = HashMap::new();
-        let mut pointer_up_senders: HashMap<WindowId, async_broadcast::Sender<PointerEvent>> =
-            HashMap::new();
-        let mut pointer_down_senders: HashMap<WindowId, async_broadcast::Sender<PointerEvent>> =
-            HashMap::new();
-        let mut pointer_move_senders: HashMap<WindowId, async_broadcast::Sender<PointerEvent>> =
-            HashMap::new();
-        let mut key_up_senders: HashMap<WindowId, async_broadcast::Sender<KeyEvent>> =
-            HashMap::new();
-        let mut key_down_senders: HashMap<WindowId, async_broadcast::Sender<KeyEvent>> =
-            HashMap::new();
-        let mut canvas_resize_senders: HashMap<WindowId, async_broadcast::Sender<ResizeEvent>> =
-            HashMap::new();
         let frame_senders: Arc<Mutex<HashMap<WindowId, async_broadcast::Sender<()>>>> =
             Default::default();
 
@@ -187,136 +188,171 @@ impl MainThreadLoop {
             });
         }
 
-        self.event_loop
-            .run(move |event, event_loop, _control_flow| {
-                match event {
-                    Event::UserEvent(event) => match event {
-                        MainThreadAction::CreateWindow(response_channel) => {
-                            let window = winit::window::Window::new(event_loop).unwrap();
-                            // TODO: remove when window is drooped.
-                            pointer_pos.insert(window.id(), (0.0, 0.0));
-                            response_channel.send(window).unwrap();
-                        }
-                        MainThreadAction::CreatePointerUpListener(window_id, res) => {
-                            let (sender, receiver) = async_broadcast::broadcast(5);
-                            pointer_up_senders.insert(window_id, sender);
-                            res.send(receiver).unwrap();
-                        }
-                        MainThreadAction::CreatePointerDownListener(window_id, res) => {
-                            let (sender, receiver) = async_broadcast::broadcast(5);
-                            pointer_down_senders.insert(window_id, sender);
-                            res.send(receiver).unwrap();
-                        }
-                        MainThreadAction::CreatePointerMoveListener(window_id, res) => {
-                            let (sender, receiver) = async_broadcast::broadcast(5);
-                            pointer_move_senders.insert(window_id, sender);
-                            res.send(receiver).unwrap();
-                        }
-                        MainThreadAction::CreateKeyUpListener(window_id, res) => {
-                            let (sender, receiver) = async_broadcast::broadcast(5);
-                            key_up_senders.insert(window_id, sender);
-                            res.send(receiver).unwrap();
-                        }
-                        MainThreadAction::CreateKeyDownListener(window_id, res) => {
-                            let (sender, receiver) = async_broadcast::broadcast(5);
-                            key_down_senders.insert(window_id, sender);
-                            res.send(receiver).unwrap();
-                        }
-                        MainThreadAction::CreateCanvasResizeListener(window_id, res) => {
-                            let (sender, receiver) = async_broadcast::broadcast(5);
-                            canvas_resize_senders.insert(window_id, sender);
-                            res.send(receiver).unwrap();
-                        }
-                        MainThreadAction::CreateFrameListener(window_id, res) => {
-                            let (sender, receiver) = async_broadcast::broadcast(5);
-                            frame_senders.lock().unwrap().insert(window_id, sender);
-                            res.send(receiver).unwrap();
-                        }
-                    },
-                    Event::WindowEvent { event, window_id } => match event {
-                        WindowEvent::CursorMoved { position, .. } => {
-                            pointer_pos
-                                .insert(window_id, (position.x, position.y))
-                                .unwrap();
-                            let event = PointerEvent {
-                                x: position.x,
-                                y: position.y,
-                            };
+        #[derive(Default)]
+        struct App {
+            pointer_pos: HashMap<WindowId, (f64, f64)>,
+            modifiers: HashMap<WindowId, ModifiersState>,
+            pointer_up_senders: HashMap<WindowId, async_broadcast::Sender<PointerEvent>>,
+            pointer_down_senders: HashMap<WindowId, async_broadcast::Sender<PointerEvent>>,
+            pointer_move_senders: HashMap<WindowId, async_broadcast::Sender<PointerEvent>>,
+            key_up_senders: HashMap<WindowId, async_broadcast::Sender<KeyEvent>>,
+            key_down_senders: HashMap<WindowId, async_broadcast::Sender<KeyEvent>>,
+            canvas_resize_senders: HashMap<WindowId, async_broadcast::Sender<ResizeEvent>>,
+            frame_senders: Arc<Mutex<HashMap<WindowId, async_broadcast::Sender<()>>>>,
+        }
 
-                            if let Some(sender) = pointer_move_senders.get(&window_id) {
-                                if let Err(e) = sender.try_broadcast(event) {
-                                    match e {
-                                        TrySendError::Full(_) => {
-                                            println!("skipping a pointer move event");
-                                        }
-                                        TrySendError::Inactive(_) => {
-                                            // don't care
-                                        }
-                                        TrySendError::Closed(_) => {
-                                            panic!("Channel closed")
-                                        }
+        impl ApplicationHandler<MainThreadAction> for App {
+            fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
+                // TODO:
+            }
+
+            fn user_event(&mut self, event_loop: &ActiveEventLoop, event: MainThreadAction) {
+                match event {
+                    MainThreadAction::CreateWindow(response_channel) => {
+                        let window = event_loop
+                            .create_window(WindowAttributes::default())
+                            .unwrap();
+                        // TODO: remove when window is drooped.
+                        self.pointer_pos.insert(window.id(), (0.0, 0.0));
+                        response_channel.send(window).unwrap();
+                    }
+                    MainThreadAction::CreatePointerUpListener(window_id, res) => {
+                        let (sender, receiver) = async_broadcast::broadcast(5);
+                        self.pointer_up_senders.insert(window_id, sender);
+                        res.send(receiver).unwrap();
+                    }
+                    MainThreadAction::CreatePointerDownListener(window_id, res) => {
+                        let (sender, receiver) = async_broadcast::broadcast(5);
+                        self.pointer_down_senders.insert(window_id, sender);
+                        res.send(receiver).unwrap();
+                    }
+                    MainThreadAction::CreatePointerMoveListener(window_id, res) => {
+                        let (sender, receiver) = async_broadcast::broadcast(5);
+                        self.pointer_move_senders.insert(window_id, sender);
+                        res.send(receiver).unwrap();
+                    }
+                    MainThreadAction::CreateKeyUpListener(window_id, res) => {
+                        let (sender, receiver) = async_broadcast::broadcast(5);
+                        self.key_up_senders.insert(window_id, sender);
+                        res.send(receiver).unwrap();
+                    }
+                    MainThreadAction::CreateKeyDownListener(window_id, res) => {
+                        let (sender, receiver) = async_broadcast::broadcast(5);
+                        self.key_down_senders.insert(window_id, sender);
+                        res.send(receiver).unwrap();
+                    }
+                    MainThreadAction::CreateCanvasResizeListener(window_id, res) => {
+                        let (sender, receiver) = async_broadcast::broadcast(5);
+                        self.canvas_resize_senders.insert(window_id, sender);
+                        res.send(receiver).unwrap();
+                    }
+                    MainThreadAction::CreateFrameListener(window_id, res) => {
+                        let (sender, receiver) = async_broadcast::broadcast(5);
+                        self.frame_senders.lock().unwrap().insert(window_id, sender);
+                        res.send(receiver).unwrap();
+                    }
+                }
+            }
+
+            fn window_event(
+                &mut self,
+                _event_loop: &ActiveEventLoop,
+                window_id: WindowId,
+                event: WindowEvent,
+            ) {
+                match event {
+                    WindowEvent::CursorMoved { position, .. } => {
+                        self.pointer_pos
+                            .insert(window_id, (position.x, position.y))
+                            .unwrap();
+                        let event = PointerEvent {
+                            x: position.x,
+                            y: position.y,
+                        };
+
+                        if let Some(sender) = self.pointer_move_senders.get(&window_id) {
+                            if let Err(e) = sender.try_broadcast(event) {
+                                match e {
+                                    TrySendError::Full(_) => {
+                                        println!("skipping a pointer move event");
+                                    }
+                                    TrySendError::Inactive(_) => {
+                                        // don't care
+                                    }
+                                    TrySendError::Closed(_) => {
+                                        panic!("Channel closed")
                                     }
                                 }
                             }
                         }
-                        WindowEvent::KeyboardInput { input, .. } => {
-                            #[allow(deprecated)]
-                            let event = KeyEvent {
-                                code: input
-                                    .virtual_keycode
-                                    .map(|k| format!("{k:?}"))
-                                    .unwrap_or_default(),
-                                key: input.scancode.to_string(),
-                                alt_key: input.modifiers.shift(),
-                                ctrl_key: input.modifiers.ctrl(),
-                                meta_key: input.modifiers.logo(),
-                                shift_key: input.modifiers.shift(),
-                            };
-                            match input.state {
-                                ElementState::Pressed => {
-                                    if let Some(sender) = key_down_senders.get(&window_id) {
-                                        unwrap_unless_inactive(sender.try_broadcast(event));
-                                    }
+                    }
+                    WindowEvent::ModifiersChanged(modifiers) => {
+                        self.modifiers.insert(window_id, modifiers.state());
+                    }
+                    WindowEvent::KeyboardInput { event: input, .. } => {
+                        let modifiers = self.modifiers.get(&window_id).unwrap();
+                        let event = KeyEvent {
+                            code: match input.physical_key {
+                                winit::keyboard::PhysicalKey::Code(code) => format!("{code:?}"),
+                                winit::keyboard::PhysicalKey::Unidentified(_) => todo!(),
+                            },
+                            key: match input.logical_key {
+                                winit::keyboard::Key::Character(char) => char.to_string(),
+                                _ => todo!(),
+                            },
+                            alt_key: modifiers.alt_key(),
+                            ctrl_key: modifiers.control_key(),
+                            meta_key: modifiers.super_key(),
+                            shift_key: modifiers.shift_key(),
+                        };
+                        match input.state {
+                            ElementState::Pressed => {
+                                if let Some(sender) = self.key_down_senders.get(&window_id) {
+                                    unwrap_unless_inactive(sender.try_broadcast(event));
                                 }
-                                ElementState::Released => {
-                                    if let Some(sender) = key_up_senders.get(&window_id) {
-                                        unwrap_unless_inactive(sender.try_broadcast(event));
-                                    }
-                                }
-                            };
-                        }
-                        WindowEvent::MouseInput { state, .. } => {
-                            let (pointer_x, pointer_y) = pointer_pos.get(&window_id).unwrap();
-                            let event = PointerEvent {
-                                x: *pointer_x,
-                                y: *pointer_y,
-                            };
-                            match state {
-                                ElementState::Pressed => {
-                                    if let Some(sender) = pointer_down_senders.get(&window_id) {
-                                        unwrap_unless_inactive(sender.try_broadcast(event));
-                                    }
-                                }
-                                ElementState::Released => {
-                                    if let Some(sender) = pointer_up_senders.get(&window_id) {
-                                        unwrap_unless_inactive(sender.try_broadcast(event));
-                                    }
-                                }
-                            };
-                        }
-                        WindowEvent::Resized(new_size) => {
-                            if let Some(sender) = canvas_resize_senders.get(&window_id) {
-                                unwrap_unless_inactive(sender.try_broadcast(ResizeEvent {
-                                    height: new_size.height,
-                                    width: new_size.width,
-                                }));
                             }
+                            ElementState::Released => {
+                                if let Some(sender) = self.key_up_senders.get(&window_id) {
+                                    unwrap_unless_inactive(sender.try_broadcast(event));
+                                }
+                            }
+                        };
+                    }
+                    WindowEvent::MouseInput { state, .. } => {
+                        let (pointer_x, pointer_y) = self.pointer_pos.get(&window_id).unwrap();
+                        let event = PointerEvent {
+                            x: *pointer_x,
+                            y: *pointer_y,
+                        };
+                        match state {
+                            ElementState::Pressed => {
+                                if let Some(sender) = self.pointer_down_senders.get(&window_id) {
+                                    unwrap_unless_inactive(sender.try_broadcast(event));
+                                }
+                            }
+                            ElementState::Released => {
+                                if let Some(sender) = self.pointer_up_senders.get(&window_id) {
+                                    unwrap_unless_inactive(sender.try_broadcast(event));
+                                }
+                            }
+                        };
+                    }
+                    WindowEvent::Resized(new_size) => {
+                        if let Some(sender) = self.canvas_resize_senders.get(&window_id) {
+                            unwrap_unless_inactive(sender.try_broadcast(ResizeEvent {
+                                height: new_size.height,
+                                width: new_size.width,
+                            }));
                         }
-                        _ => {}
-                    },
+                    }
                     _ => {}
                 }
-            });
+            }
+        }
+
+        let mut app = App::default();
+        app.frame_senders = Arc::clone(&frame_senders);
+        self.event_loop.run_app(&mut app).unwrap();
     }
 }
 
@@ -411,10 +447,6 @@ impl MainThreadProxy {
     }
 }
 
-pub trait HasMainThreadProxy {
-    fn main_thread_proxy(&self) -> &MainThreadProxy;
-}
-
 #[derive(Debug)]
 enum MainThreadAction {
     CreateWindow(oneshot::Sender<Window>),
@@ -461,7 +493,7 @@ pub struct ResizeListener {
 }
 
 #[async_trait::async_trait]
-impl preview2::Subscribe for ResizeListener {
+impl wasmtime_wasi::Subscribe for ResizeListener {
     async fn ready(&mut self) {
         let event = self.receiver.recv().await.unwrap();
         *self.data.lock().unwrap() = Some(event);
@@ -469,58 +501,56 @@ impl preview2::Subscribe for ResizeListener {
 }
 
 // wasmtime
-impl<T: WasiView + HasMainThreadProxy> mini_canvas::Host for T {}
+impl mini_canvas::Host for dyn WasiMiniCanvasView + '_ {}
 
 #[async_trait::async_trait]
-impl<T: WasiView + HasMainThreadProxy> mini_canvas::HostMiniCanvas for T {
-    fn new(&mut self, desc: CreateDesc) -> wasmtime::Result<Resource<MiniCanvasArc>> {
+impl mini_canvas::HostMiniCanvas for dyn WasiMiniCanvasView + '_ {
+    fn new(&mut self, desc: CreateDesc) -> Resource<MiniCanvasArc> {
         let window = block_on(self.main_thread_proxy().create_window());
         let mini_canvas = MiniCanvasArc(Arc::new(MiniCanvas {
             offscreen: desc.offscreen,
             window,
         }));
-        Ok(self.table_mut().push(mini_canvas).unwrap())
+        self.table().push(mini_canvas).unwrap()
     }
 
     fn connect_graphics_context(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
         context: Resource<GraphicsContext>,
-    ) -> wasmtime::Result<()> {
+    ) {
         let mini_canvas = self.table().get(&mini_canvas).unwrap().clone();
-        let graphics_context = self.table_mut().get_mut(&context).unwrap();
+        let graphics_context = self.table().get_mut(&context).unwrap();
 
         graphics_context.connect_display_api(Box::new(mini_canvas));
-        Ok(())
     }
 
     fn resize_listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
-    ) -> wasmtime::Result<Resource<ResizeListener>> {
+    ) -> Resource<ResizeListener> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         // TODO: await instead of block_on
         let receiver = block_on(
             self.main_thread_proxy()
                 .create_canvas_resize_listener(window_id),
         );
-        Ok(self
-            .table_mut()
+        self.table()
             .push(ResizeListener {
                 receiver,
                 data: Default::default(),
             })
-            .unwrap())
+            .unwrap()
     }
 
-    fn height(&mut self, mini_canvas: Resource<MiniCanvasArc>) -> wasmtime::Result<u32> {
+    fn height(&mut self, mini_canvas: Resource<MiniCanvasArc>) -> u32 {
         let mini_canvas = self.table().get(&mini_canvas).unwrap();
-        Ok(mini_canvas.height())
+        mini_canvas.height()
     }
 
-    fn width(&mut self, mini_canvas: Resource<MiniCanvasArc>) -> wasmtime::Result<u32> {
+    fn width(&mut self, mini_canvas: Resource<MiniCanvasArc>) -> u32 {
         let mini_canvas = self.table().get(&mini_canvas).unwrap();
-        Ok(mini_canvas.width())
+        mini_canvas.width()
     }
 
     fn drop(&mut self, _self_: Resource<MiniCanvasArc>) -> wasmtime::Result<()> {
@@ -528,19 +558,13 @@ impl<T: WasiView + HasMainThreadProxy> mini_canvas::HostMiniCanvas for T {
     }
 }
 
-impl<T: WasiView + HasMainThreadProxy> mini_canvas::HostResizeListener for T {
-    fn subscribe(
-        &mut self,
-        pointer_down: Resource<ResizeListener>,
-    ) -> wasmtime::Result<Resource<Pollable>> {
-        Ok(preview2::subscribe(self.table_mut(), pointer_down).unwrap())
+impl mini_canvas::HostResizeListener for dyn WasiMiniCanvasView + '_ {
+    fn subscribe(&mut self, pointer_down: Resource<ResizeListener>) -> Resource<Pollable> {
+        wasmtime_wasi::subscribe(self.table(), pointer_down).unwrap()
     }
-    fn get(
-        &mut self,
-        pointer_down: Resource<ResizeListener>,
-    ) -> wasmtime::Result<Option<ResizeEvent>> {
+    fn get(&mut self, pointer_down: Resource<ResizeListener>) -> Option<ResizeEvent> {
         let pointer_down = self.table().get(&pointer_down).unwrap();
-        Ok(pointer_down.data.lock().unwrap().take())
+        pointer_down.data.lock().unwrap().take()
     }
     fn drop(&mut self, _self_: Resource<ResizeListener>) -> wasmtime::Result<()> {
         Ok(())

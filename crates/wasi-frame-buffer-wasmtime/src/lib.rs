@@ -2,13 +2,12 @@ use std::mem;
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 
+use raw_window_handle::{DisplayHandle, WindowHandle};
 use wasmtime::component::Resource;
-use wasmtime_wasi::preview2::WasiView;
+use wasmtime_wasi::WasiView;
 
 use crate::wasi::webgpu::frame_buffer;
 use wasi_graphics_context_wasmtime::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
-
-pub use wasi::webgpu::frame_buffer::add_to_linker;
 
 wasmtime::component::bindgen!({
     path: "../../wit/",
@@ -24,7 +23,7 @@ wasmtime::component::bindgen!({
 });
 
 pub struct FBSurface {
-    pub(crate) surface: Option<softbuffer::Surface>,
+    pub(crate) surface: Option<softbuffer::Surface<DisplayHandle<'static>, WindowHandle<'static>>>,
 }
 // TODO: actually ensure safety
 unsafe impl Send for FBSurface {}
@@ -67,7 +66,8 @@ impl DrawApi for FBSurface {
         let surface = self.surface.as_mut().unwrap();
         let buff = surface.buffer_mut().unwrap();
         // TODO: use ouroboros?
-        let buff: softbuffer::Buffer<'static> = unsafe { mem::transmute(buff) };
+        let buff: softbuffer::Buffer<'static, GraphicsContext, GraphicsContext> =
+            unsafe { mem::transmute(buff) };
         let buff: FBBuffer = buff.into();
         let buff = Box::new(buff);
         let buff: GraphicsContextBuffer = buff.into();
@@ -86,11 +86,12 @@ impl DrawApi for FBSurface {
     }
 
     fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
-        let context =
-            unsafe { softbuffer::Context::from_raw(display.raw_display_handle()) }.unwrap();
-        let mut surface =
-            unsafe { softbuffer::Surface::from_raw(&context, display.raw_window_handle()) }
-                .unwrap();
+        let context = softbuffer::Context::new(display.display_handle().unwrap()).unwrap();
+        let surface = softbuffer::Surface::new(&context, display.window_handle().unwrap()).unwrap();
+
+        // TODO: use ouroboros?
+        let mut surface: softbuffer::Surface<DisplayHandle<'static>, WindowHandle<'static>> =
+            unsafe { mem::transmute(surface) };
 
         // softbuffer requires setting the size before presenting.
         let _ = surface.resize(
@@ -109,13 +110,13 @@ impl DrawApi for FBSurface {
 
 pub struct FBBuffer {
     // Never none
-    buffer: Arc<Mutex<Option<softbuffer::Buffer<'static>>>>,
+    buffer: Arc<Mutex<Option<softbuffer::Buffer<'static, GraphicsContext, GraphicsContext>>>>,
 }
 // TODO: ensure safety
 unsafe impl Send for FBBuffer {}
 unsafe impl Sync for FBBuffer {}
-impl From<softbuffer::Buffer<'static>> for FBBuffer {
-    fn from(buffer: softbuffer::Buffer<'static>) -> Self {
+impl From<softbuffer::Buffer<'static, GraphicsContext, GraphicsContext>> for FBBuffer {
+    fn from(buffer: softbuffer::Buffer<'static, GraphicsContext, GraphicsContext>) -> Self {
         FBBuffer {
             buffer: Arc::new(Mutex::new(Some(buffer))),
         }
@@ -123,22 +124,38 @@ impl From<softbuffer::Buffer<'static>> for FBBuffer {
 }
 
 // wasmtime
-impl<T: WasiView> frame_buffer::Host for T {}
+pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
+where
+    T: WasiFrameBufferView,
+{
+    fn type_annotate<T, F>(val: F) -> F
+    where
+        F: Fn(&mut T) -> &mut dyn WasiFrameBufferView,
+    {
+        val
+    }
+    let closure = type_annotate::<T, _>(|t| t);
+    wasi::webgpu::frame_buffer::add_to_linker_get_host(l, closure)?;
+    Ok(())
+}
 
-impl<T: WasiView> frame_buffer::HostSurface for T {
-    fn new(&mut self) -> wasmtime::Result<Resource<crate::wasi::webgpu::frame_buffer::Surface>> {
-        Ok(self.table_mut().push(FBSurfaceArc::new()).unwrap())
+pub trait WasiFrameBufferView: WasiView {}
+
+impl frame_buffer::Host for dyn WasiFrameBufferView + '_ {}
+
+impl frame_buffer::HostSurface for dyn WasiFrameBufferView + '_ {
+    fn new(&mut self) -> Resource<crate::wasi::webgpu::frame_buffer::Surface> {
+        self.table().push(FBSurfaceArc::new()).unwrap()
     }
 
     fn connect_graphics_context(
         &mut self,
         surface: Resource<FBSurfaceArc>,
         graphics_context: Resource<GraphicsContext>,
-    ) -> wasmtime::Result<()> {
+    ) {
         let surface = FBSurfaceArc(Arc::clone(&self.table().get(&surface).unwrap().0));
-        let graphics_context = self.table_mut().get_mut(&graphics_context).unwrap();
+        let graphics_context = self.table().get_mut(&graphics_context).unwrap();
         graphics_context.connect_draw_api(Box::new(surface));
-        Ok(())
     }
 
     fn drop(&mut self, _rep: Resource<FBSurfaceArc>) -> wasmtime::Result<()> {
@@ -146,44 +163,41 @@ impl<T: WasiView> frame_buffer::HostSurface for T {
     }
 }
 
-impl<T: WasiView> frame_buffer::HostFrameBuffer for T {
-    // impl<T: WasiView> frame_buffer::HostFrameBuffer for T {
+impl frame_buffer::HostFrameBuffer for dyn WasiFrameBufferView + '_ {
     fn from_graphics_buffer(
         &mut self,
         buffer: Resource<GraphicsContextBuffer>,
-    ) -> wasmtime::Result<Resource<FBBuffer>> {
-        let host_buffer: GraphicsContextBuffer = self.table_mut().delete(buffer).unwrap();
+    ) -> Resource<FBBuffer> {
+        let host_buffer: GraphicsContextBuffer = self.table().delete(buffer).unwrap();
         let host_buffer: FBBuffer = host_buffer.inner_type();
-        Ok(self.table_mut().push(host_buffer).unwrap())
+        self.table().push(host_buffer).unwrap()
     }
 
-    fn length(&mut self, buffer: Resource<FBBuffer>) -> wasmtime::Result<u32> {
+    fn length(&mut self, buffer: Resource<FBBuffer>) -> u32 {
         let buffer = self.table().get(&buffer).unwrap();
         let len = buffer.buffer.lock().unwrap().as_ref().unwrap().len();
-        Ok(len as u32)
+        len as u32
     }
 
-    fn get(&mut self, buffer: Resource<FBBuffer>, i: u32) -> wasmtime::Result<u32> {
+    fn get(&mut self, buffer: Resource<FBBuffer>, i: u32) -> u32 {
         let buffer = self.table().get(&buffer).unwrap();
-        let val = *buffer
+        *buffer
             .buffer
             .lock()
             .unwrap()
             .as_ref()
             .unwrap()
             .get(i as usize)
-            .unwrap();
-        Ok(val)
+            .unwrap()
     }
 
-    fn set(&mut self, buffer: Resource<FBBuffer>, i: u32, val: u32) -> wasmtime::Result<()> {
-        let buffer = self.table_mut().get_mut(&buffer).unwrap();
+    fn set(&mut self, buffer: Resource<FBBuffer>, i: u32, val: u32) {
+        let buffer = self.table().get_mut(&buffer).unwrap();
         buffer.buffer.lock().unwrap().as_mut().unwrap()[i as usize] = val as u32;
-        Ok(())
     }
 
     fn drop(&mut self, frame_buffer: Resource<FBBuffer>) -> wasmtime::Result<()> {
-        let frame_buffer = self.table_mut().delete(frame_buffer).unwrap();
+        let frame_buffer = self.table().delete(frame_buffer).unwrap();
         frame_buffer.buffer.lock().unwrap().take();
         Ok(())
     }

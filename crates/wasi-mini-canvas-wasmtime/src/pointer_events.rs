@@ -2,82 +2,72 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     wasi::webgpu::pointer_events::{self, PointerEvent, Pollable},
-    HasMainThreadProxy, MiniCanvasArc,
+    MiniCanvasArc, WasiMiniCanvasView,
 };
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
-use wasmtime_wasi::preview2::{self, WasiView};
 
 #[async_trait::async_trait]
-impl<T: WasiView + HasMainThreadProxy> pointer_events::Host for T {
+impl pointer_events::Host for dyn WasiMiniCanvasView + '_ {
     async fn up_listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
-    ) -> wasmtime::Result<Resource<PointerUpListener>> {
+    ) -> Resource<PointerUpListener> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .main_thread_proxy()
             .create_pointer_up_listener(window_id)
             .await;
-        Ok(self
-            .table_mut()
+        self.table()
             .push(PointerUpListener {
                 receiver,
                 data: Default::default(),
             })
-            .unwrap())
+            .unwrap()
     }
 
     async fn down_listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
-    ) -> wasmtime::Result<Resource<PointerDownListener>> {
+    ) -> Resource<PointerDownListener> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .main_thread_proxy()
             .create_pointer_down_listener(window_id)
             .await;
-        Ok(self
-            .table_mut()
+        self.table()
             .push(PointerDownListener {
                 receiver,
                 data: Default::default(),
             })
-            .unwrap())
+            .unwrap()
     }
 
     async fn move_listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
-    ) -> wasmtime::Result<Resource<PointerMoveListener>> {
+    ) -> Resource<PointerMoveListener> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .main_thread_proxy()
             .create_pointer_move_listener(window_id)
             .await;
-        Ok(self
-            .table_mut()
+        self.table()
             .push(PointerMoveListener {
                 receiver,
                 data: Default::default(),
             })
-            .unwrap())
+            .unwrap()
     }
 }
 
-impl<T: WasiView + HasMainThreadProxy> pointer_events::HostPointerUpListener for T {
-    fn subscribe(
-        &mut self,
-        pointer_up: Resource<PointerUpListener>,
-    ) -> wasmtime::Result<Resource<Pollable>> {
-        Ok(preview2::subscribe(self.table_mut(), pointer_up).unwrap())
+impl pointer_events::HostPointerUpListener for dyn WasiMiniCanvasView + '_ {
+    fn subscribe(&mut self, pointer_up: Resource<PointerUpListener>) -> Resource<Pollable> {
+        wasmtime_wasi::subscribe(self.table(), pointer_up).unwrap()
     }
-    fn get(
-        &mut self,
-        pointer_up: Resource<PointerUpListener>,
-    ) -> wasmtime::Result<Option<PointerEvent>> {
+    fn get(&mut self, pointer_up: Resource<PointerUpListener>) -> Option<PointerEvent> {
         let pointer_up = self.table().get(&pointer_up).unwrap();
-        Ok(pointer_up.data.lock().unwrap().take())
+        pointer_up.data.lock().unwrap().take()
     }
     fn drop(&mut self, _self_: Resource<PointerUpListener>) -> wasmtime::Result<()> {
         Ok(())
@@ -91,26 +81,20 @@ pub struct PointerUpListener {
 }
 
 #[async_trait::async_trait]
-impl preview2::Subscribe for PointerUpListener {
+impl wasmtime_wasi::Subscribe for PointerUpListener {
     async fn ready(&mut self) {
         let event = self.receiver.recv().await.unwrap();
         *self.data.lock().unwrap() = Some(event);
     }
 }
 
-impl<T: WasiView + HasMainThreadProxy> pointer_events::HostPointerDownListener for T {
-    fn subscribe(
-        &mut self,
-        pointer_down: Resource<PointerDownListener>,
-    ) -> wasmtime::Result<Resource<Pollable>> {
-        Ok(preview2::subscribe(self.table_mut(), pointer_down).unwrap())
+impl pointer_events::HostPointerDownListener for dyn WasiMiniCanvasView + '_ {
+    fn subscribe(&mut self, pointer_down: Resource<PointerDownListener>) -> Resource<Pollable> {
+        wasmtime_wasi::subscribe(self.table(), pointer_down).unwrap()
     }
-    fn get(
-        &mut self,
-        pointer_down: Resource<PointerDownListener>,
-    ) -> wasmtime::Result<Option<PointerEvent>> {
+    fn get(&mut self, pointer_down: Resource<PointerDownListener>) -> Option<PointerEvent> {
         let pointer_down = self.table().get(&pointer_down).unwrap();
-        Ok(pointer_down.data.lock().unwrap().take())
+        pointer_down.data.lock().unwrap().take()
     }
     fn drop(&mut self, _self_: Resource<PointerDownListener>) -> wasmtime::Result<()> {
         Ok(())
@@ -124,26 +108,20 @@ pub struct PointerDownListener {
 }
 
 #[async_trait::async_trait]
-impl preview2::Subscribe for PointerDownListener {
+impl wasmtime_wasi::Subscribe for PointerDownListener {
     async fn ready(&mut self) {
         let event = self.receiver.recv().await.unwrap();
         *self.data.lock().unwrap() = Some(event);
     }
 }
 
-impl<T: WasiView + HasMainThreadProxy> pointer_events::HostPointerMoveListener for T {
-    fn subscribe(
-        &mut self,
-        pointer_move: Resource<PointerMoveListener>,
-    ) -> wasmtime::Result<Resource<Pollable>> {
-        Ok(preview2::subscribe(self.table_mut(), pointer_move).unwrap())
+impl pointer_events::HostPointerMoveListener for dyn WasiMiniCanvasView + '_ {
+    fn subscribe(&mut self, pointer_move: Resource<PointerMoveListener>) -> Resource<Pollable> {
+        wasmtime_wasi::subscribe(self.table(), pointer_move).unwrap()
     }
-    fn get(
-        &mut self,
-        pointer_move: Resource<PointerMoveListener>,
-    ) -> wasmtime::Result<Option<PointerEvent>> {
+    fn get(&mut self, pointer_move: Resource<PointerMoveListener>) -> Option<PointerEvent> {
         let pointer_move = self.table().get(&pointer_move).unwrap();
-        Ok(pointer_move.data.lock().unwrap().take())
+        pointer_move.data.lock().unwrap().take()
     }
     fn drop(&mut self, _self_: Resource<PointerMoveListener>) -> wasmtime::Result<()> {
         Ok(())
@@ -157,7 +135,7 @@ pub struct PointerMoveListener {
 }
 
 #[async_trait::async_trait]
-impl preview2::Subscribe for PointerMoveListener {
+impl wasmtime_wasi::Subscribe for PointerMoveListener {
     async fn ready(&mut self) {
         let event = self.receiver.recv().await.unwrap();
         *self.data.lock().unwrap() = Some(event);

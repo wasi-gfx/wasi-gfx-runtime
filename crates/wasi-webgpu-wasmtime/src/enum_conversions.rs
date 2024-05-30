@@ -77,6 +77,7 @@ impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
             wgpu_types::TextureFormat::EacRg11Unorm => todo!(),
             wgpu_types::TextureFormat::EacRg11Snorm => todo!(),
             wgpu_types::TextureFormat::Astc { .. } => todo!(),
+            wgpu_types::TextureFormat::NV12 => todo!(),
         }
     }
 }

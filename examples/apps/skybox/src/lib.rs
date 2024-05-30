@@ -3,10 +3,9 @@
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "example:example/example",
-    exports: {
-        world: ExampleSkybox,
-    },
 });
+
+export!(ExampleSkybox);
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;

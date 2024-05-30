@@ -1,11 +1,11 @@
 use std::any::Any;
 
 use crate::wasi::webgpu::graphics_context::{self, ConfigureContextDesc};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
+};
 use wasmtime::component::Resource;
-use wasmtime_wasi::preview2::WasiView;
-
-pub use wasi::webgpu::graphics_context::add_to_linker;
+use wasmtime_wasi::WasiView;
 
 wasmtime::component::bindgen!({
     path: "../../wit/",
@@ -54,6 +54,24 @@ impl GraphicsContext {
     }
 }
 
+impl HasDisplayHandle for GraphicsContext {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        match &self.display_api {
+            Some(display_api) => display_api.display_handle(),
+            None => Err(HandleError::Unavailable),
+        }
+    }
+}
+
+impl HasWindowHandle for GraphicsContext {
+    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+        match &self.display_api {
+            Some(display_api) => display_api.window_handle(),
+            None => Err(HandleError::Unavailable),
+        }
+    }
+}
+
 // TODO: rename to FrameProvider? since this isn't neceraly implemented on the whole api?
 pub trait DrawApi {
     fn get_current_buffer(&mut self) -> wasmtime::Result<GraphicsContextBuffer>;
@@ -61,7 +79,7 @@ pub trait DrawApi {
     fn display_api_ready(&mut self, display_api: &Box<dyn DisplayApi + Send + Sync>);
 }
 
-pub trait DisplayApi: HasRawDisplayHandle + HasRawWindowHandle {
+pub trait DisplayApi: HasDisplayHandle + HasWindowHandle {
     fn height(&self) -> u32;
     fn width(&self) -> u32;
 }
@@ -90,43 +108,54 @@ impl GraphicsContextBuffer {
 }
 
 // wasmtime
-impl<T: WasiView> graphics_context::Host for T {}
+pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
+where
+    T: WasiGraphicsContextView,
+{
+    fn type_annotate<T, F>(val: F) -> F
+    where
+        F: Fn(&mut T) -> &mut dyn WasiGraphicsContextView,
+    {
+        val
+    }
+    let closure = type_annotate::<T, _>(|t| t);
+    wasi::webgpu::graphics_context::add_to_linker_get_host(l, closure)?;
+    Ok(())
+}
 
-impl<T: WasiView> graphics_context::HostGraphicsContext for T {
-    fn new(&mut self) -> wasmtime::Result<Resource<GraphicsContext>> {
-        Ok(self.table_mut().push(GraphicsContext::new()).unwrap())
+pub trait WasiGraphicsContextView: WasiView {}
+
+impl graphics_context::Host for dyn WasiGraphicsContextView + '_ {}
+
+impl graphics_context::HostGraphicsContext for dyn WasiGraphicsContextView + '_ {
+    fn new(&mut self) -> Resource<GraphicsContext> {
+        self.table().push(GraphicsContext::new()).unwrap()
     }
 
-    fn configure(
-        &mut self,
-        context: Resource<GraphicsContext>,
-        desc: ConfigureContextDesc,
-    ) -> wasmtime::Result<()> {
-        let graphics_context = self.table_mut().get_mut(&context).unwrap();
+    fn configure(&mut self, context: Resource<GraphicsContext>, desc: ConfigureContextDesc) {
+        let graphics_context = self.table().get_mut(&context).unwrap();
         graphics_context.configure(desc).unwrap();
-        Ok(())
     }
 
     fn get_current_buffer(
         &mut self,
         context: Resource<GraphicsContext>,
-    ) -> wasmtime::Result<Resource<GraphicsContextBuffer>> {
-        let context_kind = self.table_mut().get_mut(&context).unwrap();
+    ) -> Resource<GraphicsContextBuffer> {
+        let context_kind = self.table().get_mut(&context).unwrap();
         let next_frame = context_kind
             .draw_api
             .as_mut()
             .expect("draw_api not set")
             .get_current_buffer()
             .unwrap();
-        let next_frame = self.table_mut().push(next_frame).unwrap();
-        Ok(next_frame)
+        let next_frame = self.table().push(next_frame).unwrap();
+        next_frame
     }
 
-    fn present(&mut self, context: Resource<GraphicsContext>) -> wasmtime::Result<()> {
-        let context = self.table_mut().get_mut(&context).unwrap();
+    fn present(&mut self, context: Resource<GraphicsContext>) {
+        let context = self.table().get_mut(&context).unwrap();
         // context.display_api.as_mut().unwrap().present().unwrap();
         context.draw_api.as_mut().unwrap().present().unwrap();
-        Ok(())
     }
 
     fn drop(&mut self, _graphics_context: Resource<GraphicsContext>) -> wasmtime::Result<()> {
@@ -135,7 +164,7 @@ impl<T: WasiView> graphics_context::HostGraphicsContext for T {
     }
 }
 
-impl<T: WasiView> graphics_context::HostGraphicsContextBuffer for T {
+impl graphics_context::HostGraphicsContextBuffer for dyn WasiGraphicsContextView + '_ {
     fn drop(&mut self, _rep: Resource<GraphicsContextBuffer>) -> wasmtime::Result<()> {
         todo!()
     }

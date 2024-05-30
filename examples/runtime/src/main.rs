@@ -1,15 +1,17 @@
 use std::sync::Arc;
 
-use __with_name1::HasGpuInstance;
 use anyhow::Context;
 use clap::Parser;
-use wasi_mini_canvas_wasmtime::{HasMainThreadProxy, MainThreadProxy};
+use wasi_frame_buffer_wasmtime::WasiFrameBufferView;
+use wasi_graphics_context_wasmtime::WasiGraphicsContextView;
+use wasi_mini_canvas_wasmtime::{MainThreadProxy, WasiMiniCanvasView};
+use wasi_webgpu_wasmtime::WasiWebGpuView;
 use wasmtime::{
     component::{Component, Linker},
     Config, Engine, Store,
 };
 
-use wasmtime_wasi::preview2::{self, ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
 
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
@@ -35,7 +37,7 @@ wasmtime::component::bindgen!({
 struct HostState {
     pub table: ResourceTable,
     pub ctx: WasiCtx,
-    pub instance: Arc<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>>,
+    pub instance: Arc<wgpu_core::global::Global>,
     pub main_thread_proxy: MainThreadProxy,
 }
 
@@ -46,7 +48,6 @@ impl HostState {
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
             instance: Arc::new(wgpu_core::global::Global::new(
                 "webgpu",
-                wgpu_core::identity::IdentityManagerFactory,
                 wgpu_types::InstanceDescriptor {
                     backends: wgpu_types::Backends::all(),
                     flags: wgpu_types::InstanceFlags::from_build_config(),
@@ -59,43 +60,34 @@ impl HostState {
     }
 }
 
-#[async_trait::async_trait]
 impl WasiView for HostState {
-    fn table(&self) -> &ResourceTable {
-        &self.table
-    }
-
-    fn table_mut(&mut self) -> &mut ResourceTable {
+    fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
     }
 
-    fn ctx(&self) -> &WasiCtx {
-        &self.ctx
-    }
-
-    fn ctx_mut(&mut self) -> &mut WasiCtx {
+    fn ctx(&mut self) -> &mut WasiCtx {
         &mut self.ctx
     }
 }
 
-impl HasGpuInstance for HostState {
-    fn instance(
-        &self,
-    ) -> Arc<wgpu_core::global::Global<wgpu_core::identity::IdentityManagerFactory>> {
+impl WasiGraphicsContextView for HostState {}
+impl WasiFrameBufferView for HostState {}
+
+impl WasiWebGpuView for HostState {
+    fn instance(&self) -> Arc<wgpu_core::global::Global> {
         Arc::clone(&self.instance)
     }
 }
 
-impl HasMainThreadProxy for HostState {
+impl WasiMiniCanvasView for HostState {
     fn main_thread_proxy(&self) -> &MainThreadProxy {
         &self.main_thread_proxy
     }
 }
 
 impl ExampleImports for HostState {
-    fn print(&mut self, s: String) -> wasmtime::Result<()> {
+    fn print(&mut self, s: String) {
         println!("{s}");
-        Ok(())
     }
 }
 
@@ -111,17 +103,21 @@ async fn main() -> anyhow::Result<()> {
     config.wasm_component_model(true);
     config.async_support(true);
     let engine = Engine::new(&config)?;
-    let mut linker = Linker::new(&engine);
+    let mut linker: Linker<HostState> = Linker::new(&engine);
 
-    wasi_webgpu_wasmtime::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-    wasi_frame_buffer_wasmtime::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-    wasi_graphics_context_wasmtime::add_to_linker(&mut linker, |state: &mut HostState| state)?;
-    wasi_mini_canvas_wasmtime::add_to_linker(&mut linker, |state: &mut HostState| state)?;
+    wasi_webgpu_wasmtime::add_to_linker(&mut linker)?;
+    wasi_frame_buffer_wasmtime::add_to_linker(&mut linker)?;
+    wasi_graphics_context_wasmtime::add_to_linker(&mut linker)?;
+    wasi_mini_canvas_wasmtime::add_to_linker(&mut linker)?;
 
-    preview2::bindings::io::poll::add_to_linker(&mut linker, |state| state)?;
-    preview2::bindings::io::streams::add_to_linker(&mut linker, |state| state)?;
-
-    Example::add_root_to_linker(&mut linker, |state: &mut HostState| state)?;
+    fn type_annotate<F>(val: F) -> F
+    where
+        F: Fn(&mut HostState) -> &mut dyn ExampleImports,
+    {
+        val
+    }
+    let closure = type_annotate::<_>(|t| t);
+    Example::add_to_linker_imports_get_host(&mut linker, closure)?;
 
     let (main_thread_loop, main_thread_proxy) =
         wasi_mini_canvas_wasmtime::MiniCanvas::create_event_loop();

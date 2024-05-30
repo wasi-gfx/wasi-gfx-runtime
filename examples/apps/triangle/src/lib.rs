@@ -1,10 +1,9 @@
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "example:example/example",
-    exports: {
-        world: ExampleTriangle,
-    },
 });
+
+export!(ExampleTriangle);
 
 struct ExampleTriangle;
 

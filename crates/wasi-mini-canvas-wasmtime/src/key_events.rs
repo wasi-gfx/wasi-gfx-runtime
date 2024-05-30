@@ -2,61 +2,55 @@ use std::sync::Mutex;
 
 use crate::{
     wasi::webgpu::key_events::{self, KeyEvent, Pollable},
-    HasMainThreadProxy, MiniCanvasArc,
+    MiniCanvasArc, WasiMiniCanvasView,
 };
 use async_broadcast::Receiver;
 use wasmtime::component::Resource;
-use wasmtime_wasi::preview2::{self, WasiView};
 
 #[async_trait::async_trait]
-impl<T: WasiView + HasMainThreadProxy> key_events::Host for T {
+impl key_events::Host for dyn WasiMiniCanvasView + '_ {
     async fn up_listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
-    ) -> wasmtime::Result<Resource<KeyUpListener>> {
+    ) -> Resource<KeyUpListener> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .main_thread_proxy()
             .create_key_up_listener(window_id)
             .await;
-        Ok(self
-            .table_mut()
+        self.table()
             .push(KeyUpListener {
                 receiver,
                 data: Default::default(),
             })
-            .unwrap())
+            .unwrap()
     }
 
     async fn down_listener(
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
-    ) -> wasmtime::Result<Resource<KeyDownListener>> {
+    ) -> Resource<KeyDownListener> {
         let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
         let receiver = self
             .main_thread_proxy()
             .create_key_down_listener(window_id)
             .await;
-        Ok(self
-            .table_mut()
+        self.table()
             .push(KeyDownListener {
                 receiver,
                 data: Default::default(),
             })
-            .unwrap())
+            .unwrap()
     }
 }
 
-impl<T: WasiView + HasMainThreadProxy> key_events::HostKeyUpListener for T {
-    fn subscribe(
-        &mut self,
-        key_up: Resource<KeyUpListener>,
-    ) -> wasmtime::Result<Resource<Pollable>> {
-        Ok(preview2::subscribe(self.table_mut(), key_up).unwrap())
+impl key_events::HostKeyUpListener for dyn WasiMiniCanvasView + '_ {
+    fn subscribe(&mut self, key_up: Resource<KeyUpListener>) -> Resource<Pollable> {
+        wasmtime_wasi::subscribe(self.table(), key_up).unwrap()
     }
-    fn get(&mut self, key_up: Resource<KeyUpListener>) -> wasmtime::Result<Option<KeyEvent>> {
+    fn get(&mut self, key_up: Resource<KeyUpListener>) -> Option<KeyEvent> {
         let key_up = self.table().get(&key_up).unwrap();
-        Ok(key_up.data.lock().unwrap().take())
+        key_up.data.lock().unwrap().take()
     }
     fn drop(&mut self, _self_: Resource<KeyUpListener>) -> wasmtime::Result<()> {
         Ok(())
@@ -70,22 +64,19 @@ pub struct KeyUpListener {
 }
 
 #[async_trait::async_trait]
-impl preview2::Subscribe for KeyUpListener {
+impl wasmtime_wasi::Subscribe for KeyUpListener {
     async fn ready(&mut self) {
         let event = self.receiver.recv().await.unwrap();
         *self.data.lock().unwrap() = Some(event);
     }
 }
-impl<T: WasiView + HasMainThreadProxy> key_events::HostKeyDownListener for T {
-    fn subscribe(
-        &mut self,
-        key_down: Resource<KeyDownListener>,
-    ) -> wasmtime::Result<Resource<Pollable>> {
-        Ok(preview2::subscribe(self.table_mut(), key_down).unwrap())
+impl key_events::HostKeyDownListener for dyn WasiMiniCanvasView + '_ {
+    fn subscribe(&mut self, key_down: Resource<KeyDownListener>) -> Resource<Pollable> {
+        wasmtime_wasi::subscribe(self.table(), key_down).unwrap()
     }
-    fn get(&mut self, key_down: Resource<KeyDownListener>) -> wasmtime::Result<Option<KeyEvent>> {
+    fn get(&mut self, key_down: Resource<KeyDownListener>) -> Option<KeyEvent> {
         let key_down = self.table().get(&key_down).unwrap();
-        Ok(key_down.data.lock().unwrap().take())
+        key_down.data.lock().unwrap().take()
     }
     fn drop(&mut self, _self_: Resource<KeyDownListener>) -> wasmtime::Result<()> {
         Ok(())
@@ -99,7 +90,7 @@ pub struct KeyDownListener {
 }
 
 #[async_trait::async_trait]
-impl preview2::Subscribe for KeyDownListener {
+impl wasmtime_wasi::Subscribe for KeyDownListener {
     async fn ready(&mut self) {
         let event = self.receiver.recv().await.unwrap();
         *self.data.lock().unwrap() = Some(event);
