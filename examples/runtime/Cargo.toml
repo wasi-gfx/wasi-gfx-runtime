@@ -23,7 +23,7 @@ log.workspace = true
 async-broadcast.workspace = true
 oneshot.workspace = true
 wasi-graphics-context-wasmtime = { path = "../../crates/wasi-graphics-context-wasmtime" }
-wasi-mini-canvas-wasmtime = { path = "../../crates/wasi-mini-canvas-wasmtime" }
+wasi-mini-canvas-wasmtime = { path = "../../crates/wasi-mini-canvas-wasmtime", features = ["winit"]}
 wasi-frame-buffer-wasmtime = { path = "../../crates/wasi-frame-buffer-wasmtime" }
 wasi-webgpu-wasmtime = { path = "../../crates/wasi-webgpu-wasmtime" }
 

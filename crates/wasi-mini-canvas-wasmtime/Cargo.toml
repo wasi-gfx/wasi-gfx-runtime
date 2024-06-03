@@ -10,6 +10,6 @@ raw-window-handle.workspace = true
 async-broadcast.workspace = true
 oneshot.workspace = true
 async-trait.workspace = true
-winit.workspace = true
+winit = { workspace = true, optional = true }
 futures.workspace = true
 wasi-graphics-context-wasmtime = { path = "../wasi-graphics-context-wasmtime" }

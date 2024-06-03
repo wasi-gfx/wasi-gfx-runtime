@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
+use futures::executor::block_on;
 use wasi_frame_buffer_wasmtime::WasiFrameBufferView;
 use wasi_graphics_context_wasmtime::WasiGraphicsContextView;
-use wasi_mini_canvas_wasmtime::{MainThreadProxy, WasiMiniCanvasView};
+use wasi_mini_canvas_wasmtime::{MiniCanvas, MiniCanvasDesc, WasiMiniCanvasView};
 use wasi_webgpu_wasmtime::WasiWebGpuView;
 use wasmtime::{
     component::{Component, Linker},
@@ -38,11 +39,11 @@ struct HostState {
     pub table: ResourceTable,
     pub ctx: WasiCtx,
     pub instance: Arc<wgpu_core::global::Global>,
-    pub main_thread_proxy: MainThreadProxy,
+    pub main_thread_proxy: wasi_mini_canvas_wasmtime::WasiWinitEventLoopProxy,
 }
 
 impl HostState {
-    fn new(main_thread_proxy: MainThreadProxy) -> Self {
+    fn new(main_thread_proxy: wasi_mini_canvas_wasmtime::WasiWinitEventLoopProxy) -> Self {
         Self {
             table: ResourceTable::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
@@ -80,8 +81,8 @@ impl WasiWebGpuView for HostState {
 }
 
 impl WasiMiniCanvasView for HostState {
-    fn main_thread_proxy(&self) -> &MainThreadProxy {
-        &self.main_thread_proxy
+    fn create_canvas(&self, desc: MiniCanvasDesc) -> MiniCanvas {
+        block_on(self.main_thread_proxy.create_window(desc))
     }
 }
 
@@ -120,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
     Example::add_to_linker_imports_get_host(&mut linker, closure)?;
 
     let (main_thread_loop, main_thread_proxy) =
-        wasi_mini_canvas_wasmtime::MiniCanvas::create_event_loop();
+        wasi_mini_canvas_wasmtime::create_wasi_winit_event_loop();
     let host_state = HostState::new(main_thread_proxy);
 
     let mut store = Store::new(&engine, host_state);

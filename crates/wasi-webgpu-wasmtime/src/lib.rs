@@ -129,7 +129,6 @@ where
     }
 
     fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
-        // self.insert(value)
         let surface_id = unsafe {
             (self.get_instance)()
                 .as_ref()
