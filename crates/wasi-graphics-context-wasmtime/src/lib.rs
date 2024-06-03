@@ -72,7 +72,7 @@ impl HasWindowHandle for GraphicsContext {
     }
 }
 
-// TODO: rename to FrameProvider? since this isn't neceraly implemented on the whole api?
+// TODO: rename to FrameProvider? since this isn't necessarily implemented on the whole api?
 pub trait DrawApi {
     fn get_current_buffer(&mut self) -> wasmtime::Result<GraphicsContextBuffer>;
     fn present(&mut self) -> wasmtime::Result<()>;

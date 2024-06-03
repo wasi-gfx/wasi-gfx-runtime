@@ -13,11 +13,8 @@ impl key_events::Host for dyn WasiMiniCanvasView + '_ {
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> Resource<KeyUpListener> {
-        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
-        let receiver = self
-            .main_thread_proxy()
-            .create_key_up_listener(window_id)
-            .await;
+        let canvas = &self.table().get(&mini_canvas).unwrap().0;
+        let receiver = canvas.key_up_sender.new_receiver();
         self.table()
             .push(KeyUpListener {
                 receiver,
@@ -30,11 +27,8 @@ impl key_events::Host for dyn WasiMiniCanvasView + '_ {
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> Resource<KeyDownListener> {
-        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
-        let receiver = self
-            .main_thread_proxy()
-            .create_key_down_listener(window_id)
-            .await;
+        let canvas = &self.table().get(&mini_canvas).unwrap().0;
+        let receiver = canvas.key_down_sender.new_receiver();
         self.table()
             .push(KeyDownListener {
                 receiver,

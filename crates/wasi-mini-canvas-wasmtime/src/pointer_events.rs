@@ -13,11 +13,8 @@ impl pointer_events::Host for dyn WasiMiniCanvasView + '_ {
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> Resource<PointerUpListener> {
-        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
-        let receiver = self
-            .main_thread_proxy()
-            .create_pointer_up_listener(window_id)
-            .await;
+        let canvas = &self.table().get(&mini_canvas).unwrap().0;
+        let receiver = canvas.pointer_up_sender.new_receiver();
         self.table()
             .push(PointerUpListener {
                 receiver,
@@ -30,11 +27,8 @@ impl pointer_events::Host for dyn WasiMiniCanvasView + '_ {
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> Resource<PointerDownListener> {
-        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
-        let receiver = self
-            .main_thread_proxy()
-            .create_pointer_down_listener(window_id)
-            .await;
+        let canvas = &self.table().get(&mini_canvas).unwrap().0;
+        let receiver = canvas.pointer_down_sender.new_receiver();
         self.table()
             .push(PointerDownListener {
                 receiver,
@@ -47,11 +41,8 @@ impl pointer_events::Host for dyn WasiMiniCanvasView + '_ {
         &mut self,
         mini_canvas: Resource<MiniCanvasArc>,
     ) -> Resource<PointerMoveListener> {
-        let window_id = self.table().get(&mini_canvas).unwrap().0.window.id();
-        let receiver = self
-            .main_thread_proxy()
-            .create_pointer_move_listener(window_id)
-            .await;
+        let canvas = &self.table().get(&mini_canvas).unwrap().0;
+        let receiver = canvas.pointer_move_sender.new_receiver();
         self.table()
             .push(PointerMoveListener {
                 receiver,
