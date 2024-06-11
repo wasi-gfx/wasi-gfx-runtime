@@ -6,10 +6,13 @@
 
 use callback_future::CallbackFuture;
 use core::slice;
+use futures::executor::block_on;
 use std::borrow::Cow;
 use std::sync::Arc;
+use std::{future::Future, mem};
 use wasmtime::component::Resource;
 use wasmtime_wasi::WasiView;
+use wgpu_core::id::SurfaceId;
 
 use crate::wasi::webgpu::webgpu;
 use wasi_graphics_context_wasmtime::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
@@ -90,6 +93,10 @@ where
 
 pub trait WasiWebGpuView: WasiView {
     fn instance(&self) -> Arc<wgpu_core::global::Global>;
+
+    /// Provide the ability to run closure on the UI thread.
+    /// On platforms that don't require UI to run on the UI thread, this can just execute in place.
+    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner>;
 }
 
 pub struct WasiWebGpuImpl<T>(pub T);
@@ -108,29 +115,47 @@ impl<T: WasiWebGpuView> WasiWebGpuView for WasiWebGpuImpl<T> {
     fn instance(&self) -> Arc<wgpu_core::global::Global> {
         self.0.instance()
     }
+
+    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner + 'static> {
+        self.0.ui_thread_spawner()
+    }
 }
 
 impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for &mut T {
     fn instance(&self) -> Arc<wgpu_core::global::Global> {
         T::instance(self)
     }
+
+    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner + 'static> {
+        T::ui_thread_spawner(self)
+    }
 }
 
-pub struct WebGpuSurface<F, I>
+pub trait MainThreadSpawner: Send + Sync + 'static {
+    fn spawn<F, T>(&self, f: F) -> impl Future<Output = T>
+    where
+        F: FnOnce() -> T + Send + Sync + 'static,
+        T: Send + Sync + 'static;
+}
+
+pub struct WebGpuSurface<GI, CS, I>
 where
     I: AsRef<wgpu_core::global::Global>,
-    F: Fn() -> I,
+    GI: Fn() -> I,
+    CS: Fn(&(dyn DisplayApi + Send + Sync)) -> SurfaceId,
 {
-    get_instance: F,
+    get_instance: GI,
+    create_surface: CS,
     device_id: wgpu_core::id::DeviceId,
     adapter_id: wgpu_core::id::AdapterId,
     surface_id: Option<wgpu_core::id::SurfaceId>,
 }
 
-impl<F, I> DrawApi for WebGpuSurface<F, I>
+impl<GI, CS, I> DrawApi for WebGpuSurface<GI, CS, I>
 where
     I: AsRef<wgpu_core::global::Global>,
-    F: Fn() -> I,
+    GI: Fn() -> I,
+    CS: Fn(&(dyn DisplayApi + Send + Sync)) -> SurfaceId,
 {
     fn get_current_buffer(&mut self) -> wasmtime::Result<GraphicsContextBuffer> {
         let texture: wgpu_core::id::TextureId = (self.get_instance)()
@@ -153,16 +178,7 @@ where
     }
 
     fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
-        let surface_id = unsafe {
-            (self.get_instance)()
-                .as_ref()
-                .instance_create_surface(
-                    display.display_handle().unwrap().as_raw(),
-                    display.window_handle().unwrap().as_raw(),
-                    None,
-                )
-                .unwrap()
-        };
+        let surface_id = (self.create_surface)(display.as_ref());
 
         let swapchain_capabilities = (self.get_instance)()
             .as_ref()
@@ -266,11 +282,50 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         let adapter_id = device.adapter;
 
         let instance = Arc::downgrade(&self.0.instance());
+        let surface_creator = self.0.ui_thread_spawner();
 
         let context = self.0.table().get_mut(&context).unwrap();
 
         let surface = WebGpuSurface {
-            get_instance: move || instance.upgrade().unwrap(),
+            get_instance: {
+                let instance = instance.clone();
+                move || instance.upgrade().unwrap()
+            },
+            create_surface: {
+                let instance = instance.clone();
+                move |display: &(dyn DisplayApi + Send + Sync)| {
+                    let instance = instance.upgrade().unwrap();
+
+                    // TODO: make spawn behave similar to `std::thread::scope` so that we don't have to unsafely transmute display to `&'static`.
+                    // Something like the following:
+                    // ```rust
+                    // let surface_id = std::thread::scope(|s| {
+                    //     s.spawn(move || unsafe {
+                    //         instance
+                    //             .instance_create_surface(
+                    //                 display.display_handle().unwrap().as_raw(),
+                    //                 display.window_handle().unwrap().as_raw(),
+                    //                 None,
+                    //             )
+                    //             .unwrap()
+                    //     }).join().unwrap()
+                    // });
+                    // surface_id
+                    // ```
+
+                    let display: &'static (dyn DisplayApi + Send + Sync) =
+                        unsafe { mem::transmute(display) };
+                    block_on(surface_creator.spawn(move || unsafe {
+                        instance
+                            .instance_create_surface(
+                                display.display_handle().unwrap().as_raw(),
+                                display.window_handle().unwrap().as_raw(),
+                                None,
+                            )
+                            .unwrap()
+                    }))
+                }
+            },
             device_id,
             adapter_id,
             surface_id: None,
