@@ -18,7 +18,7 @@ use wasi::webgpu::{
 
 impl Guest for ExampleSkybox {
     fn start() {
-        let mut example = Example::init();
+        let mut example = Example::init(WIDTH, HEIGHT);
         example.render();
         let pointer_up_listener = pointer_events::up_listener(&example.canvas);
         let pointer_up_pollable = pointer_up_listener.subscribe();
@@ -159,11 +159,13 @@ impl Example {
         // config: &webgpu::GpuSurfaceConfiguration,
         // config: &webgpu::GpuCanvasConfiguration,
         device: &webgpu::GpuDevice,
+        width: u32,
+        height: u32,
     ) -> webgpu::GpuTextureView {
         let depth_texture = device.create_texture(&webgpu::GpuTextureDescriptor {
             size: webgpu::GpuExtent3D::GpuExtent3DDict(webgpu::GpuExtent3DDict {
-                width: WIDTH,
-                height: Some(HEIGHT),
+                width,
+                height: Some(height),
                 depth_or_array_layers: Some(1),
             }),
             mip_level_count: Some(1),
@@ -187,16 +189,19 @@ impl Example {
         }))
     }
 
-    fn init() -> Self {
+    fn init(width: u32, height: u32) -> Self {
         let device = webgpu::get_gpu().request_adapter(None).request_device(None);
         let canvas = mini_canvas::MiniCanvas::new(mini_canvas::CreateDesc {
-            height: HEIGHT,
-            width: WIDTH,
+            height,
+            width,
             offscreen: false,
         });
         let graphics_context = graphics_context::GraphicsContext::new();
         canvas.connect_graphics_context(&graphics_context);
         device.connect_graphics_context(&graphics_context);
+
+        let height = canvas.height();
+        let width = canvas.width();
 
         let mut entities = Vec::new();
         {
@@ -286,7 +291,7 @@ impl Example {
         });
 
         let camera = Camera {
-            screen_size: (WIDTH, HEIGHT),
+            screen_size: (width, height),
             // screen_size: (config.width, config.height),
             angle_xz: 0.2,
             angle_y: 0.2,
@@ -525,7 +530,7 @@ impl Example {
             label: None,
         });
 
-        let depth_view = Self::create_depth_texture(&device);
+        let depth_view = Self::create_depth_texture(&device, width, height);
 
         Example {
             device,
