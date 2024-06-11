@@ -1,5 +1,7 @@
 use std::{
+    any::Any,
     collections::HashMap,
+    fmt::Debug,
     sync::{Arc, Mutex},
     thread::{self, sleep},
     time::Duration,
@@ -106,6 +108,9 @@ impl WasiWinitEventLoop {
 
                         response_channel.send(canvas).unwrap();
                     }
+                    MainThreadAction::Spawn(f, res) => {
+                        res.send(f()).unwrap();
+                    }
                 }
             }
 
@@ -206,9 +211,41 @@ impl WasiWinitEventLoopProxy {
             .unwrap();
         receiver.await.unwrap()
     }
+
+    pub async fn spawn<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce() -> T + Send + Sync + 'static,
+        T: Send + Sync + 'static,
+    {
+        let boxed = Box::new(|| {
+            let res = f();
+            Box::new(res) as Box<dyn Any + Send + Sync>
+        });
+        let (sender, receiver) = oneshot::channel();
+        self.proxy
+            .send_event(MainThreadAction::Spawn(boxed, sender))
+            .unwrap();
+        *receiver.await.unwrap().downcast().unwrap()
+    }
 }
 
-#[derive(Debug)]
 enum MainThreadAction {
     CreateWindow(MiniCanvasDesc, oneshot::Sender<MiniCanvas>),
+    Spawn(
+        Box<dyn FnOnce() -> Box<dyn Any + Send + Sync> + Send + Sync>,
+        oneshot::Sender<Box<dyn Any + Send + Sync>>,
+    ),
+}
+
+impl Debug for MainThreadAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CreateWindow(arg0, arg1) => f
+                .debug_tuple("CreateWindow")
+                .field(arg0)
+                .field(arg1)
+                .finish(),
+            Self::Spawn(_, _) => f.debug_tuple("Spawn").finish(),
+        }
+    }
 }

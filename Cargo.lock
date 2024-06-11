@@ -3128,6 +3128,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "callback-future",
+ "futures",
  "raw-window-handle",
  "wasi-graphics-context-wasmtime",
  "wasmtime",

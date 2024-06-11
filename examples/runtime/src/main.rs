@@ -74,9 +74,25 @@ impl WasiView for HostState {
 impl WasiGraphicsContextView for HostState {}
 impl WasiFrameBufferView for HostState {}
 
+struct UiThreadSpawner(wasi_mini_canvas_wasmtime::WasiWinitEventLoopProxy);
+
+impl wasi_webgpu_wasmtime::MainThreadSpawner for UiThreadSpawner {
+    async fn spawn<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce() -> T + Send + Sync + 'static,
+        T: Send + Sync + 'static,
+    {
+        self.0.spawn(f).await
+    }
+}
+
 impl WasiWebGpuView for HostState {
     fn instance(&self) -> Arc<wgpu_core::global::Global> {
         Arc::clone(&self.instance)
+    }
+
+    fn ui_thread_spawner(&self) -> Box<impl wasi_webgpu_wasmtime::MainThreadSpawner + 'static> {
+        Box::new(UiThreadSpawner(self.main_thread_proxy.clone()))
     }
 }
 
