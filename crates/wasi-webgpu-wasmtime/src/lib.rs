@@ -73,23 +73,47 @@ wasmtime::component::bindgen!({
     },
 });
 
+fn type_annotate<T, F>(val: F) -> F
+where
+    F: Fn(&mut T) -> WasiWebGpuImpl<&mut T>,
+{
+    val
+}
 pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
 where
     T: WasiWebGpuView,
 {
-    fn type_annotate<T, F>(val: F) -> F
-    where
-        F: Fn(&mut T) -> &mut dyn WasiWebGpuView,
-    {
-        val
-    }
-    let closure = type_annotate::<T, _>(|t| t);
+    let closure = type_annotate::<T, _>(|t| WasiWebGpuImpl(t));
     wasi::webgpu::webgpu::add_to_linker_get_host(l, closure)?;
     Ok(())
 }
 
 pub trait WasiWebGpuView: WasiView {
     fn instance(&self) -> Arc<wgpu_core::global::Global>;
+}
+
+pub struct WasiWebGpuImpl<T>(pub T);
+
+impl<T: WasiView> WasiView for WasiWebGpuImpl<T> {
+    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
+        self.0.table()
+    }
+
+    fn ctx(&mut self) -> &mut wasmtime_wasi::WasiCtx {
+        self.0.ctx()
+    }
+}
+
+impl<T: WasiWebGpuView> WasiWebGpuView for WasiWebGpuImpl<T> {
+    fn instance(&self) -> Arc<wgpu_core::global::Global> {
+        self.0.instance()
+    }
+}
+
+impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for &mut T {
+    fn instance(&self) -> Arc<wgpu_core::global::Global> {
+        T::instance(self)
+    }
 }
 
 pub struct WebGpuSurface<F, I>
@@ -200,28 +224,28 @@ pub struct Device {
     pub adapter: wgpu_core::id::AdapterId,
 }
 
-impl webgpu::Host for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::Host for WasiWebGpuImpl<T> {
     fn get_gpu(&mut self) -> Resource<webgpu::Gpu> {
         Resource::new_own(0)
     }
 }
 
-impl webgpu::HostRemoteBuffer for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostRemoteBuffer for WasiWebGpuImpl<T> {
     fn length(&mut self, buffer: Resource<webgpu::RemoteBuffer>) -> u32 {
-        let buffer = self.table().get(&buffer).unwrap();
+        let buffer = self.0.table().get(&buffer).unwrap();
         let len = buffer.mapped.as_ref().unwrap().len;
         len as u32
     }
 
     fn get(&mut self, buffer: Resource<webgpu::RemoteBuffer>, i: u32) -> u8 {
-        let buffer = self.table().get(&buffer).unwrap();
+        let buffer = self.0.table().get(&buffer).unwrap();
         let remote_buffer = buffer.mapped.as_ref().unwrap();
         let val = remote_buffer.slice()[i as usize];
         val
     }
 
     fn set(&mut self, buffer: Resource<webgpu::RemoteBuffer>, i: u32, val: u8) {
-        let buffer = self.table().get_mut(&buffer).unwrap();
+        let buffer = self.0.table().get_mut(&buffer).unwrap();
         let remote_buffer = buffer.mapped.as_mut().unwrap();
         remote_buffer.slice_mut()[i as usize] = val;
     }
@@ -231,19 +255,19 @@ impl webgpu::HostRemoteBuffer for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
     fn connect_graphics_context(
         &mut self,
         device: Resource<Device>,
         context: Resource<GraphicsContext>,
     ) {
-        let device = self.table().get(&device).unwrap();
+        let device = self.0.table().get(&device).unwrap();
         let device_id = device.device;
         let adapter_id = device.adapter;
 
-        let instance = Arc::downgrade(&self.instance());
+        let instance = Arc::downgrade(&self.0.instance());
 
-        let context = self.table().get_mut(&context).unwrap();
+        let context = self.0.table().get_mut(&context).unwrap();
 
         let surface = WebGpuSurface {
             get_instance: move || instance.upgrade().unwrap(),
@@ -260,21 +284,22 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<Device>,
         descriptor: Option<webgpu::GpuCommandEncoderDescriptor>,
     ) -> Resource<wgpu_core::id::CommandEncoderId> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
 
         let command_encoder = core_result(
-            self.instance()
+            self.0
+                .instance()
                 .device_create_command_encoder::<crate::Backend>(
                     device,
                     &descriptor
-                        .map(|d| d.to_core(&self.table()))
+                        .map(|d| d.to_core(&self.0.table()))
                         .unwrap_or_default(),
                     None,
                 ),
         )
         .unwrap();
 
-        self.table().push(command_encoder).unwrap()
+        self.0.table().push(command_encoder).unwrap()
     }
 
     fn create_shader_module(
@@ -282,22 +307,23 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<Device>,
         descriptor: webgpu::GpuShaderModuleDescriptor,
     ) -> Resource<webgpu::GpuShaderModule> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
 
         let code =
             wgpu_core::pipeline::ShaderModuleSource::Wgsl(Cow::Owned(descriptor.code.to_owned()));
         let shader = core_result(
-            self.instance()
+            self.0
+                .instance()
                 .device_create_shader_module::<crate::Backend>(
                     device,
-                    &descriptor.to_core(&self.table()),
+                    &descriptor.to_core(&self.0.table()),
                     code,
                     None,
                 ),
         )
         .unwrap();
 
-        self.table().push(shader).unwrap()
+        self.0.table().push(shader).unwrap()
     }
 
     fn create_render_pipeline(
@@ -305,9 +331,9 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<Device>,
         descriptor: webgpu::GpuRenderPipelineDescriptor,
     ) -> Resource<wgpu_core::id::RenderPipelineId> {
-        let host_device = self.table().get(&device).unwrap().device;
+        let host_device = self.0.table().get(&device).unwrap().device;
 
-        let descriptor = descriptor.to_core(&self.table());
+        let descriptor = descriptor.to_core(&self.0.table());
 
         let implicit_pipeline_ids = match descriptor.layout {
             Some(_) => None,
@@ -317,7 +343,8 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
             }),
         };
         let render_pipeline = core_result(
-            self.instance()
+            self.0
+                .instance()
                 .device_create_render_pipeline::<crate::Backend>(
                     host_device,
                     &descriptor,
@@ -327,36 +354,38 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         )
         .unwrap();
 
-        self.table().push_child(render_pipeline, &device).unwrap()
+        self.0.table().push_child(render_pipeline, &device).unwrap()
     }
 
     fn queue(&mut self, device: Resource<Device>) -> Resource<wgpu_core::id::QueueId> {
-        let queue = self.table().get(&device).unwrap().queue;
-        self.table().push(queue).unwrap()
+        let queue = self.0.table().get(&device).unwrap().queue;
+        self.0.table().push(queue).unwrap()
     }
 
     fn features(
         &mut self,
         device: Resource<webgpu::GpuDevice>,
     ) -> Resource<webgpu::GpuSupportedFeatures> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
         let features = self
+            .0
             .instance()
             .device_features::<crate::Backend>(device)
             .unwrap();
-        self.table().push(features).unwrap()
+        self.0.table().push(features).unwrap()
     }
 
     fn limits(
         &mut self,
         device: Resource<webgpu::GpuDevice>,
     ) -> Resource<webgpu::GpuSupportedLimits> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
         let limits = self
+            .0
             .instance()
             .device_limits::<crate::Backend>(device)
             .unwrap();
-        self.table().push(limits).unwrap()
+        self.0.table().push(limits).unwrap()
     }
 
     fn destroy(&mut self, _device: Resource<webgpu::GpuDevice>) {
@@ -368,11 +397,11 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<webgpu::GpuDevice>,
         descriptor: webgpu::GpuBufferDescriptor,
     ) -> Resource<webgpu::GpuBuffer> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
 
-        let buffer = core_result(self.instance().device_create_buffer::<crate::Backend>(
+        let buffer = core_result(self.0.instance().device_create_buffer::<crate::Backend>(
             device,
-            &descriptor.to_core(&self.table()),
+            &descriptor.to_core(&self.0.table()),
             None,
         ))
         .unwrap();
@@ -382,7 +411,7 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
             mapped: None,
         };
 
-        self.table().push(buffer).unwrap()
+        self.0.table().push(buffer).unwrap()
     }
 
     fn create_texture(
@@ -390,15 +419,15 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<webgpu::GpuDevice>,
         descriptor: webgpu::GpuTextureDescriptor,
     ) -> Resource<webgpu::GpuTexture> {
-        let device = self.table().get(&device).unwrap().device;
-        let texture = core_result(self.instance().device_create_texture::<crate::Backend>(
+        let device = self.0.table().get(&device).unwrap().device;
+        let texture = core_result(self.0.instance().device_create_texture::<crate::Backend>(
             device,
-            &descriptor.to_core(&self.table()),
+            &descriptor.to_core(&self.0.table()),
             None,
         ))
         .unwrap();
 
-        self.table().push(texture).unwrap()
+        self.0.table().push(texture).unwrap()
     }
 
     fn create_sampler(
@@ -406,18 +435,18 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<webgpu::GpuDevice>,
         descriptor: Option<webgpu::GpuSamplerDescriptor>,
     ) -> Resource<webgpu::GpuSampler> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
 
         let descriptor = descriptor.unwrap();
 
-        let sampler = core_result(self.instance().device_create_sampler::<crate::Backend>(
+        let sampler = core_result(self.0.instance().device_create_sampler::<crate::Backend>(
             device,
-            &descriptor.to_core(&self.table()),
+            &descriptor.to_core(&self.0.table()),
             None,
         ))
         .unwrap();
 
-        self.table().push(sampler).unwrap()
+        self.0.table().push(sampler).unwrap()
     }
 
     fn import_external_texture(
@@ -433,19 +462,20 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<webgpu::GpuDevice>,
         descriptor: webgpu::GpuBindGroupLayoutDescriptor,
     ) -> Resource<webgpu::GpuBindGroupLayout> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
 
         let bind_group_layout = core_result(
-            self.instance()
+            self.0
+                .instance()
                 .device_create_bind_group_layout::<crate::Backend>(
                     device,
-                    &descriptor.to_core(&self.table()),
+                    &descriptor.to_core(&self.0.table()),
                     None,
                 ),
         )
         .unwrap();
 
-        self.table().push(bind_group_layout).unwrap()
+        self.0.table().push(bind_group_layout).unwrap()
     }
 
     fn create_pipeline_layout(
@@ -453,19 +483,20 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<webgpu::GpuDevice>,
         descriptor: webgpu::GpuPipelineLayoutDescriptor,
     ) -> Resource<webgpu::GpuPipelineLayout> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
 
         let pipeline_layout = core_result(
-            self.instance()
+            self.0
+                .instance()
                 .device_create_pipeline_layout::<crate::Backend>(
                     device,
-                    &descriptor.to_core(&self.table()),
+                    &descriptor.to_core(&self.0.table()),
                     None,
                 ),
         )
         .unwrap();
 
-        self.table().push(pipeline_layout).unwrap()
+        self.0.table().push(pipeline_layout).unwrap()
     }
 
     fn create_bind_group(
@@ -473,16 +504,20 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<webgpu::GpuDevice>,
         descriptor: webgpu::GpuBindGroupDescriptor,
     ) -> Resource<webgpu::GpuBindGroup> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
 
-        let bind_group = core_result(self.instance().device_create_bind_group::<crate::Backend>(
-            device,
-            &descriptor.to_core(&self.table()),
-            None,
-        ))
+        let bind_group = core_result(
+            self.0
+                .instance()
+                .device_create_bind_group::<crate::Backend>(
+                    device,
+                    &descriptor.to_core(&self.0.table()),
+                    None,
+                ),
+        )
         .unwrap();
 
-        self.table().push(bind_group).unwrap()
+        self.0.table().push(bind_group).unwrap()
     }
 
     fn create_compute_pipeline(
@@ -490,7 +525,7 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         device: Resource<webgpu::GpuDevice>,
         descriptor: webgpu::GpuComputePipelineDescriptor,
     ) -> Resource<webgpu::GpuComputePipeline> {
-        let device = self.table().get(&device).unwrap().device;
+        let device = self.0.table().get(&device).unwrap().device;
 
         let implicit_pipeline_ids = match &descriptor.layout {
             webgpu::GpuPipelineLayoutOrGpuAutoLayoutMode::GpuPipelineLayout(_) => None,
@@ -503,16 +538,17 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
         };
 
         let compute_pipeline = core_result(
-            self.instance()
+            self.0
+                .instance()
                 .device_create_compute_pipeline::<crate::Backend>(
                     device,
-                    &descriptor.to_core(&self.table()),
+                    &descriptor.to_core(&self.0.table()),
                     None,
                     implicit_pipeline_ids,
                 ),
         )
         .unwrap();
-        self.table().push(compute_pipeline).unwrap()
+        self.0.table().push(compute_pipeline).unwrap()
     }
 
     // fn create_compute_pipeline_async(
@@ -589,14 +625,14 @@ impl webgpu::HostGpuDevice for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuTexture for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuTexture for WasiWebGpuImpl<T> {
     fn from_graphics_buffer(
         &mut self,
         buffer: Resource<GraphicsContextBuffer>,
     ) -> Resource<wgpu_core::id::TextureId> {
-        let host_buffer = self.table().delete(buffer).unwrap();
+        let host_buffer = self.0.table().delete(buffer).unwrap();
         let host_buffer: wgpu_core::id::TextureId = host_buffer.inner_type();
-        self.table().push(host_buffer).unwrap()
+        self.0.table().push(host_buffer).unwrap()
     }
 
     fn create_view(
@@ -604,18 +640,18 @@ impl webgpu::HostGpuTexture for dyn WasiWebGpuView + '_ {
         texture: Resource<wgpu_core::id::TextureId>,
         descriptor: Option<webgpu::GpuTextureViewDescriptor>,
     ) -> Resource<wgpu_core::id::TextureViewId> {
-        let texture_id = *self.table().get(&texture).unwrap();
+        let texture_id = *self.0.table().get(&texture).unwrap();
         let texture_view = core_result(
-            self.instance().texture_create_view::<crate::Backend>(
+            self.0.instance().texture_create_view::<crate::Backend>(
                 texture_id,
                 &descriptor
-                    .map(|d| d.to_core(&self.table()))
+                    .map(|d| d.to_core(&self.0.table()))
                     .unwrap_or_default(),
                 None,
             ),
         )
         .unwrap();
-        self.table().push(texture_view).unwrap()
+        self.0.table().push(texture_view).unwrap()
     }
 
     fn drop(&mut self, _rep: Resource<wgpu_core::id::TextureId>) -> wasmtime::Result<()> {
@@ -674,7 +710,7 @@ impl webgpu::HostGpuTexture for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuTextureView for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuTextureView for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<wgpu_core::id::TextureViewId>) -> wasmtime::Result<()> {
         Ok(())
     }
@@ -688,7 +724,7 @@ impl webgpu::HostGpuTextureView for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuCommandBuffer for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuCommandBuffer for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<()> {
         // self.web_gpu_host.command_buffers.remove(&rep.rep());
         Ok(())
@@ -703,7 +739,7 @@ impl webgpu::HostGpuCommandBuffer for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuShaderModule for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuShaderModule for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::GpuShaderModule>) -> wasmtime::Result<()> {
         // self.web_gpu_host.shaders.remove(&rep.rep());
         Ok(())
@@ -725,7 +761,7 @@ impl webgpu::HostGpuShaderModule for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuRenderPipeline for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuRenderPipeline for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::GpuRenderPipeline>) -> wasmtime::Result<()> {
         // TODO:
         Ok(())
@@ -748,19 +784,19 @@ impl webgpu::HostGpuRenderPipeline for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuAdapter for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
     fn request_device(
         &mut self,
         adapter: Resource<wgpu_core::id::AdapterId>,
         descriptor: Option<webgpu::GpuDeviceDescriptor>,
     ) -> Resource<webgpu::GpuDevice> {
-        let adapter_id = *self.table().get(&adapter).unwrap();
+        let adapter_id = *self.0.table().get(&adapter).unwrap();
 
         let (device_id, queue_id) = core_results_2(
-            self.instance().adapter_request_device::<crate::Backend>(
+            self.0.instance().adapter_request_device::<crate::Backend>(
                 adapter_id,
                 &descriptor
-                    .map(|d| d.to_core(&self.table()))
+                    .map(|d| d.to_core(&self.0.table()))
                     .unwrap_or_default(),
                 None,
                 None,
@@ -770,6 +806,7 @@ impl webgpu::HostGpuAdapter for dyn WasiWebGpuView + '_ {
         .unwrap();
 
         let device = self
+            .0
             .table()
             .push(Device {
                 device: device_id,
@@ -796,12 +833,13 @@ impl webgpu::HostGpuAdapter for dyn WasiWebGpuView + '_ {
         &mut self,
         adapter: Resource<wgpu_core::id::AdapterId>,
     ) -> Resource<webgpu::GpuSupportedLimits> {
-        let adapter = *self.table().get(&adapter).unwrap();
+        let adapter = *self.0.table().get(&adapter).unwrap();
         let limits = self
+            .0
             .instance()
             .adapter_limits::<crate::Backend>(adapter)
             .unwrap();
-        self.table().push(limits).unwrap()
+        self.0.table().push(limits).unwrap()
     }
 
     fn is_fallback_adapter(
@@ -815,17 +853,18 @@ impl webgpu::HostGpuAdapter for dyn WasiWebGpuView + '_ {
         &mut self,
         adapter: Resource<wgpu_core::id::AdapterId>,
     ) -> Resource<webgpu::GpuAdapterInfo> {
-        let adapter_id = *self.table().get(&adapter).unwrap();
+        let adapter_id = *self.0.table().get(&adapter).unwrap();
         let info = self
+            .0
             .instance()
             .adapter_get_info::<crate::Backend>(adapter_id)
             .unwrap();
-        let info = self.table().push(info).unwrap();
+        let info = self.0.table().push(info).unwrap();
         info
     }
 }
 
-impl webgpu::HostGpuQueue for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuQueue for WasiWebGpuImpl<T> {
     fn submit(
         &mut self,
         queue: Resource<wgpu_core::id::QueueId>,
@@ -833,11 +872,12 @@ impl webgpu::HostGpuQueue for dyn WasiWebGpuView + '_ {
     ) {
         let command_buffers = val
             .into_iter()
-            .map(|buffer| self.table().delete(buffer).unwrap())
+            .map(|buffer| self.0.table().delete(buffer).unwrap())
             .collect::<Vec<_>>();
 
-        let queue = *self.table().get(&queue).unwrap();
-        self.instance()
+        let queue = *self.0.table().get(&queue).unwrap();
+        self.0
+            .instance()
             .queue_submit::<crate::Backend>(queue, &command_buffers)
             .unwrap();
     }
@@ -860,8 +900,8 @@ impl webgpu::HostGpuQueue for dyn WasiWebGpuView + '_ {
         data: Vec<u8>,
         size: Option<webgpu::GpuSize64>,
     ) {
-        let queue = *self.table().get(&queue).unwrap();
-        let buffer = self.table().get(&buffer).unwrap().buffer;
+        let queue = *self.0.table().get(&queue).unwrap();
+        let buffer = self.0.table().get(&buffer).unwrap().buffer;
         let mut data = &data[..];
         if let Some(data_offset) = data_offset {
             let data_offset = data_offset as usize;
@@ -871,7 +911,8 @@ impl webgpu::HostGpuQueue for dyn WasiWebGpuView + '_ {
             let size = size as usize;
             data = &data[..size];
         }
-        self.instance()
+        self.0
+            .instance()
             .queue_write_buffer::<crate::Backend>(queue, buffer, buffer_offset, &data)
             .unwrap();
     }
@@ -884,14 +925,15 @@ impl webgpu::HostGpuQueue for dyn WasiWebGpuView + '_ {
         data_layout: webgpu::GpuImageDataLayout,
         size: webgpu::GpuExtent3D,
     ) {
-        let queue = *self.table().get(&queue).unwrap();
-        self.instance()
+        let queue = *self.0.table().get(&queue).unwrap();
+        self.0
+            .instance()
             .queue_write_texture::<crate::Backend>(
                 queue,
-                &destination.to_core(&self.table()),
+                &destination.to_core(&self.0.table()),
                 &data,
-                &data_layout.to_core(&self.table()),
-                &size.to_core(&self.table()),
+                &data_layout.to_core(&self.0.table()),
+                &size.to_core(&self.0.table()),
             )
             .unwrap();
     }
@@ -915,7 +957,7 @@ impl webgpu::HostGpuQueue for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuCommandEncoder for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
     fn begin_render_pass(
         &mut self,
         command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
@@ -924,13 +966,13 @@ impl webgpu::HostGpuCommandEncoder for dyn WasiWebGpuView + '_ {
         // can't use to_core because depth_stencil_attachment is Option<&x>.
         let depth_stencil_attachment = descriptor
             .depth_stencil_attachment
-            .map(|d| d.to_core(&self.table()));
+            .map(|d| d.to_core(&self.0.table()));
         let descriptor = wgpu_core::command::RenderPassDescriptor {
             label: descriptor.label.map(|l| l.into()),
             color_attachments: descriptor
                 .color_attachments
                 .into_iter()
-                .map(|c| Some(c.to_core(&self.table())))
+                .map(|c| Some(c.to_core(&self.0.table())))
                 .collect::<Vec<_>>()
                 .into(),
             depth_stencil_attachment: depth_stencil_attachment.as_ref(),
@@ -941,11 +983,11 @@ impl webgpu::HostGpuCommandEncoder for dyn WasiWebGpuView + '_ {
             ..Default::default()
         };
         let render_pass = wgpu_core::command::RenderPass::new(
-            command_encoder.to_core(&self.table()),
+            command_encoder.to_core(&self.0.table()),
             &descriptor,
         );
 
-        self.table().push(render_pass).unwrap()
+        self.0.table().push(render_pass).unwrap()
     }
 
     fn finish(
@@ -953,17 +995,17 @@ impl webgpu::HostGpuCommandEncoder for dyn WasiWebGpuView + '_ {
         command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
         descriptor: Option<webgpu::GpuCommandBufferDescriptor>,
     ) -> Resource<webgpu::GpuCommandBuffer> {
-        let command_encoder = self.table().delete(command_encoder).unwrap();
+        let command_encoder = self.0.table().delete(command_encoder).unwrap();
         let command_buffer = core_result(
-            self.instance().command_encoder_finish::<crate::Backend>(
+            self.0.instance().command_encoder_finish::<crate::Backend>(
                 command_encoder,
                 &descriptor
-                    .map(|d| d.to_core(&self.table()))
+                    .map(|d| d.to_core(&self.0.table()))
                     .unwrap_or_default(),
             ),
         )
         .unwrap();
-        self.table().push(command_buffer).unwrap()
+        self.0.table().push(command_buffer).unwrap()
     }
 
     fn drop(&mut self, _rep: Resource<wgpu_core::id::CommandEncoderId>) -> wasmtime::Result<()> {
@@ -975,18 +1017,18 @@ impl webgpu::HostGpuCommandEncoder for dyn WasiWebGpuView + '_ {
         command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
         descriptor: Option<webgpu::GpuComputePassDescriptor>,
     ) -> Resource<webgpu::GpuComputePassEncoder> {
-        let command_encoder = self.table().get(&command_encoder).unwrap();
+        let command_encoder = self.0.table().get(&command_encoder).unwrap();
         let compute_pass = wgpu_core::command::ComputePass::new(
             *command_encoder,
             &wgpu_core::command::ComputePassDescriptor {
                 label: Default::default(),
                 timestamp_writes: descriptor
-                    .map(|d| d.timestamp_writes.map(|tw| tw.to_core(&self.table())))
+                    .map(|d| d.timestamp_writes.map(|tw| tw.to_core(&self.0.table())))
                     .flatten()
                     .as_ref(),
             },
         );
-        self.table().push(compute_pass).unwrap()
+        self.0.table().push(compute_pass).unwrap()
     }
 
     fn copy_buffer_to_buffer(
@@ -998,10 +1040,11 @@ impl webgpu::HostGpuCommandEncoder for dyn WasiWebGpuView + '_ {
         destination_offset: webgpu::GpuSize64,
         size: webgpu::GpuSize64,
     ) {
-        let command_encoder = *self.table().get(&command_encoder).unwrap();
-        let source = self.table().get(&source).unwrap().buffer;
-        let destination = self.table().get(&destination).unwrap().buffer;
-        self.instance()
+        let command_encoder = *self.0.table().get(&command_encoder).unwrap();
+        let source = self.0.table().get(&source).unwrap().buffer;
+        let destination = self.0.table().get(&destination).unwrap().buffer;
+        self.0
+            .instance()
             .command_encoder_copy_buffer_to_buffer::<crate::Backend>(
                 command_encoder,
                 source,
@@ -1066,7 +1109,7 @@ impl webgpu::HostGpuCommandEncoder for dyn WasiWebGpuView + '_ {
     }
 
     fn label(&mut self, command_encoder: Resource<wgpu_core::id::CommandEncoderId>) -> String {
-        let _command_encoder = self.table().get(&command_encoder).unwrap();
+        let _command_encoder = self.0.table().get(&command_encoder).unwrap();
         // TODO: return real label
         String::new()
     }
@@ -1096,14 +1139,14 @@ impl webgpu::HostGpuCommandEncoder for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuRenderPassEncoder for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
     fn set_pipeline(
         &mut self,
         render_pass: Resource<wgpu_core::command::RenderPass>,
         pipeline: Resource<webgpu::GpuRenderPipeline>,
     ) {
-        let pipeline = pipeline.to_core(&self.table());
-        let render_pass = self.table().get_mut(&render_pass).unwrap();
+        let pipeline = pipeline.to_core(&self.0.table());
+        let render_pass = self.0.table().get_mut(&render_pass).unwrap();
         wgpu_core::command::render_commands::wgpu_render_pass_set_pipeline(render_pass, pipeline);
     }
 
@@ -1115,7 +1158,7 @@ impl webgpu::HostGpuRenderPassEncoder for dyn WasiWebGpuView + '_ {
         first_vertex: webgpu::GpuSize32,
         first_instance: webgpu::GpuSize32,
     ) {
-        let rpass = self.table().get_mut(&rpass).unwrap();
+        let rpass = self.0.table().get_mut(&rpass).unwrap();
 
         wgpu_core::command::render_commands::wgpu_render_pass_draw(
             rpass,
@@ -1131,15 +1174,16 @@ impl webgpu::HostGpuRenderPassEncoder for dyn WasiWebGpuView + '_ {
         rpass: Resource<wgpu_core::command::RenderPass>,
         non_standard_encoder: Resource<wgpu_core::id::CommandEncoderId>,
     ) {
-        let encoder = *self.table().get(&non_standard_encoder).unwrap();
-        let rpass = self.table().delete(rpass).unwrap();
-        self.instance()
+        let encoder = *self.0.table().get(&non_standard_encoder).unwrap();
+        let rpass = self.0.table().delete(rpass).unwrap();
+        self.0
+            .instance()
             .command_encoder_run_render_pass::<crate::Backend>(encoder, &rpass)
             .unwrap();
     }
 
     fn drop(&mut self, cwr: Resource<wgpu_core::command::RenderPass>) -> wasmtime::Result<()> {
-        self.table().delete(cwr).unwrap();
+        self.0.table().delete(cwr).unwrap();
         Ok(())
     }
 
@@ -1238,8 +1282,8 @@ impl webgpu::HostGpuRenderPassEncoder for dyn WasiWebGpuView + '_ {
         bind_group: Resource<webgpu::GpuBindGroup>,
         dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
     ) {
-        let bind_group = *self.table().get(&bind_group).unwrap();
-        let mut render_pass = self.table().get_mut(&render_pass).unwrap();
+        let bind_group = *self.0.table().get(&bind_group).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap();
 
         let dynamic_offsets = dynamic_offsets.unwrap();
         wgpu_core::command::render_commands::wgpu_render_pass_set_bind_group(
@@ -1269,8 +1313,8 @@ impl webgpu::HostGpuRenderPassEncoder for dyn WasiWebGpuView + '_ {
         offset: webgpu::GpuSize64,
         size: webgpu::GpuSize64,
     ) {
-        let buffer_id = self.table().get(&buffer).unwrap().buffer;
-        let mut render_pass = self.table().get_mut(&render_pass).unwrap();
+        let buffer_id = self.0.table().get(&buffer).unwrap().buffer;
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap();
 
         wgpu_core::command::render_commands::wgpu_render_pass_set_vertex_buffer(
             &mut render_pass,
@@ -1312,7 +1356,7 @@ impl webgpu::HostGpuRenderPassEncoder for dyn WasiWebGpuView + '_ {
     }
 }
 
-impl webgpu::HostGpuUncapturedErrorEvent for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuUncapturedErrorEvent for WasiWebGpuImpl<T> {
     fn new(
         &mut self,
         _type_: String,
@@ -1332,7 +1376,7 @@ impl webgpu::HostGpuUncapturedErrorEvent for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuInternalError for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuInternalError for WasiWebGpuImpl<T> {
     fn new(&mut self, _message: String) -> Resource<webgpu::GpuInternalError> {
         todo!()
     }
@@ -1345,7 +1389,7 @@ impl webgpu::HostGpuInternalError for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuOutOfMemoryError for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuOutOfMemoryError for WasiWebGpuImpl<T> {
     fn new(&mut self, _message: String) -> Resource<webgpu::GpuOutOfMemoryError> {
         todo!()
     }
@@ -1358,7 +1402,7 @@ impl webgpu::HostGpuOutOfMemoryError for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuValidationError for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuValidationError for WasiWebGpuImpl<T> {
     fn new(&mut self, _message: String) -> Resource<webgpu::GpuValidationError> {
         todo!()
     }
@@ -1371,7 +1415,7 @@ impl webgpu::HostGpuValidationError for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuError for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuError for WasiWebGpuImpl<T> {
     fn message(&mut self, _self_: Resource<webgpu::GpuError>) -> String {
         todo!()
     }
@@ -1380,7 +1424,7 @@ impl webgpu::HostGpuError for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuDeviceLostInfo for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuDeviceLostInfo for WasiWebGpuImpl<T> {
     fn reason(
         &mut self,
         _self_: Resource<webgpu::GpuDeviceLostInfo>,
@@ -1396,7 +1440,7 @@ impl webgpu::HostGpuDeviceLostInfo for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuCanvasContext for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuCanvasContext for WasiWebGpuImpl<T> {
     fn canvas(
         &mut self,
         _self_: Resource<webgpu::GpuCanvasContext>,
@@ -1427,7 +1471,7 @@ impl webgpu::HostGpuCanvasContext for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuRenderBundle for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuRenderBundle for WasiWebGpuImpl<T> {
     fn label(&mut self, _self_: Resource<webgpu::GpuRenderBundle>) -> String {
         todo!()
     }
@@ -1440,14 +1484,14 @@ impl webgpu::HostGpuRenderBundle for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuComputePassEncoder for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> {
     fn set_pipeline(
         &mut self,
         encoder: Resource<webgpu::GpuComputePassEncoder>,
         pipeline: Resource<webgpu::GpuComputePipeline>,
     ) {
-        let pipeline = *self.table().get(&pipeline).unwrap();
-        let encoder = self.table().get_mut(&encoder).unwrap();
+        let pipeline = *self.0.table().get(&pipeline).unwrap();
+        let encoder = self.0.table().get_mut(&encoder).unwrap();
         wgpu_core::command::compute_commands::wgpu_compute_pass_set_pipeline(encoder, pipeline);
     }
 
@@ -1458,7 +1502,7 @@ impl webgpu::HostGpuComputePassEncoder for dyn WasiWebGpuView + '_ {
         workgroup_count_y: Option<webgpu::GpuSize32>,
         workgroup_count_z: Option<webgpu::GpuSize32>,
     ) {
-        let encoder = self.table().get_mut(&encoder).unwrap();
+        let encoder = self.0.table().get_mut(&encoder).unwrap();
         wgpu_core::command::compute_commands::wgpu_compute_pass_dispatch_workgroups(
             encoder,
             workgroup_count_x,
@@ -1481,9 +1525,10 @@ impl webgpu::HostGpuComputePassEncoder for dyn WasiWebGpuView + '_ {
         cpass: Resource<wgpu_core::command::ComputePass>,
         non_standard_encoder: Resource<wgpu_core::id::CommandEncoderId>,
     ) {
-        let encoder = *self.table().get(&non_standard_encoder).unwrap();
-        let cpass = self.table().delete(cpass).unwrap();
-        self.instance()
+        let encoder = *self.0.table().get(&non_standard_encoder).unwrap();
+        let cpass = self.0.table().delete(cpass).unwrap();
+        self.0
+            .instance()
             .command_encoder_run_compute_pass::<crate::Backend>(encoder, &cpass)
             .unwrap();
     }
@@ -1513,7 +1558,7 @@ impl webgpu::HostGpuComputePassEncoder for dyn WasiWebGpuView + '_ {
         cpass: Resource<webgpu::GpuComputePassEncoder>,
         label: String,
     ) {
-        let cpass = self.table().get_mut(&cpass).unwrap();
+        let cpass = self.0.table().get_mut(&cpass).unwrap();
         wgpu_core::command::compute_commands::wgpu_compute_pass_insert_debug_marker(
             cpass, &label, 0,
         );
@@ -1526,8 +1571,8 @@ impl webgpu::HostGpuComputePassEncoder for dyn WasiWebGpuView + '_ {
         bind_group: Resource<webgpu::GpuBindGroup>,
         dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
     ) {
-        let bind_group = *self.table().get(&bind_group).unwrap();
-        let encoder = self.table().get_mut(&encoder).unwrap();
+        let bind_group = *self.0.table().get(&bind_group).unwrap();
+        let encoder = self.0.table().get_mut(&encoder).unwrap();
         let dynamic_offsets = dynamic_offsets.unwrap();
         wgpu_core::command::compute_commands::wgpu_compute_pass_set_bind_group(
             encoder,
@@ -1541,7 +1586,7 @@ impl webgpu::HostGpuComputePassEncoder for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuPipelineError for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuPipelineError for WasiWebGpuImpl<T> {
     fn new(
         &mut self,
         _message: Option<String>,
@@ -1561,7 +1606,7 @@ impl webgpu::HostGpuPipelineError for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuCompilationMessage for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuCompilationMessage for WasiWebGpuImpl<T> {
     fn message(&mut self, _self_: Resource<webgpu::GpuCompilationMessage>) -> String {
         todo!()
     }
@@ -1593,12 +1638,12 @@ impl webgpu::HostGpuCompilationMessage for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuCompilationInfo for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuCompilationInfo for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::GpuCompilationInfo>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostGpuQuerySet for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuQuerySet for WasiWebGpuImpl<T> {
     fn destroy(&mut self, _self_: Resource<webgpu::GpuQuerySet>) {
         todo!()
     }
@@ -1623,7 +1668,7 @@ impl webgpu::HostGpuQuerySet for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuRenderBundleEncoder for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuImpl<T> {
     fn finish(
         &mut self,
         _self_: Resource<webgpu::GpuRenderBundleEncoder>,
@@ -1745,7 +1790,7 @@ impl webgpu::HostGpuRenderBundleEncoder for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuComputePipeline for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuComputePipeline for WasiWebGpuImpl<T> {
     fn label(&mut self, _self_: Resource<webgpu::GpuComputePipeline>) -> String {
         todo!()
     }
@@ -1759,13 +1804,14 @@ impl webgpu::HostGpuComputePipeline for dyn WasiWebGpuView + '_ {
         compute_pipeline: Resource<webgpu::GpuComputePipeline>,
         index: u32,
     ) -> Resource<webgpu::GpuBindGroupLayout> {
-        let pipeline_id = *self.table().get(&compute_pipeline).unwrap();
+        let pipeline_id = *self.0.table().get(&compute_pipeline).unwrap();
         let bind_group_layout = core_result(
-            self.instance()
+            self.0
+                .instance()
                 .compute_pipeline_get_bind_group_layout::<crate::Backend>(pipeline_id, index, None),
         )
         .unwrap();
-        self.table().push(bind_group_layout).unwrap()
+        self.0.table().push(bind_group_layout).unwrap()
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuComputePipeline>) -> wasmtime::Result<()> {
@@ -1773,7 +1819,7 @@ impl webgpu::HostGpuComputePipeline for dyn WasiWebGpuView + '_ {
         Ok(())
     }
 }
-impl webgpu::HostGpuBindGroup for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuBindGroup for WasiWebGpuImpl<T> {
     fn label(&mut self, _self_: Resource<webgpu::GpuBindGroup>) -> String {
         todo!()
     }
@@ -1786,7 +1832,7 @@ impl webgpu::HostGpuBindGroup for dyn WasiWebGpuView + '_ {
         Ok(())
     }
 }
-impl webgpu::HostGpuPipelineLayout for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuPipelineLayout for WasiWebGpuImpl<T> {
     fn label(&mut self, _self_: Resource<webgpu::GpuPipelineLayout>) -> String {
         todo!()
     }
@@ -1799,7 +1845,7 @@ impl webgpu::HostGpuPipelineLayout for dyn WasiWebGpuView + '_ {
         Ok(())
     }
 }
-impl webgpu::HostGpuBindGroupLayout for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuBindGroupLayout for WasiWebGpuImpl<T> {
     fn label(&mut self, _self_: Resource<webgpu::GpuBindGroupLayout>) -> String {
         todo!()
     }
@@ -1813,7 +1859,7 @@ impl webgpu::HostGpuBindGroupLayout for dyn WasiWebGpuView + '_ {
         Ok(())
     }
 }
-impl webgpu::HostGpuExternalTexture for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuExternalTexture for WasiWebGpuImpl<T> {
     fn label(&mut self, _self_: Resource<webgpu::GpuExternalTexture>) -> String {
         todo!()
     }
@@ -1826,7 +1872,7 @@ impl webgpu::HostGpuExternalTexture for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuSampler for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuSampler for WasiWebGpuImpl<T> {
     fn label(&mut self, _self_: Resource<webgpu::GpuSampler>) -> String {
         todo!()
     }
@@ -1842,7 +1888,7 @@ impl webgpu::HostGpuSampler for dyn WasiWebGpuView + '_ {
 }
 
 #[async_trait::async_trait]
-impl webgpu::HostGpuBuffer for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
     fn size(&mut self, _self_: Resource<webgpu::GpuBuffer>) -> webgpu::GpuSize64Out {
         todo!()
     }
@@ -1862,8 +1908,8 @@ impl webgpu::HostGpuBuffer for dyn WasiWebGpuView + '_ {
         offset: Option<webgpu::GpuSize64>,
         size: Option<webgpu::GpuSize64>,
     ) {
-        let buffer = self.table().get(&buffer).unwrap().buffer;
-        let instance = self.instance();
+        let buffer = self.0.table().get(&buffer).unwrap().buffer;
+        let instance = self.0.instance();
         CallbackFuture::new(Box::new(
             move |resolve: Box<
                 dyn FnOnce(Box<Result<(), wgpu_core::resource::BufferAccessError>>) + Send,
@@ -1902,22 +1948,24 @@ impl webgpu::HostGpuBuffer for dyn WasiWebGpuView + '_ {
         size: Option<webgpu::GpuSize64>,
     ) -> Resource<webgpu::GpuBuffer> {
         let buffer_rep = buffer.rep();
-        let buffer_id = self.table().get(&buffer).unwrap().buffer;
+        let buffer_id = self.0.table().get(&buffer).unwrap().buffer;
         let (ptr, len) = self
+            .0
             .instance()
             .buffer_get_mapped_range::<crate::Backend>(buffer_id, offset.unwrap_or(0), size)
             .unwrap();
         let remote_buffer = BufferPtr { ptr, len };
-        let buffer = self.table().get_mut(&buffer).unwrap();
+        let buffer = self.0.table().get_mut(&buffer).unwrap();
         buffer.mapped = Some(remote_buffer);
         Resource::new_own(buffer_rep)
     }
 
     fn unmap(&mut self, buffer: Resource<webgpu::GpuBuffer>) {
-        let buffer = self.table().get_mut(&buffer).unwrap();
+        let buffer = self.0.table().get_mut(&buffer).unwrap();
         buffer.mapped.take().unwrap();
         let buffer_id = buffer.buffer;
-        self.instance()
+        self.0
+            .instance()
             .buffer_unmap::<crate::Backend>(buffer_id)
             .unwrap();
     }
@@ -1938,20 +1986,21 @@ impl webgpu::HostGpuBuffer for dyn WasiWebGpuView + '_ {
         Ok(())
     }
 }
-impl webgpu::HostGpu for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
     fn request_adapter(
         &mut self,
         _self_: Resource<webgpu::Gpu>,
         _options: Option<webgpu::GpuRequestAdapterOptions>,
     ) -> Resource<wgpu_core::id::AdapterId> {
         let adapter = self
+            .0
             .instance()
             .request_adapter(
                 &Default::default(),
                 wgpu_core::instance::AdapterInputs::Mask(wgpu_types::Backends::all(), |_| None),
             )
             .unwrap();
-        self.table().push(adapter).unwrap()
+        self.0.table().push(adapter).unwrap()
     }
 
     fn get_preferred_canvas_format(
@@ -1972,7 +2021,7 @@ impl webgpu::HostGpu for dyn WasiWebGpuView + '_ {
         Ok(())
     }
 }
-impl webgpu::HostGpuAdapterInfo for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuAdapterInfo for WasiWebGpuImpl<T> {
     fn vendor(&mut self, _self_: Resource<webgpu::GpuAdapterInfo>) -> String {
         todo!()
     }
@@ -1994,7 +2043,7 @@ impl webgpu::HostGpuAdapterInfo for dyn WasiWebGpuView + '_ {
         Ok(())
     }
 }
-impl webgpu::HostWgslLanguageFeatures for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostWgslLanguageFeatures for WasiWebGpuImpl<T> {
     fn has(&mut self, _self_: Resource<webgpu::WgslLanguageFeatures>, _key: String) -> bool {
         todo!()
     }
@@ -2003,9 +2052,9 @@ impl webgpu::HostWgslLanguageFeatures for dyn WasiWebGpuView + '_ {
         todo!()
     }
 }
-impl webgpu::HostGpuSupportedFeatures for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
     fn has(&mut self, features: Resource<webgpu::GpuSupportedFeatures>, query: String) -> bool {
-        let features = self.table().get(&features).unwrap();
+        let features = self.0.table().get(&features).unwrap();
         match query.as_str() {
             "depth-clip-control" => features.contains(wgpu_types::Features::DEPTH_CLIP_CONTROL),
             "timestamp-query" => features.contains(wgpu_types::Features::TIMESTAMP_QUERY),
@@ -2038,29 +2087,29 @@ impl webgpu::HostGpuSupportedFeatures for dyn WasiWebGpuView + '_ {
         Ok(())
     }
 }
-impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostGpuSupportedLimits for WasiWebGpuImpl<T> {
     fn max_texture_dimension1_d(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_texture_dimension_1d
     }
 
     fn max_texture_dimension2_d(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_texture_dimension_2d
     }
 
     fn max_texture_dimension3_d(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_texture_dimension_3d
     }
 
     fn max_texture_array_layers(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_texture_array_layers
     }
 
     fn max_bind_groups(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_bind_groups
     }
 
@@ -2072,7 +2121,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
     }
 
     fn max_bindings_per_bind_group(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_bindings_per_bind_group
     }
 
@@ -2080,7 +2129,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_dynamic_uniform_buffers_per_pipeline_layout
     }
 
@@ -2088,7 +2137,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_dynamic_storage_buffers_per_pipeline_layout
     }
 
@@ -2096,7 +2145,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_sampled_textures_per_shader_stage
     }
 
@@ -2104,7 +2153,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_samplers_per_shader_stage
     }
 
@@ -2112,7 +2161,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_storage_buffers_per_shader_stage
     }
 
@@ -2120,7 +2169,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_storage_textures_per_shader_stage
     }
 
@@ -2128,7 +2177,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_uniform_buffers_per_shader_stage
     }
 
@@ -2136,7 +2185,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u64 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_uniform_buffer_binding_size as u64
     }
 
@@ -2144,7 +2193,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u64 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_storage_buffer_binding_size as u64
     }
 
@@ -2152,7 +2201,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.min_uniform_buffer_offset_alignment
     }
 
@@ -2160,22 +2209,22 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.min_storage_buffer_offset_alignment
     }
 
     fn max_vertex_buffers(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_vertex_buffers
     }
 
     fn max_buffer_size(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u64 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_buffer_size
     }
 
     fn max_vertex_attributes(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_vertex_attributes
     }
 
@@ -2183,7 +2232,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_vertex_buffer_array_stride
     }
 
@@ -2191,7 +2240,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_inter_stage_shader_components
     }
 
@@ -2217,7 +2266,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_compute_workgroup_storage_size
     }
 
@@ -2225,7 +2274,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_compute_invocations_per_workgroup
     }
 
@@ -2233,7 +2282,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_compute_workgroup_size_x
     }
 
@@ -2241,7 +2290,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_compute_workgroup_size_y
     }
 
@@ -2249,7 +2298,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_compute_workgroup_size_z
     }
 
@@ -2257,7 +2306,7 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         &mut self,
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        let limits = self.table().get(&limits).unwrap();
+        let limits = self.0.table().get(&limits).unwrap();
         limits.max_compute_workgroups_per_dimension
     }
 
@@ -2266,62 +2315,62 @@ impl webgpu::HostGpuSupportedLimits for dyn WasiWebGpuView + '_ {
         Ok(())
     }
 }
-impl webgpu::HostAllowSharedBufferSource for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostAllowSharedBufferSource for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::AllowSharedBufferSource>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostPredefinedColorSpace for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostPredefinedColorSpace for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::PredefinedColorSpace>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostEventHandler for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostEventHandler for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::EventHandler>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostOffscreenCanvas for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostOffscreenCanvas for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::OffscreenCanvas>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostHtmlCanvasElement for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostHtmlCanvasElement for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::HtmlCanvasElement>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostVideoFrame for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostVideoFrame for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::VideoFrame>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostHtmlVideoElement for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostHtmlVideoElement for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::HtmlVideoElement>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostHtmlImageElement for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostHtmlImageElement for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::HtmlImageElement>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostImageData for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostImageData for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::ImageData>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostImageBitmap for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostImageBitmap for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::ImageBitmap>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostArrayBuffer for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostArrayBuffer for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::ArrayBuffer>) -> wasmtime::Result<()> {
         todo!()
     }
 }
-impl webgpu::HostUint32Array for dyn WasiWebGpuView + '_ {
+impl<T: WasiWebGpuView> webgpu::HostUint32Array for WasiWebGpuImpl<T> {
     fn drop(&mut self, _rep: Resource<webgpu::Uint32Array>) -> wasmtime::Result<()> {
         todo!()
     }
