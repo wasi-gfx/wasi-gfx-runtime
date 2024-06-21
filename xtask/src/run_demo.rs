@@ -1,34 +1,34 @@
 use anyhow::Context;
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use pico_args::Arguments;
 use xshell::Shell;
 
 lazy_static::lazy_static! {
-    static ref SUPPORTED_DEMOS: HashMap<&'static str, (&'static str, &'static str)> = {
-        let mut m = HashMap::new();
-        m.insert("skybox", ("skybox", "./target/example-skybox.wasm"));
-        m.insert("triangle", ("triangle", "./target/example-triangle.wasm"));
-        m.insert("fb-rectangle", ("rectangle_simple_buffer", "./target/example-rectangle_simple_buffer.wasm"));
-        m
+    static ref SUPPORTED_DEMOS: HashSet<&'static str> = {
+        let mut s = HashSet::new();
+        s.insert("skybox");
+        s.insert("triangle");
+        s.insert("rectangle_simple_buffer");
+        s
     };
 }
 
 pub(crate) fn run_demo(shell: Shell, mut args: Arguments) -> anyhow::Result<()> {
     let demo_name: String = args.opt_value_from_str("--name")?.ok_or_else(|| {
         eprintln!(
-            "Supported demos: {:#?}",
-            SUPPORTED_DEMOS.keys().cloned().collect::<Vec<_>>()
+            "Supported demos:\n- {}",
+            SUPPORTED_DEMOS.iter().cloned().collect::<Vec<_>>().join("\n- ")
         );
         anyhow::anyhow!("Demo name is required")
     })?;
 
-    let (demo_package, demo_binary_path) =
+    let demo_package =
         SUPPORTED_DEMOS.get(demo_name.as_str()).ok_or_else(|| {
             eprintln!(
-                "Unknown demo: {:#?}\nSupported demos: {:#?}",
+                "Unknown demo: {}\nSupported demos: {}",
                 demo_name,
-                SUPPORTED_DEMOS.keys().cloned().collect::<Vec<_>>()
+                SUPPORTED_DEMOS.iter().cloned().collect::<Vec<_>>().join("\n- ")
             );
             anyhow::anyhow!("Unsupported demo name")
         })?;
@@ -45,7 +45,7 @@ pub(crate) fn run_demo(shell: Shell, mut args: Arguments) -> anyhow::Result<()> 
 
     xshell::cmd!(
         shell,
-        "wasm-tools component new ./target/wasm32-unknown-unknown/release/{demo_package}.wasm -o {demo_binary_path}"
+        "wasm-tools component new ./target/wasm32-unknown-unknown/release/{demo_package}.wasm -o ./target/example-{demo_package}.wasm"
     )
     .quiet()
     .run()

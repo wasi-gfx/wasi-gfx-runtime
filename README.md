@@ -3,26 +3,6 @@ This is an attempt to get a wasi-webgpu spec proposal going. Everything here is 
 
 The main goal here is to get the webgpu spec into wasi, but there are other GUI related stuff here as well. 
 
-## Quick Start
-
-### Install `wit` Dependencies
-
-```shell
-wit-deps
-```
-
-### List Available Demos
-
-```shell
-cargo xtask run-demo
-```
-
-### Run a Demo
-
-```shell
-cargo xtask run-demo --name skybox
-```
-
 ## Webgpu parts:
 
 The webgpu parts should be based on the official webgpu spec.
