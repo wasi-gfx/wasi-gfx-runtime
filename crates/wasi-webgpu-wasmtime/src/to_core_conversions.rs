@@ -694,3 +694,19 @@ impl ToCore<wgpu_core::command::ComputePassTimestampWrites>
         }
     }
 }
+
+impl ToCore<wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId>> for webgpu::GpuImageCopyBuffer {
+    fn to_core(
+        self,
+        table: &ResourceTable,
+    ) -> wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId> {
+        wgpu_types::ImageCopyBuffer {
+            buffer: table.get(&self.buffer).unwrap().buffer,
+            layout: wgpu_types::ImageDataLayout {
+                offset: self.offset.unwrap(),
+                bytes_per_row: self.bytes_per_row,
+                rows_per_image: self.rows_per_image,
+            },
+        }
+    }
+}

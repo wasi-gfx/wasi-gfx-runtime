@@ -584,10 +584,10 @@ impl Example {
         );
 
         {
-            let rpass = encoder.begin_render_pass(webgpu::GpuRenderPassDescriptor {
+            let rpass = encoder.begin_render_pass(&webgpu::GpuRenderPassDescriptor {
                 label: None,
                 color_attachments: vec![webgpu::GpuRenderPassColorAttachment {
-                    view,
+                    view: &view,
                     resolve_target: None,
                     load_op: webgpu::GpuLoadOp::Clear,
                     store_op: webgpu::GpuStoreOp::Store,
