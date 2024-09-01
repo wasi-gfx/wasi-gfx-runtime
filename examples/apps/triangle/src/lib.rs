@@ -157,7 +157,7 @@ fn draw_triangle() {
             let render_pass_description = webgpu::GpuRenderPassDescriptor {
                 label: Some(String::from("fdsa")),
                 color_attachments: vec![webgpu::GpuRenderPassColorAttachment {
-                    view,
+                    view: &view,
                     depth_slice: None,
                     resolve_target: None,
                     clear_value: Some(webgpu::GpuColorDictOrListF64::GpuColorDict(
@@ -176,7 +176,7 @@ fn draw_triangle() {
                 timestamp_writes: None,
                 max_draw_count: None,
             };
-            let render_pass = encoder.begin_render_pass(render_pass_description);
+            let render_pass = encoder.begin_render_pass(&render_pass_description);
 
             render_pass.set_pipeline(&render_pipeline);
             render_pass.draw(3, 1, 0, 0);
