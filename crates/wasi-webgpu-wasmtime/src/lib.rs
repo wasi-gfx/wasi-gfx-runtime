@@ -19,6 +19,12 @@ use wasi_graphics_context_wasmtime::{DisplayApi, DrawApi, GraphicsContext, Graph
 
 use self::to_core_conversions::ToCore;
 
+/// Re-export of `wgpu_core` and `wgpu_types` so that runtime implementors don't need to keep track of what version of wgpu this crate is using.
+pub mod reexports {
+    pub use wgpu_core;
+    pub use wgpu_types;
+}
+
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub(crate) type Backend = wgpu_core::api::Vulkan;
 
