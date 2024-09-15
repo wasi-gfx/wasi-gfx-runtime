@@ -45,12 +45,29 @@ where
         val
     }
     let closure = type_annotate::<T, _>(|t| t);
+    wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(l, closure)?;
+    wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(l, closure)?;
+    add_only_mini_canvas_to_linker(l)?;
+    Ok(())
+}
+
+pub fn add_only_mini_canvas_to_linker<T>(
+    l: &mut wasmtime::component::Linker<T>,
+) -> wasmtime::Result<()>
+where
+    T: WasiMiniCanvasView,
+{
+    fn type_annotate<T, F>(val: F) -> F
+    where
+        F: Fn(&mut T) -> &mut dyn WasiMiniCanvasView,
+    {
+        val
+    }
+    let closure = type_annotate::<T, _>(|t| t);
     wasi::webgpu::mini_canvas::add_to_linker_get_host(l, closure)?;
     wasi::webgpu::animation_frame::add_to_linker_get_host(l, closure)?;
     wasi::webgpu::pointer_events::add_to_linker_get_host(l, closure)?;
     wasi::webgpu::key_events::add_to_linker_get_host(l, closure)?;
-    wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(l, closure)?;
-    wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(l, closure)?;
     Ok(())
 }
 
