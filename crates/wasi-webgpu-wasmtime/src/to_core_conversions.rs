@@ -162,6 +162,7 @@ impl<'a> ToCore<wgpu_core::pipeline::RenderPipelineDescriptor<'a>>
                 .unwrap_or_default(),
             fragment: self.fragment.map(|f| f.to_core(table)),
             multiview: Default::default(),
+            cache: None,
         }
     }
 }
@@ -249,6 +250,7 @@ impl<'a> ToCore<wgpu_core::pipeline::FragmentState<'a>> for webgpu::GpuFragmentS
                 entry_point: Some(self.entry_point.into()),
                 constants: Default::default(),
                 zero_initialize_workgroup_memory: true,
+                vertex_pulling_transform: false,
             },
             targets: self
                 .targets
@@ -310,6 +312,7 @@ impl<'a> ToCore<wgpu_core::pipeline::VertexState<'a>> for webgpu::GpuVertexState
                 entry_point: Some(self.entry_point.into()),
                 constants: Default::default(),
                 zero_initialize_workgroup_memory: true,
+                vertex_pulling_transform: false,
             },
             buffers: self
                 .buffers
@@ -663,6 +666,7 @@ impl<'a> ToCore<wgpu_core::pipeline::ComputePipelineDescriptor<'a>>
                 },
             },
             stage: self.compute.to_core(table),
+            cache: None,
         }
     }
 }
@@ -679,15 +683,14 @@ impl<'a> ToCore<wgpu_core::pipeline::ProgrammableStageDescriptor<'a>>
             entry_point: self.entry_point.map(|ep| ep.into()),
             constants: Default::default(),
             zero_initialize_workgroup_memory: true,
+            vertex_pulling_transform: false,
         }
     }
 }
 
-impl ToCore<wgpu_core::command::ComputePassTimestampWrites>
-    for webgpu::GpuComputePassTimestampWrites
-{
-    fn to_core(self, table: &ResourceTable) -> wgpu_core::command::ComputePassTimestampWrites {
-        wgpu_core::command::ComputePassTimestampWrites {
+impl ToCore<wgpu_core::command::PassTimestampWrites> for webgpu::GpuComputePassTimestampWrites {
+    fn to_core(self, table: &ResourceTable) -> wgpu_core::command::PassTimestampWrites {
+        wgpu_core::command::PassTimestampWrites {
             query_set: self.query_set.to_core(table),
             beginning_of_pass_write_index: self.beginning_of_pass_write_index,
             end_of_pass_write_index: self.end_of_pass_write_index,
