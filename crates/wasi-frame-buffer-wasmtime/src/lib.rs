@@ -7,7 +7,7 @@ use wasmtime::component::Resource;
 use wasmtime_wasi::WasiView;
 
 use crate::wasi::webgpu::frame_buffer;
-use wasi_graphics_context_wasmtime::{DisplayApi, DrawApi, GraphicsContext, GraphicsContextBuffer};
+use wasi_graphics_context_wasmtime::{AbstractBuffer, Context, DisplayApi, DrawApi};
 
 wasmtime::component::bindgen!({
     path: "../../wit/",
@@ -16,33 +16,33 @@ wasmtime::component::bindgen!({
         only_imports: [],
     },
     with: {
-        "wasi:webgpu/frame-buffer/surface": FBSurfaceArc,
-        "wasi:webgpu/frame-buffer/frame-buffer": FBBuffer,
+        "wasi:webgpu/frame-buffer/device": FBDeviceArc,
+        "wasi:webgpu/frame-buffer/buffer": FBBuffer,
         "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
     },
 });
 
-pub struct FBSurface {
+pub struct FBDevice {
     pub(crate) surface: Option<softbuffer::Surface<DisplayHandle<'static>, WindowHandle<'static>>>,
 }
 // TODO: actually ensure safety
-unsafe impl Send for FBSurface {}
-unsafe impl Sync for FBSurface {}
-impl FBSurface {
+unsafe impl Send for FBDevice {}
+unsafe impl Sync for FBDevice {}
+impl FBDevice {
     pub fn new() -> Self {
         Self { surface: None }
     }
 }
 
 // TODO: can we avoid the Mutex here?
-pub struct FBSurfaceArc(pub Arc<Mutex<FBSurface>>);
-impl FBSurfaceArc {
+pub struct FBDeviceArc(pub Arc<Mutex<FBDevice>>);
+impl FBDeviceArc {
     pub fn new() -> Self {
-        FBSurfaceArc(Arc::new(Mutex::new(FBSurface::new())))
+        FBDeviceArc(Arc::new(Mutex::new(FBDevice::new())))
     }
 }
-impl DrawApi for FBSurfaceArc {
-    fn get_current_buffer(&mut self) -> wasmtime::Result<GraphicsContextBuffer> {
+impl DrawApi for FBDeviceArc {
+    fn get_current_buffer(&mut self) -> wasmtime::Result<AbstractBuffer> {
         self.0.lock().unwrap().get_current_buffer()
     }
 
@@ -55,22 +55,15 @@ impl DrawApi for FBSurfaceArc {
     }
 }
 
-// impl Surface {
-//     pub fn resize(&mut self, width: NonZeroU32, height: NonZeroU32) {
-//         self.surface.lock().unwrap().resize(width, height).unwrap();
-//     }
-// }
-
-impl DrawApi for FBSurface {
-    fn get_current_buffer(&mut self) -> wasmtime::Result<GraphicsContextBuffer> {
+impl DrawApi for FBDevice {
+    fn get_current_buffer(&mut self) -> wasmtime::Result<AbstractBuffer> {
         let surface = self.surface.as_mut().unwrap();
         let buff = surface.buffer_mut().unwrap();
         // TODO: use ouroboros?
-        let buff: softbuffer::Buffer<'static, GraphicsContext, GraphicsContext> =
-            unsafe { mem::transmute(buff) };
+        let buff: softbuffer::Buffer<'static, Context, Context> = unsafe { mem::transmute(buff) };
         let buff: FBBuffer = buff.into();
         let buff = Box::new(buff);
-        let buff: GraphicsContextBuffer = buff.into();
+        let buff: AbstractBuffer = buff.into();
         Ok(buff)
     }
 
@@ -110,13 +103,13 @@ impl DrawApi for FBSurface {
 
 pub struct FBBuffer {
     // Never none
-    buffer: Arc<Mutex<Option<softbuffer::Buffer<'static, GraphicsContext, GraphicsContext>>>>,
+    buffer: Arc<Mutex<Option<softbuffer::Buffer<'static, Context, Context>>>>,
 }
 // TODO: ensure safety
 unsafe impl Send for FBBuffer {}
 unsafe impl Sync for FBBuffer {}
-impl From<softbuffer::Buffer<'static, GraphicsContext, GraphicsContext>> for FBBuffer {
-    fn from(buffer: softbuffer::Buffer<'static, GraphicsContext, GraphicsContext>) -> Self {
+impl From<softbuffer::Buffer<'static, Context, Context>> for FBBuffer {
+    fn from(buffer: softbuffer::Buffer<'static, Context, Context>) -> Self {
         FBBuffer {
             buffer: Arc::new(Mutex::new(Some(buffer))),
         }
@@ -143,57 +136,51 @@ pub trait WasiFrameBufferView: WasiView {}
 
 impl frame_buffer::Host for dyn WasiFrameBufferView + '_ {}
 
-impl frame_buffer::HostSurface for dyn WasiFrameBufferView + '_ {
-    fn new(&mut self) -> Resource<crate::wasi::webgpu::frame_buffer::Surface> {
-        self.table().push(FBSurfaceArc::new()).unwrap()
+impl frame_buffer::HostDevice for dyn WasiFrameBufferView + '_ {
+    fn new(&mut self) -> Resource<crate::wasi::webgpu::frame_buffer::Device> {
+        self.table().push(FBDeviceArc::new()).unwrap()
     }
 
     fn connect_graphics_context(
         &mut self,
-        surface: Resource<FBSurfaceArc>,
-        graphics_context: Resource<GraphicsContext>,
+        surface: Resource<FBDeviceArc>,
+        graphics_context: Resource<Context>,
     ) {
-        let surface = FBSurfaceArc(Arc::clone(&self.table().get(&surface).unwrap().0));
+        let surface = FBDeviceArc(Arc::clone(&self.table().get(&surface).unwrap().0));
         let graphics_context = self.table().get_mut(&graphics_context).unwrap();
         graphics_context.connect_draw_api(Box::new(surface));
     }
 
-    fn drop(&mut self, _rep: Resource<FBSurfaceArc>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _rep: Resource<FBDeviceArc>) -> wasmtime::Result<()> {
         todo!()
     }
 }
 
-impl frame_buffer::HostFrameBuffer for dyn WasiFrameBufferView + '_ {
-    fn from_graphics_buffer(
-        &mut self,
-        buffer: Resource<GraphicsContextBuffer>,
-    ) -> Resource<FBBuffer> {
-        let host_buffer: GraphicsContextBuffer = self.table().delete(buffer).unwrap();
+impl frame_buffer::HostBuffer for dyn WasiFrameBufferView + '_ {
+    fn from_graphics_buffer(&mut self, buffer: Resource<AbstractBuffer>) -> Resource<FBBuffer> {
+        let host_buffer: AbstractBuffer = self.table().delete(buffer).unwrap();
         let host_buffer: FBBuffer = host_buffer.inner_type();
         self.table().push(host_buffer).unwrap()
     }
 
-    fn length(&mut self, buffer: Resource<FBBuffer>) -> u32 {
+    fn get(&mut self, buffer: Resource<FBBuffer>) -> Vec<u8> {
         let buffer = self.table().get(&buffer).unwrap();
-        let len = buffer.buffer.lock().unwrap().as_ref().unwrap().len();
-        len as u32
+        let buffer = buffer.buffer.lock().unwrap();
+        let buffer = buffer.as_ref().unwrap();
+        let buffer = bytemuck::try_cast_slice(buffer).unwrap();
+        buffer.to_vec()
     }
 
-    fn get(&mut self, buffer: Resource<FBBuffer>, i: u32) -> u32 {
-        let buffer = self.table().get(&buffer).unwrap();
-        *buffer
+    fn set(&mut self, buffer: Resource<FBBuffer>, val: Vec<u8>) {
+        let buffer = self.table().get_mut(&buffer).unwrap();
+        let val = bytemuck::try_cast_slice(&val).unwrap();
+        buffer
             .buffer
             .lock()
             .unwrap()
-            .as_ref()
+            .as_mut()
             .unwrap()
-            .get(i as usize)
-            .unwrap()
-    }
-
-    fn set(&mut self, buffer: Resource<FBBuffer>, i: u32, val: u32) {
-        let buffer = self.table().get_mut(&buffer).unwrap();
-        buffer.buffer.lock().unwrap().as_mut().unwrap()[i as usize] = val as u32;
+            .copy_from_slice(&val);
     }
 
     fn drop(&mut self, frame_buffer: Resource<FBBuffer>) -> wasmtime::Result<()> {

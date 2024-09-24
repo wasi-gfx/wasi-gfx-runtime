@@ -17,13 +17,10 @@ where
 
 impl ToCore<wgpu_types::Extent3d> for webgpu::GpuExtent3D {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::Extent3d {
-        match self {
-            webgpu::GpuExtent3D::GpuExtent3DDict(extent_dict) => wgpu_types::Extent3d {
-                width: extent_dict.width,
-                height: extent_dict.height.unwrap(),
-                depth_or_array_layers: extent_dict.depth_or_array_layers.unwrap(),
-            },
-            webgpu::GpuExtent3D::ListGpuIntegerCoordinate(_coordinates) => todo!(),
+        wgpu_types::Extent3d {
+            width: self.width,
+            height: self.height.unwrap(),
+            depth_or_array_layers: self.depth_or_array_layers.unwrap(),
         }
     }
 }
@@ -58,7 +55,6 @@ impl<'a> ToCore<wgpu_core::binding_model::BindingResource<'a>> for webgpu::GpuBi
             webgpu::GpuBindingResource::GpuBufferBinding(buffer) => {
                 wgpu_core::binding_model::BindingResource::Buffer(buffer.to_core(table))
             }
-            webgpu::GpuBindingResource::GpuExternalTexture(_external_texture) => todo!(),
             webgpu::GpuBindingResource::GpuSampler(sampler) => {
                 wgpu_core::binding_model::BindingResource::Sampler(sampler.to_core(table))
             }
@@ -152,7 +148,12 @@ impl<'a> ToCore<wgpu_core::pipeline::RenderPipelineDescriptor<'a>>
         wgpu_core::pipeline::RenderPipelineDescriptor {
             // TODO: remove defaults
             label: Default::default(),
-            layout: self.layout.map(|l| l.to_core(table)),
+            layout: match self.layout {
+                webgpu::GpuLayout::GpuPipelineLayout(layout) => Some(layout.to_core(table)),
+                webgpu::GpuLayout::GpuAutoLayoutMode(mode) => match mode {
+                    webgpu::GpuAutoLayoutMode::Auto => None,
+                },
+            },
             vertex: self.vertex.to_core(table),
             primitive: self.primitive.map(|p| p.to_core(table)).unwrap(),
             depth_stencil: self.depth_stencil.map(|ds| ds.to_core(table)),
@@ -247,7 +248,7 @@ impl<'a> ToCore<wgpu_core::pipeline::FragmentState<'a>> for webgpu::GpuFragmentS
         wgpu_core::pipeline::FragmentState {
             stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
                 module: self.module.to_core(table),
-                entry_point: Some(self.entry_point.into()),
+                entry_point: Some(self.entry_point.unwrap_or_default().into()),
                 constants: Default::default(),
                 zero_initialize_workgroup_memory: true,
                 vertex_pulling_transform: false,
@@ -309,14 +310,22 @@ impl<'a> ToCore<wgpu_core::pipeline::VertexState<'a>> for webgpu::GpuVertexState
         wgpu_core::pipeline::VertexState {
             stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
                 module: self.module.to_core(table),
-                entry_point: Some(self.entry_point.into()),
+                entry_point: self.entry_point.map(|e| e.into()),
                 constants: Default::default(),
                 zero_initialize_workgroup_memory: true,
                 vertex_pulling_transform: false,
             },
             buffers: self
                 .buffers
-                .map(|buffer| buffer.into_iter().map(|b| b.to_core(table)).collect())
+                .map(|buffer| {
+                    buffer
+                        .into_iter()
+                        .map(|b| {
+                            b.map(|b| b.to_core(table))
+                                .expect("TODO: deal with `none` values")
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
         }
     }
@@ -358,7 +367,10 @@ impl<'a> ToCore<wgpu_types::TextureDescriptor<wgpu_core::Label<'a>, Vec<wgpu_typ
             size: self.size.to_core(table),
             mip_level_count: self.mip_level_count.unwrap(),
             sample_count: self.sample_count.unwrap(),
-            dimension: self.dimension.into(),
+            dimension: self
+                .dimension
+                .unwrap_or(webgpu::GpuTextureDimension::D2)
+                .into(),
             format: self.format.into(),
             usage: wgpu_types::TextureUsages::from_bits(self.usage).unwrap(),
             view_formats: self
@@ -437,14 +449,12 @@ impl ToCore<wgpu_types::BindGroupLayoutEntry> for webgpu::GpuBindGroupLayoutEntr
                 self.sampler,
                 self.texture,
                 self.storage_texture,
-                self.external_texture,
             ) {
-                (Some(buffer), None, None, None, None) => buffer.to_core(table),
-                (None, Some(sampler), None, None, None) => sampler.to_core(table),
-                (None, None, Some(texture), None, None) => texture.to_core(table),
-                (None, None, None, Some(storage_texture), None) => storage_texture.to_core(table),
-                (None, None, None, None, Some(external_texture)) => external_texture.to_core(table),
-                (None, None, None, None, None) => todo!(),
+                (Some(buffer), None, None, None) => buffer.to_core(table),
+                (None, Some(sampler), None, None) => sampler.to_core(table),
+                (None, None, Some(texture), None) => texture.to_core(table),
+                (None, None, None, Some(storage_texture)) => storage_texture.to_core(table),
+                (None, None, None, None) => todo!(),
                 _ => panic!("Can't have multiple ..."),
             },
             // TODO:
@@ -473,19 +483,16 @@ impl ToCore<wgpu_types::BindingType> for webgpu::GpuTextureBindingLayout {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::BindingType {
         wgpu_types::BindingType::Texture {
             sample_type: self.sample_type.unwrap().into(),
-            view_dimension: self.view_dimension.into(),
+            view_dimension: self
+                .view_dimension
+                .unwrap_or(webgpu::GpuTextureViewDimension::D2)
+                .into(),
             multisampled: self.multisampled.unwrap_or_default(),
         }
     }
 }
 
 impl ToCore<wgpu_types::BindingType> for webgpu::GpuStorageTextureBindingLayout {
-    fn to_core(self, _table: &ResourceTable) -> wgpu_types::BindingType {
-        todo!()
-    }
-}
-
-impl ToCore<wgpu_types::BindingType> for webgpu::GpuExternalTextureBindingLayout {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::BindingType {
         todo!()
     }
@@ -623,19 +630,12 @@ impl ToCore<wgpu_types::ImageCopyTexture<wgpu_core::id::TextureId>>
     }
 }
 
-impl ToCore<wgpu_types::Origin3d> for webgpu::GpuOrigin3DDictOrListGpuIntegerCoordinate {
+impl ToCore<wgpu_types::Origin3d> for webgpu::GpuOrigin3D {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::Origin3d {
-        match self {
-            webgpu::GpuOrigin3DDictOrListGpuIntegerCoordinate::GpuOrigin3DDict(dict) => {
-                wgpu_types::Origin3d {
-                    x: dict.x.unwrap(),
-                    y: dict.y.unwrap(),
-                    z: dict.z.unwrap(),
-                }
-            }
-            webgpu::GpuOrigin3DDictOrListGpuIntegerCoordinate::ListGpuIntegerCoordinate(_) => {
-                todo!()
-            }
+        wgpu_types::Origin3d {
+            x: self.x.unwrap(),
+            y: self.y.unwrap(),
+            z: self.z.unwrap(),
         }
     }
 }
@@ -655,13 +655,10 @@ impl<'a> ToCore<wgpu_core::pipeline::ComputePipelineDescriptor<'a>>
 {
     fn to_core(self, table: &ResourceTable) -> wgpu_core::pipeline::ComputePipelineDescriptor<'a> {
         wgpu_core::pipeline::ComputePipelineDescriptor {
-            label: Default::default(), //TODO: enable: self.compute.label.map(|l| l.into()),
+            label: self.label.map(|l| l.into()),
             layout: match self.layout {
-                webgpu::GpuPipelineLayoutOrGpuAutoLayoutMode::GpuPipelineLayout(layout) => {
-                    Some(layout.to_core(table))
-                }
-                webgpu::GpuPipelineLayoutOrGpuAutoLayoutMode::GpuAutoLayoutMode(mode) => match mode
-                {
+                webgpu::GpuLayout::GpuPipelineLayout(layout) => Some(layout.to_core(table)),
+                webgpu::GpuLayout::GpuAutoLayoutMode(mode) => match mode {
                     webgpu::GpuAutoLayoutMode::Auto => None,
                 },
             },

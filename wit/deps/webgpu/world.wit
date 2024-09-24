@@ -1,11 +1,8 @@
 package wasi:webgpu;
 
 world imports {
-    import webgpu;
-    import graphics-context;
-    import mini-canvas;
-    import animation-frame;
-    import pointer-events;
-    import key-events;
-    import frame-buffer;
+  import webgpu;
+  import graphics-context;
+  import surface;
+  import frame-buffer;
 }

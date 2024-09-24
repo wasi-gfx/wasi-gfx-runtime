@@ -5,7 +5,7 @@ use clap::Parser;
 use futures::executor::block_on;
 use wasi_frame_buffer_wasmtime::WasiFrameBufferView;
 use wasi_graphics_context_wasmtime::WasiGraphicsContextView;
-use wasi_mini_canvas_wasmtime::{MiniCanvas, MiniCanvasDesc, WasiMiniCanvasView};
+use wasi_surface_wasmtime::{MiniCanvas, MiniCanvasDesc, WasiMiniCanvasView};
 use wasi_webgpu_wasmtime::WasiWebGpuView;
 use wasmtime::{
     component::{Component, Linker},
@@ -29,7 +29,7 @@ wasmtime::component::bindgen!({
     },
     with: {
         "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
-        "wasi:webgpu/mini-canvas": wasi_mini_canvas_wasmtime,
+        "wasi:webgpu/surface": wasi_surface_wasmtime,
         "wasi:webgpu/frame-buffer": wasi_frame_buffer_wasmtime,
         "wasi:webgpu/webgpu": wasi_webgpu_wasmtime,
     },
@@ -39,11 +39,11 @@ struct HostState {
     pub table: ResourceTable,
     pub ctx: WasiCtx,
     pub instance: Arc<wgpu_core::global::Global>,
-    pub main_thread_proxy: wasi_mini_canvas_wasmtime::WasiWinitEventLoopProxy,
+    pub main_thread_proxy: wasi_surface_wasmtime::WasiWinitEventLoopProxy,
 }
 
 impl HostState {
-    fn new(main_thread_proxy: wasi_mini_canvas_wasmtime::WasiWinitEventLoopProxy) -> Self {
+    fn new(main_thread_proxy: wasi_surface_wasmtime::WasiWinitEventLoopProxy) -> Self {
         Self {
             table: ResourceTable::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
@@ -74,7 +74,7 @@ impl WasiView for HostState {
 impl WasiGraphicsContextView for HostState {}
 impl WasiFrameBufferView for HostState {}
 
-struct UiThreadSpawner(wasi_mini_canvas_wasmtime::WasiWinitEventLoopProxy);
+struct UiThreadSpawner(wasi_surface_wasmtime::WasiWinitEventLoopProxy);
 
 impl wasi_webgpu_wasmtime::MainThreadSpawner for UiThreadSpawner {
     async fn spawn<F, T>(&self, f: F) -> T
@@ -125,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
     wasi_webgpu_wasmtime::add_to_linker(&mut linker)?;
     wasi_frame_buffer_wasmtime::add_to_linker(&mut linker)?;
     wasi_graphics_context_wasmtime::add_to_linker(&mut linker)?;
-    wasi_mini_canvas_wasmtime::add_to_linker(&mut linker)?;
+    wasi_surface_wasmtime::add_to_linker(&mut linker)?;
 
     fn type_annotate<F>(val: F) -> F
     where
@@ -137,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
     Example::add_to_linker_imports_get_host(&mut linker, closure)?;
 
     let (main_thread_loop, main_thread_proxy) =
-        wasi_mini_canvas_wasmtime::create_wasi_winit_event_loop();
+        wasi_surface_wasmtime::create_wasi_winit_event_loop();
     let host_state = HostState::new(main_thread_proxy);
 
     let mut store = Store::new(&engine, host_state);

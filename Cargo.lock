@@ -305,9 +305,9 @@ checksum = "7ff69b9dd49fd426c69a0db9fc04dd934cdb6645ff000864d98f7e2af8830eaa"
 
 [[package]]
 name = "bytemuck"
-version = "1.15.0"
+version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d6d68c57235a3a081186990eca2867354726650f42f7516ca50c28d6281fd15"
+checksum = "94bbb0ad554ad961ddc5da507a12a29b14e4ae5bda06b19f575a3e6079d2e2ae"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -2261,6 +2261,7 @@ dependencies = [
 name = "rectangle_simple_buffer"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "wit-bindgen",
 ]
 
@@ -2368,7 +2369,7 @@ dependencies = [
  "tokio",
  "wasi-frame-buffer-wasmtime",
  "wasi-graphics-context-wasmtime",
- "wasi-mini-canvas-wasmtime",
+ "wasi-surface-wasmtime",
  "wasi-webgpu-wasmtime",
  "wasmtime",
  "wasmtime-wasi",
@@ -3072,6 +3073,7 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 name = "wasi-frame-buffer-wasmtime"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "raw-window-handle",
  "softbuffer",
  "wasi-graphics-context-wasmtime",
@@ -3089,7 +3091,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasi-mini-canvas-wasmtime"
+name = "wasi-surface-wasmtime"
 version = "0.1.0"
 dependencies = [
  "async-broadcast",

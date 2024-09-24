@@ -1,5 +1,5 @@
 [package]
-name = "wasi-mini-canvas-wasmtime"
+name = "wasi-surface-wasmtime"
 version = "0.1.0"
 edition = "2021"
 
