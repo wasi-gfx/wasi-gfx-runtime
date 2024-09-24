@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/wasi-frame-buffer-wasmtime",
-    "crates/wasi-mini-canvas-wasmtime",
+    "crates/wasi-surface-wasmtime",
     "crates/wasi-graphics-context-wasmtime",
     "crates/wasi-webgpu-wasmtime",
     "examples/apps/rectangle_frame_buffer",
@@ -31,3 +31,4 @@ async-broadcast = "0.7"
 oneshot = "0.1"
 wit-bindgen = "0.26"
 callback-future = "0.1"
+bytemuck = "1"

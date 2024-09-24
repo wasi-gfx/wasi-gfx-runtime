@@ -237,9 +237,9 @@ impl From<wgpu_types::PrimitiveTopology> for webgpu::GpuPrimitiveTopology {
 impl From<webgpu::GpuTextureDimension> for wgpu_types::TextureDimension {
     fn from(value: webgpu::GpuTextureDimension) -> Self {
         match value {
-            webgpu::GpuTextureDimension::OneD => wgpu_types::TextureDimension::D1,
-            webgpu::GpuTextureDimension::TwoD => wgpu_types::TextureDimension::D2,
-            webgpu::GpuTextureDimension::ThreeD => wgpu_types::TextureDimension::D3,
+            webgpu::GpuTextureDimension::D1 => wgpu_types::TextureDimension::D1,
+            webgpu::GpuTextureDimension::D2 => wgpu_types::TextureDimension::D2,
+            webgpu::GpuTextureDimension::D3 => wgpu_types::TextureDimension::D3,
         }
     }
 }
@@ -318,14 +318,14 @@ impl From<webgpu::GpuTextureSampleType> for wgpu_types::TextureSampleType {
 impl From<webgpu::GpuTextureViewDimension> for wgpu_types::TextureViewDimension {
     fn from(value: webgpu::GpuTextureViewDimension) -> Self {
         match value {
-            webgpu::GpuTextureViewDimension::OneD => wgpu_types::TextureViewDimension::D1,
-            webgpu::GpuTextureViewDimension::TwoD => wgpu_types::TextureViewDimension::D2,
-            webgpu::GpuTextureViewDimension::TwoDArray => wgpu_types::TextureViewDimension::D2Array,
+            webgpu::GpuTextureViewDimension::D1 => wgpu_types::TextureViewDimension::D1,
+            webgpu::GpuTextureViewDimension::D2 => wgpu_types::TextureViewDimension::D2,
+            webgpu::GpuTextureViewDimension::D2Array => wgpu_types::TextureViewDimension::D2Array,
             webgpu::GpuTextureViewDimension::Cube => wgpu_types::TextureViewDimension::Cube,
             webgpu::GpuTextureViewDimension::CubeArray => {
                 wgpu_types::TextureViewDimension::CubeArray
             }
-            webgpu::GpuTextureViewDimension::ThreeD => wgpu_types::TextureViewDimension::D3,
+            webgpu::GpuTextureViewDimension::D3 => wgpu_types::TextureViewDimension::D3,
         }
     }
 }
@@ -364,16 +364,11 @@ impl From<webgpu::GpuStoreOp> for wgpu_core::command::StoreOp {
 
 impl From<webgpu::GpuColor> for wgpu_types::Color {
     fn from(value: webgpu::GpuColor) -> Self {
-        match value {
-            webgpu::GpuColorDictOrListF64::GpuColorDict(webgpu::GpuColorDict { r, g, b, a }) => {
-                wgpu_types::Color { r, g, b, a }
-            }
-            webgpu::GpuColorDictOrListF64::ListF64(list) => wgpu_types::Color {
-                r: list[0],
-                g: list[1],
-                b: list[2],
-                a: list[3],
-            },
+        wgpu_types::Color {
+            r: value.r,
+            g: value.g,
+            b: value.b,
+            a: value.a,
         }
     }
 }
@@ -469,6 +464,10 @@ impl From<webgpu::GpuBlendFactor> for wgpu_types::BlendFactor {
             webgpu::GpuBlendFactor::SrcAlphaSaturated => wgpu_types::BlendFactor::SrcAlphaSaturated,
             webgpu::GpuBlendFactor::Constant => wgpu_types::BlendFactor::Constant,
             webgpu::GpuBlendFactor::OneMinusConstant => wgpu_types::BlendFactor::OneMinusConstant,
+            webgpu::GpuBlendFactor::Src1 => wgpu_types::BlendFactor::Src1,
+            webgpu::GpuBlendFactor::OneMinusSrc1 => wgpu_types::BlendFactor::OneMinusSrc1,
+            webgpu::GpuBlendFactor::Src1Alpha => wgpu_types::BlendFactor::Src1Alpha,
+            webgpu::GpuBlendFactor::OneMinusSrc1Alpha => wgpu_types::BlendFactor::OneMinusSrc1Alpha,
         }
     }
 }

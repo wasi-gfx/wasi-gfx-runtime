@@ -7,33 +7,21 @@ wit_bindgen::generate!({
 
 export!(ExampleSkybox);
 
-const WIDTH: u32 = 800;
-const HEIGHT: u32 = 600;
-
 struct ExampleSkybox;
 
-use wasi::webgpu::{
-    animation_frame, graphics_context, key_events, mini_canvas, pointer_events, webgpu,
-};
+use wasi::webgpu::{graphics_context, surface, webgpu};
 
 impl Guest for ExampleSkybox {
     fn start() {
-        let mut example = Example::init(WIDTH, HEIGHT);
+        let mut example = Example::init();
         example.render();
-        let pointer_up_listener = pointer_events::up_listener(&example.canvas);
-        let pointer_up_pollable = pointer_up_listener.subscribe();
-        let pointer_down_listener = pointer_events::down_listener(&example.canvas);
-        let pointer_down_pollable = pointer_down_listener.subscribe();
-        let pointer_move_listener = pointer_events::move_listener(&example.canvas);
-        let pointer_move_pollable = pointer_move_listener.subscribe();
-        let key_up_listener = key_events::up_listener(&example.canvas);
-        let key_up_pollable = key_up_listener.subscribe();
-        let key_down_listener = key_events::down_listener(&example.canvas);
-        let key_down_pollable = key_down_listener.subscribe();
-        // let resize_listener = canvas.resize_listener();
-        // let resize_pollable = resize_listener.subscribe();
-        let frame_listener = animation_frame::listener(&example.canvas);
-        let frame_pollable = frame_listener.subscribe();
+        let pointer_up_pollable = example.canvas.subscribe_pointer_up();
+        let pointer_down_pollable = example.canvas.subscribe_pointer_down();
+        let pointer_move_pollable = example.canvas.subscribe_pointer_move();
+        let key_up_pollable = example.canvas.subscribe_key_up();
+        let key_down_pollable = example.canvas.subscribe_key_down();
+        // let resize_pollable = example.canvas.subscribe_resize();
+        let frame_pollable = example.canvas.subscribe_frame();
         let pollables = vec![
             &pointer_up_pollable,
             &pointer_down_pollable,
@@ -47,35 +35,35 @@ impl Guest for ExampleSkybox {
             let pollables_res = wasi::io::poll::poll(&pollables);
 
             if pollables_res.contains(&0) {
-                let event = pointer_up_listener.get();
+                let event = example.canvas.get_pointer_up();
                 print(&format!("pointer_up: {:?}", event));
             }
             if pollables_res.contains(&1) {
-                let event = pointer_down_listener.get();
+                let event = example.canvas.get_pointer_down();
                 print(&format!("pointer_down: {:?}", event));
             }
             if pollables_res.contains(&2) {
-                let event = pointer_move_listener.get();
+                let event = example.canvas.get_pointer_move();
                 print(&format!("pointer_move: {:?}", event));
                 let event = event.unwrap();
                 example.update(event.x as i32, event.y as i32);
             }
             if pollables_res.contains(&3) {
-                let event = key_up_listener.get();
+                let event = example.canvas.get_key_up();
                 print(&format!("key_up: {:?}", event));
             }
             if pollables_res.contains(&4) {
-                let event = key_down_listener.get();
+                let event = example.canvas.get_key_down();
                 print(&format!("key_down: {:?}", event));
             }
             // if pollables_res.contains(&5) {
-            //     let event = resize_listener.get();
+            //     let event = example.canvas.get_resize();
             //     print(&format!("resize: {:?}", event));
             //     my_run();
             // }
 
             if pollables_res.contains(&5) {
-                frame_listener.get();
+                example.canvas.get_frame();
                 print(&format!("frame event"));
                 example.render();
             }
@@ -141,8 +129,8 @@ impl Camera {
 
 pub struct Example {
     device: webgpu::GpuDevice,
-    canvas: mini_canvas::MiniCanvas,
-    graphics_context: graphics_context::GraphicsContext,
+    canvas: surface::Surface,
+    graphics_context: graphics_context::Context,
     camera: Camera,
     sky_pipeline: webgpu::GpuRenderPipeline,
     entity_pipeline: webgpu::GpuRenderPipeline,
@@ -163,14 +151,14 @@ impl Example {
         height: u32,
     ) -> webgpu::GpuTextureView {
         let depth_texture = device.create_texture(&webgpu::GpuTextureDescriptor {
-            size: webgpu::GpuExtent3D::GpuExtent3DDict(webgpu::GpuExtent3DDict {
+            size: webgpu::GpuExtent3D {
                 width,
                 height: Some(height),
                 depth_or_array_layers: Some(1),
-            }),
+            },
             mip_level_count: Some(1),
             sample_count: Some(1),
-            dimension: webgpu::GpuTextureDimension::TwoD,
+            dimension: Some(webgpu::GpuTextureDimension::D2),
             format: Self::DEPTH_FORMAT,
             usage: TextureUsages::RENDER_ATTACHMENT.bits(),
             label: None,
@@ -186,17 +174,20 @@ impl Example {
             base_array_layer: None,
             array_layer_count: None,
             label: None,
+            usage: None,
         }))
     }
 
-    fn init(width: u32, height: u32) -> Self {
-        let device = webgpu::get_gpu().request_adapter(None).request_device(None);
-        let canvas = mini_canvas::MiniCanvas::new(mini_canvas::CreateDesc {
-            height,
-            width,
-            offscreen: false,
+    fn init() -> Self {
+        let device = webgpu::get_gpu()
+            .request_adapter(None)
+            .unwrap()
+            .request_device(None);
+        let canvas = surface::Surface::new(surface::CreateDesc {
+            height: None,
+            width: None,
         });
-        let graphics_context = graphics_context::GraphicsContext::new();
+        let graphics_context = graphics_context::Context::new();
         canvas.connect_graphics_context(&graphics_context);
         device.connect_graphics_context(&graphics_context);
 
@@ -254,7 +245,6 @@ impl Example {
                         sampler: None,
                         texture: None,
                         storage_texture: None,
-                        external_texture: None,
                     },
                     webgpu::GpuBindGroupLayoutEntry {
                         binding: 1,
@@ -264,10 +254,9 @@ impl Example {
                         texture: Some(webgpu::GpuTextureBindingLayout {
                             sample_type: Some(webgpu::GpuTextureSampleType::Float),
                             multisampled: Some(false),
-                            view_dimension: webgpu::GpuTextureViewDimension::Cube,
+                            view_dimension: Some(webgpu::GpuTextureViewDimension::Cube),
                         }),
                         storage_texture: None,
-                        external_texture: None,
                     },
                     webgpu::GpuBindGroupLayoutEntry {
                         binding: 2,
@@ -278,13 +267,12 @@ impl Example {
                         }),
                         texture: None,
                         storage_texture: None,
-                        external_texture: None,
                     },
                 ],
             });
 
         // Create the render pipeline
-        let shader = device.create_shader_module(webgpu::GpuShaderModuleDescriptor {
+        let shader = device.create_shader_module(&webgpu::GpuShaderModuleDescriptor {
             label: None,
             code: String::from(include_str!("shader.wgsl")),
             compilation_hints: None,
@@ -312,18 +300,20 @@ impl Example {
             bind_group_layouts: vec![&bind_group_layout],
         });
 
-        let sky_pipeline = device.create_render_pipeline(&webgpu::GpuRenderPipelineDescriptor {
-            // label: Some("Sky"),
-            layout: Some(&pipeline_layout),
+        let sky_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
+            label: None,
+            layout: webgpu::GpuLayout::GpuPipelineLayout(&pipeline_layout),
             vertex: webgpu::GpuVertexState {
                 module: &shader,
-                entry_point: "vs_sky".into(),
+                entry_point: Some("vs_sky".into()),
                 // buffers: None,
                 buffers: Some(vec![]),
+                constants: None,
             },
             fragment: Some(webgpu::GpuFragmentState {
                 module: &shader,
-                entry_point: "fs_sky".into(),
+                entry_point: Some("fs_sky".into()),
+                constants: None,
                 targets: vec![Some(webgpu::GpuColorTargetState {
                     format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
                     blend: None,
@@ -356,14 +346,15 @@ impl Example {
             }),
         });
 
-        let entity_pipeline = device.create_render_pipeline(&webgpu::GpuRenderPipelineDescriptor {
-            // label: Some("Entity"),
+        let entity_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
+            label: Some("Entity".into()),
             // layout: None,
-            layout: Some(&pipeline_layout),
+            layout: webgpu::GpuLayout::GpuPipelineLayout(&pipeline_layout),
             vertex: webgpu::GpuVertexState {
                 module: &shader,
-                entry_point: "vs_entity".into(),
-                buffers: Some(vec![webgpu::GpuVertexBufferLayout {
+                entry_point: Some("vs_entity".into()),
+                constants: None,
+                buffers: Some(vec![Some(webgpu::GpuVertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as u64,
                     step_mode: Some(webgpu::GpuVertexStepMode::Vertex),
                     // attributes: &webgpu::Gpuvertex_attr_array![0 => Float32x3, 1 => Float32x3],
@@ -379,11 +370,12 @@ impl Example {
                             shader_location: 1, // GpuIndex32,
                         },
                     ],
-                }]),
+                })]),
             },
             fragment: Some(webgpu::GpuFragmentState {
                 module: &shader,
-                entry_point: "fs_entity".into(),
+                entry_point: Some("fs_entity".into()),
+                constants: None,
                 targets: vec![Some(webgpu::GpuColorTargetState {
                     format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
                     blend: None,
@@ -452,7 +444,7 @@ impl Example {
         };
         // let skybox_format = webgpu::GpuTextureFormat::Rgba8unormSrgb;
 
-        let size = webgpu::GpuExtent3DDict {
+        let size = webgpu::GpuExtent3D {
             width: IMAGE_SIZE,
             height: Some(IMAGE_SIZE),
             depth_or_array_layers: Some(6),
@@ -479,10 +471,10 @@ impl Example {
         let texture = device_create_texture_with_data(
             &device,
             &webgpu::GpuTextureDescriptor {
-                size: webgpu::GpuExtent3D::GpuExtent3DDict(size),
+                size,
                 mip_level_count: Some(header.level_count),
                 sample_count: Some(1),
-                dimension: webgpu::GpuTextureDimension::TwoD,
+                dimension: Some(webgpu::GpuTextureDimension::D2),
                 format: skybox_format,
                 usage: TextureUsages::TEXTURE_BINDING.bits() | TextureUsages::COPY_DST.bits(),
                 label: None,
@@ -502,8 +494,9 @@ impl Example {
             mip_level_count: None,
             base_array_layer: None,
             array_layer_count: None,
+            usage: None,
         }));
-        let bind_group = device.create_bind_group(webgpu::GpuBindGroupDescriptor {
+        let bind_group = device.create_bind_group(&webgpu::GpuBindGroupDescriptor {
             layout: &bind_group_layout,
             entries: vec![
                 webgpu::GpuBindGroupEntry {
@@ -566,6 +559,7 @@ impl Example {
             base_array_layer: None,
             array_layer_count: None,
             label: None,
+            usage: None,
         }));
 
         let encoder = self
@@ -586,19 +580,19 @@ impl Example {
         {
             let rpass = encoder.begin_render_pass(&webgpu::GpuRenderPassDescriptor {
                 label: None,
-                color_attachments: vec![webgpu::GpuRenderPassColorAttachment {
+                color_attachments: vec![Some(webgpu::GpuRenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     load_op: webgpu::GpuLoadOp::Clear,
                     store_op: webgpu::GpuStoreOp::Store,
                     depth_slice: None,
-                    clear_value: Some(webgpu::GpuColor::GpuColorDict(webgpu::GpuColorDict {
+                    clear_value: Some(webgpu::GpuColor {
                         r: 0.1,
                         g: 0.2,
                         b: 0.3,
                         a: 1.0,
-                    })),
-                }],
+                    }),
+                })],
                 depth_stencil_attachment: Some(webgpu::GpuRenderPassDepthStencilAttachment {
                     view: &self.depth_view,
                     depth_load_op: Some(webgpu::GpuLoadOp::Clear),
@@ -615,22 +609,20 @@ impl Example {
                 max_draw_count: None,
             });
 
-            rpass.set_bind_group(0, &self.bind_group, Some(&[]));
+            rpass.set_bind_group(0, Some(&self.bind_group), Some(&[]));
             rpass.set_pipeline(&self.entity_pipeline);
 
             for entity in self.entities.iter() {
-                rpass.set_vertex_buffer(0, &entity.vertex_buf.buffer, 0, entity.vertex_buf.size);
-                rpass.draw(entity.vertex_count, 1, 0, 0);
+                rpass.set_vertex_buffer(0, Some(&entity.vertex_buf.buffer), None, None);
+                rpass.draw(entity.vertex_count, None, None, None);
             }
 
             rpass.set_pipeline(&self.sky_pipeline);
-            rpass.draw(3, 1, 0, 0);
-            webgpu::GpuRenderPassEncoder::end(rpass, &encoder);
+            rpass.draw(3, None, None, None);
+            rpass.end();
         }
 
-        self.device
-            .queue()
-            .submit(vec![webgpu::GpuCommandEncoder::finish(encoder, None)]);
+        self.device.queue().submit(&[&encoder.finish(None)]);
 
         self.graphics_context.present();
     }
@@ -656,16 +648,9 @@ fn device_create_texture_with_data(
     let (block_width, block_height) = (1, 1);
     // let layer_iterations = desc.array_layer_count();
 
-    let size = match desc.size {
-        webgpu::GpuExtent3D::GpuExtent3DDict(dict) => dict,
-        _ => {
-            todo!()
-        }
-    };
-
     let layer_iterations = match desc.dimension {
-        webgpu::GpuTextureDimension::OneD | webgpu::GpuTextureDimension::ThreeD => 1,
-        webgpu::GpuTextureDimension::TwoD => size.depth_or_array_layers.unwrap(),
+        Some(webgpu::GpuTextureDimension::D1) | Some(webgpu::GpuTextureDimension::D3) => 1,
+        Some(webgpu::GpuTextureDimension::D2) | None => desc.size.depth_or_array_layers.unwrap(),
     };
 
     let outer_iteration = desc.mip_level_count;
@@ -693,7 +678,11 @@ fn device_create_texture_with_data(
             //     height: Some(size.height.unwrap() >> mip),
             //     depth_or_array_layers: size.depth_or_array_layers,
             // };
-            let mut mip_size = mip_level_size(size, mip, desc.dimension); // desc.mip_level_size(mip).unwrap();
+            let mut mip_size = mip_level_size(
+                desc.size,
+                mip,
+                desc.dimension.unwrap_or(webgpu::GpuTextureDimension::D2),
+            ); // desc.mip_level_size(mip).unwrap();
 
             // let mut mip_size = Self {
             //     width: u32::max(1, self.width >> level),
@@ -709,7 +698,7 @@ fn device_create_texture_with_data(
             // }
 
             // copying layers separately
-            if desc.dimension != webgpu::GpuTextureDimension::ThreeD {
+            if desc.dimension != Some(webgpu::GpuTextureDimension::D3) {
                 mip_size.depth_or_array_layers = Some(1);
             }
 
@@ -732,13 +721,11 @@ fn device_create_texture_with_data(
                 &webgpu::GpuImageCopyTexture {
                     texture: &texture,
                     mip_level: Some(mip),
-                    origin: Some(webgpu::GpuOrigin3D::GpuOrigin3DDict(
-                        webgpu::GpuOrigin3DDict {
-                            x: Some(0),
-                            y: Some(0),
-                            z: Some(layer),
-                        },
-                    )),
+                    origin: Some(webgpu::GpuOrigin3D {
+                        x: Some(0),
+                        y: Some(0),
+                        z: Some(layer),
+                    }),
                     aspect: Some(webgpu::GpuTextureAspect::All),
                 },
                 &data[binary_offset..end_offset],
@@ -747,7 +734,7 @@ fn device_create_texture_with_data(
                     bytes_per_row: Some(bytes_per_row),
                     rows_per_image: Some(height_blocks),
                 },
-                &webgpu::GpuExtent3D::GpuExtent3DDict(mip_physical),
+                mip_physical,
             );
 
             binary_offset = end_offset;
@@ -758,34 +745,34 @@ fn device_create_texture_with_data(
 }
 
 fn mip_level_size(
-    extent_3d: webgpu::GpuExtent3DDict,
+    extent_3d: webgpu::GpuExtent3D,
     level: u32,
     dim: webgpu::GpuTextureDimension,
-) -> webgpu::GpuExtent3DDict {
-    webgpu::GpuExtent3DDict {
+) -> webgpu::GpuExtent3D {
+    webgpu::GpuExtent3D {
         width: u32::max(1, extent_3d.width >> level),
         height: Some(match dim {
-            webgpu::GpuTextureDimension::OneD => 1,
+            webgpu::GpuTextureDimension::D1 => 1,
             _ => u32::max(1, extent_3d.height.unwrap() >> level),
         }),
         depth_or_array_layers: Some(match dim {
-            webgpu::GpuTextureDimension::OneD => 1,
-            webgpu::GpuTextureDimension::TwoD => extent_3d.depth_or_array_layers.unwrap(),
-            webgpu::GpuTextureDimension::ThreeD => {
+            webgpu::GpuTextureDimension::D1 => 1,
+            webgpu::GpuTextureDimension::D2 => extent_3d.depth_or_array_layers.unwrap(),
+            webgpu::GpuTextureDimension::D3 => {
                 u32::max(1, extent_3d.depth_or_array_layers.unwrap() >> level)
             }
         }),
     }
 }
 
-fn physical_size(extend: &webgpu::GpuExtent3DDict) -> webgpu::GpuExtent3DDict {
+fn physical_size(extend: &webgpu::GpuExtent3D) -> webgpu::GpuExtent3D {
     // let (block_width, block_height) = format.block_dimensions();
     let (block_width, block_height) = (1, 1);
 
     let width = ((extend.width + block_width - 1) / block_width) * block_width;
     let height = ((extend.height.unwrap() + block_height - 1) / block_height) * block_height;
 
-    webgpu::GpuExtent3DDict {
+    webgpu::GpuExtent3D {
         width,
         height: Some(height),
         depth_or_array_layers: extend.depth_or_array_layers,
@@ -836,9 +823,7 @@ fn device_create_buffer_init(
         });
 
         let remote_buffer = buffer.get_mapped_range(None, None);
-        for i in 0..unpadded_size {
-            remote_buffer.set(i as u32, descriptor.contents[i as usize]);
-        }
+        remote_buffer.set(descriptor.contents);
 
         buffer.unmap();
         MyBuffer {

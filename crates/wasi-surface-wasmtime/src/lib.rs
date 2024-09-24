@@ -4,15 +4,11 @@ use std::{
 };
 use wasi_graphics_context_wasmtime::DisplayApi;
 
-use crate::wasi::webgpu::mini_canvas::{self, GraphicsContext, Pollable};
+use crate::wasi::webgpu::surface::{self, Context as GraphicsContext, Pollable};
 use async_broadcast::{Receiver, TrySendError};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use wasmtime::component::Resource;
 use wasmtime_wasi::WasiView;
-
-mod animation_frame;
-mod key_events;
-mod pointer_events;
 
 #[cfg(feature = "winit")]
 mod winit;
@@ -24,10 +20,8 @@ pub trait HasDisplayAndWindowHandle: HasDisplayHandle + HasWindowHandle {}
 
 impl<T: HasDisplayHandle + HasWindowHandle> HasDisplayAndWindowHandle for T {}
 
-pub use crate::wasi::webgpu::{
-    key_events::KeyEvent,
-    mini_canvas::{CreateDesc as MiniCanvasDesc, ResizeEvent},
-    pointer_events::PointerEvent,
+pub use crate::wasi::webgpu::surface::{
+    FrameEvent, KeyEvent, PointerEvent, {CreateDesc as MiniCanvasDesc, ResizeEvent},
 };
 
 pub trait WasiMiniCanvasView: WasiView {
@@ -64,10 +58,7 @@ where
         val
     }
     let closure = type_annotate::<T, _>(|t| t);
-    wasi::webgpu::mini_canvas::add_to_linker_get_host(l, closure)?;
-    wasi::webgpu::animation_frame::add_to_linker_get_host(l, closure)?;
-    wasi::webgpu::pointer_events::add_to_linker_get_host(l, closure)?;
-    wasi::webgpu::key_events::add_to_linker_get_host(l, closure)?;
+    wasi::webgpu::surface::add_to_linker_get_host(l, closure)?;
     Ok(())
 }
 
@@ -75,26 +66,12 @@ wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
     async: {
-        only_imports: [
-            "poll",
-            "up-listener",
-            "down-listener",
-            "move-listener",
-            "listener",
-            // "resize-listener",
-        ],
+        only_imports: [],
     },
     with: {
         "wasi:io": wasmtime_wasi::bindings::io,
-        "wasi:webgpu/pointer-events/pointer-up-listener": pointer_events::PointerUpListener,
-        "wasi:webgpu/pointer-events/pointer-down-listener": pointer_events::PointerDownListener,
-        "wasi:webgpu/pointer-events/pointer-move-listener": pointer_events::PointerMoveListener,
-        "wasi:webgpu/key-events/key-up-listener": key_events::KeyUpListener,
-        "wasi:webgpu/key-events/key-down-listener": key_events::KeyDownListener,
-        "wasi:webgpu/animation-frame/frame-listener": animation_frame::AnimationFrameListener,
         "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
-        "wasi:webgpu/mini-canvas/mini-canvas": MiniCanvasArc,
-        "wasi:webgpu/mini-canvas/resize-listener": ResizeListener,
+        "wasi:webgpu/surface/surface": MiniCanvasArc,
     },
 });
 
@@ -117,7 +94,17 @@ pub struct MiniCanvas {
     _canvas_resize_receiver: async_broadcast::InactiveReceiver<ResizeEvent>,
     frame_sender: async_broadcast::Sender<()>,
     _frame_receiver: async_broadcast::InactiveReceiver<()>,
+
+    // TODO: remove once we get rid of pollable
+    pointer_up_data: Mutex<Option<PointerEvent>>,
+    pointer_down_data: Mutex<Option<PointerEvent>>,
+    pointer_move_data: Mutex<Option<PointerEvent>>,
+    key_up_data: Mutex<Option<KeyEvent>>,
+    key_down_data: Mutex<Option<KeyEvent>>,
+    canvas_resize_data: Mutex<Option<ResizeEvent>>,
+    frame_data: Mutex<Option<FrameEvent>>,
 }
+
 impl Debug for MiniCanvas {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MiniCanvas")
@@ -172,6 +159,13 @@ impl MiniCanvas {
             _canvas_resize_receiver: canvas_resize_receiver,
             frame_sender,
             _frame_receiver: frame_receiver,
+            pointer_up_data: Default::default(),
+            pointer_down_data: Default::default(),
+            pointer_move_data: Default::default(),
+            key_up_data: Default::default(),
+            key_down_data: Default::default(),
+            canvas_resize_data: Default::default(),
+            frame_data: Default::default(),
         }
     }
 
@@ -246,6 +240,10 @@ impl DisplayApi for MiniCanvas {
     fn width(&self) -> u32 {
         self.window.width()
     }
+
+    fn request_set_size(&self, width: Option<u32>, height: Option<u32>) {
+        self.window.request_set_size(width, height);
+    }
 }
 
 // TODO: instead of Arc, maybe have a global list of windows and ids? That ways it's same as webgpu, but might be harder to handle? Would likely also require a Mutex.
@@ -275,6 +273,10 @@ impl DisplayApi for MiniCanvasArc {
     fn width(&self) -> u32 {
         self.0.width()
     }
+
+    fn request_set_size(&self, width: Option<u32>, height: Option<u32>) {
+        self.0.request_set_size(width, height);
+    }
 }
 
 fn unwrap_unless_inactive<T>(res: Result<Option<T>, TrySendError<T>>) {
@@ -295,25 +297,10 @@ fn unwrap_unless_inactive_or_full<T>(res: Result<Option<T>, TrySendError<T>>) {
     res.unwrap();
 }
 
-#[derive(Debug)]
-pub struct ResizeListener {
-    receiver: Receiver<ResizeEvent>,
-    data: Mutex<Option<ResizeEvent>>,
-}
-
-#[async_trait::async_trait]
-impl wasmtime_wasi::Subscribe for ResizeListener {
-    async fn ready(&mut self) {
-        let event = self.receiver.recv().await.unwrap();
-        *self.data.lock().unwrap() = Some(event);
-    }
-}
-
 // wasmtime
-impl mini_canvas::Host for dyn WasiMiniCanvasView + '_ {}
+impl surface::Host for dyn WasiMiniCanvasView + '_ {}
 
-#[async_trait::async_trait]
-impl mini_canvas::HostMiniCanvas for dyn WasiMiniCanvasView + '_ {
+impl surface::HostSurface for dyn WasiMiniCanvasView + '_ {
     fn new(&mut self, desc: MiniCanvasDesc) -> Resource<MiniCanvasArc> {
         let canvas = self.create_canvas(desc);
         let mini_canvas = MiniCanvasArc(Arc::new(canvas));
@@ -322,37 +309,156 @@ impl mini_canvas::HostMiniCanvas for dyn WasiMiniCanvasView + '_ {
 
     fn connect_graphics_context(
         &mut self,
-        mini_canvas: Resource<MiniCanvasArc>,
+        surface: Resource<MiniCanvasArc>,
         context: Resource<GraphicsContext>,
     ) {
-        let mini_canvas = self.table().get(&mini_canvas).unwrap().clone();
+        let surface = self.table().get(&surface).unwrap().clone();
         let graphics_context = self.table().get_mut(&context).unwrap();
 
-        graphics_context.connect_display_api(Box::new(mini_canvas));
+        graphics_context.connect_display_api(Box::new(surface));
     }
 
-    fn resize_listener(
+    fn height(&mut self, surface: Resource<MiniCanvasArc>) -> u32 {
+        let surface = self.table().get(&surface).unwrap();
+        surface.height()
+    }
+
+    fn width(&mut self, surface: Resource<MiniCanvasArc>) -> u32 {
+        let surface = self.table().get(&surface).unwrap();
+        surface.width()
+    }
+
+    fn request_set_size(
         &mut self,
-        mini_canvas: Resource<MiniCanvasArc>,
-    ) -> Resource<ResizeListener> {
-        let canvas = &self.table().get(&mini_canvas).unwrap().0;
+        surface: Resource<MiniCanvasArc>,
+        width: Option<u32>,
+        height: Option<u32>,
+    ) {
+        let surface = self.table().get(&surface).unwrap();
+        surface.request_set_size(width, height);
+    }
+
+    fn subscribe_resize(&mut self, surface: Resource<MiniCanvasArc>) -> Resource<Pollable> {
+        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
         let receiver = canvas.canvas_resize_sender.new_receiver();
-        self.table()
-            .push(ResizeListener {
-                receiver,
-                data: Default::default(),
-            })
-            .unwrap()
+        let listener = self
+            .table()
+            .push(Listener::new(receiver, move |data| {
+                canvas.canvas_resize_data.lock().unwrap().replace(data);
+            }))
+            .unwrap();
+        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
     }
 
-    fn height(&mut self, mini_canvas: Resource<MiniCanvasArc>) -> u32 {
-        let mini_canvas = self.table().get(&mini_canvas).unwrap();
-        mini_canvas.height()
+    fn get_resize(&mut self, surface: Resource<MiniCanvasArc>) -> Option<ResizeEvent> {
+        let canvas = &self.table().get(&surface).unwrap().0;
+        canvas.canvas_resize_data.lock().unwrap().take()
     }
 
-    fn width(&mut self, mini_canvas: Resource<MiniCanvasArc>) -> u32 {
-        let mini_canvas = self.table().get(&mini_canvas).unwrap();
-        mini_canvas.width()
+    fn subscribe_frame(&mut self, surface: Resource<MiniCanvasArc>) -> Resource<Pollable> {
+        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+        let receiver = canvas.frame_sender.new_receiver();
+        let listener = self
+            .table()
+            .push(Listener::new(receiver, move |_d| {
+                canvas
+                    .frame_data
+                    .lock()
+                    .unwrap()
+                    .replace(FrameEvent { nothing: false });
+            }))
+            .unwrap();
+        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+    }
+
+    fn get_frame(&mut self, surface: Resource<MiniCanvasArc>) -> Option<FrameEvent> {
+        let canvas = &self.table().get(&surface).unwrap().0;
+        canvas.frame_data.lock().unwrap().take()
+    }
+
+    fn subscribe_pointer_up(&mut self, surface: Resource<MiniCanvasArc>) -> Resource<Pollable> {
+        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+        let receiver = canvas.pointer_up_sender.new_receiver();
+        let listener = self
+            .table()
+            .push(Listener::new(receiver, move |data| {
+                canvas.pointer_up_data.lock().unwrap().replace(data);
+            }))
+            .unwrap();
+        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+    }
+
+    fn get_pointer_up(&mut self, surface: Resource<MiniCanvasArc>) -> Option<PointerEvent> {
+        let canvas = &self.table().get(&surface).unwrap().0;
+        canvas.pointer_up_data.lock().unwrap().take()
+    }
+
+    fn subscribe_pointer_down(&mut self, surface: Resource<MiniCanvasArc>) -> Resource<Pollable> {
+        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+        let receiver = canvas.pointer_down_sender.new_receiver();
+        let listener = self
+            .table()
+            .push(Listener::new(receiver, move |data| {
+                canvas.pointer_down_data.lock().unwrap().replace(data);
+            }))
+            .unwrap();
+        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+    }
+
+    fn get_pointer_down(&mut self, surface: Resource<MiniCanvasArc>) -> Option<PointerEvent> {
+        let canvas = &self.table().get(&surface).unwrap().0;
+        canvas.pointer_down_data.lock().unwrap().take()
+    }
+
+    fn subscribe_pointer_move(&mut self, surface: Resource<MiniCanvasArc>) -> Resource<Pollable> {
+        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+        let receiver = canvas.pointer_move_sender.new_receiver();
+        let listener = self
+            .table()
+            .push(Listener::new(receiver, move |data| {
+                canvas.pointer_move_data.lock().unwrap().replace(data);
+            }))
+            .unwrap();
+        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+    }
+
+    fn get_pointer_move(&mut self, surface: Resource<MiniCanvasArc>) -> Option<PointerEvent> {
+        let canvas = &self.table().get(&surface).unwrap().0;
+        canvas.pointer_move_data.lock().unwrap().take()
+    }
+
+    fn subscribe_key_up(&mut self, surface: Resource<MiniCanvasArc>) -> Resource<Pollable> {
+        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+        let receiver = canvas.key_up_sender.new_receiver();
+        let listener = self
+            .table()
+            .push(Listener::new(receiver, move |data| {
+                canvas.key_up_data.lock().unwrap().replace(data);
+            }))
+            .unwrap();
+        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+    }
+
+    fn get_key_up(&mut self, surface: Resource<MiniCanvasArc>) -> Option<KeyEvent> {
+        let canvas = &self.table().get(&surface).unwrap().0;
+        canvas.key_up_data.lock().unwrap().take()
+    }
+
+    fn subscribe_key_down(&mut self, surface: Resource<MiniCanvasArc>) -> Resource<Pollable> {
+        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+        let receiver = canvas.key_down_sender.new_receiver();
+        let listener = self
+            .table()
+            .push(Listener::new(receiver, move |data| {
+                canvas.key_down_data.lock().unwrap().replace(data);
+            }))
+            .unwrap();
+        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+    }
+
+    fn get_key_down(&mut self, surface: Resource<MiniCanvasArc>) -> Option<KeyEvent> {
+        let canvas = &self.table().get(&surface).unwrap().0;
+        canvas.key_down_data.lock().unwrap().take()
     }
 
     fn drop(&mut self, _self_: Resource<MiniCanvasArc>) -> wasmtime::Result<()> {
@@ -360,15 +466,34 @@ impl mini_canvas::HostMiniCanvas for dyn WasiMiniCanvasView + '_ {
     }
 }
 
-impl mini_canvas::HostResizeListener for dyn WasiMiniCanvasView + '_ {
-    fn subscribe(&mut self, pointer_down: Resource<ResizeListener>) -> Resource<Pollable> {
-        wasmtime_wasi::subscribe(self.table(), pointer_down).unwrap()
+#[derive(Debug)]
+pub struct Listener<T, F>
+where
+    T: Debug + Clone + Send + Sync + 'static,
+    F: Fn(T) + Send + Sync + 'static,
+{
+    receiver: Receiver<T>,
+    on_data: F,
+}
+
+impl<T, F> Listener<T, F>
+where
+    T: Debug + Clone + Send + Sync + 'static,
+    F: Fn(T) + Send + Sync + 'static,
+{
+    pub fn new(receiver: Receiver<T>, on_data: F) -> Self {
+        Self { receiver, on_data }
     }
-    fn get(&mut self, pointer_down: Resource<ResizeListener>) -> Option<ResizeEvent> {
-        let pointer_down = self.table().get(&pointer_down).unwrap();
-        pointer_down.data.lock().unwrap().take()
-    }
-    fn drop(&mut self, _self_: Resource<ResizeListener>) -> wasmtime::Result<()> {
-        Ok(())
+}
+
+#[async_trait::async_trait]
+impl<T, F> wasmtime_wasi::Subscribe for Listener<T, F>
+where
+    T: Debug + Clone + Send + Sync + 'static,
+    F: Fn(T) + Send + Sync + 'static,
+{
+    async fn ready(&mut self) {
+        let event = self.receiver.recv().await.unwrap();
+        (self.on_data)(event);
     }
 }
