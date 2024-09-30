@@ -19,7 +19,8 @@ Commands:
       --name <DEMO_NAME>  Name of the demo to run (required). Available demos are:
                           - skybox
                           - triangle
-                          - fb-rectangle
+                          - rectangle_simple_buffer
+                          - hello_compute
       -h, --help          Print help
 
 Examples:

@@ -384,10 +384,12 @@ impl<T: WasiWebGpuView> webgpu::HostGpuTextureUsage for WasiWebGpuImpl<T> {
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuMapMode for WasiWebGpuImpl<T> {
     fn read(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        // https://www.w3.org/TR/webgpu/#buffer-mapping
+        0x0001
     }
     fn write(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        // https://www.w3.org/TR/webgpu/#buffer-mapping
+        0x0002
     }
     fn drop(&mut self, _rep: Resource<webgpu::GpuMapMode>) -> wasmtime::Result<()> {
         todo!()
@@ -395,34 +397,34 @@ impl<T: WasiWebGpuView> webgpu::HostGpuMapMode for WasiWebGpuImpl<T> {
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuBufferUsage for WasiWebGpuImpl<T> {
     fn map_read(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::MAP_READ.bits()
     }
     fn map_write(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::MAP_WRITE.bits()
     }
     fn copy_src(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::COPY_SRC.bits()
     }
     fn copy_dst(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::COPY_DST.bits()
     }
     fn index(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::INDEX.bits()
     }
     fn vertex(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::VERTEX.bits()
     }
     fn uniform(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::UNIFORM.bits()
     }
     fn storage(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::STORAGE.bits()
     }
     fn indirect(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::INDIRECT.bits()
     }
     fn query_resolve(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::BufferUsages::QUERY_RESOLVE.bits()
     }
     fn drop(&mut self, _rep: Resource<webgpu::GpuBufferUsage>) -> wasmtime::Result<()> {
         todo!()
@@ -1835,9 +1837,9 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> 
     }
 
     fn end(&mut self, cpass: Resource<wgpu_core::command::ComputePass<crate::Backend>>) {
-        let mut cpass = self.0.table().delete(cpass).unwrap();
-        self.0
-            .instance()
+        let instance = self.0.instance();
+        let mut cpass = self.0.table().get_mut(&cpass).unwrap();
+        instance
             .compute_pass_end::<crate::Backend>(&mut cpass)
             .unwrap();
     }
@@ -1895,7 +1897,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> 
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuComputePassEncoder>) -> wasmtime::Result<()> {
-        todo!()
+        self.0.table().delete(_rep).unwrap();
+        Ok(())
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuPipelineError for WasiWebGpuImpl<T> {
@@ -2222,10 +2225,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
             move |resolve: Box<
                 dyn FnOnce(Box<Result<(), wgpu_core::resource::BufferAccessError>>) + Send,
             >| {
+                // TODO: move to convertion function
                 // source: https://www.w3.org/TR/webgpu/#typedefdef-gpumapmodeflags
                 let host = match mode {
-                    0 => wgpu_core::device::HostMap::Read,
-                    1 => wgpu_core::device::HostMap::Write,
+                    1 => wgpu_core::device::HostMap::Read,
+                    2 => wgpu_core::device::HostMap::Write,
                     _ => panic!(),
                 };
                 let op = wgpu_core::resource::BufferMapOperation {
