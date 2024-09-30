@@ -8,6 +8,7 @@ members = [
     "examples/apps/rectangle_frame_buffer",
     "examples/apps/triangle",
     "examples/apps/skybox",
+    "examples/apps/hello_compute",
     "examples/runtime",
 ]
 

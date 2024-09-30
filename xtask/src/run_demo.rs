@@ -10,6 +10,7 @@ lazy_static::lazy_static! {
         s.insert("skybox");
         s.insert("triangle");
         s.insert("rectangle_simple_buffer");
+        s.insert("hello_compute");
         s
     };
 }
