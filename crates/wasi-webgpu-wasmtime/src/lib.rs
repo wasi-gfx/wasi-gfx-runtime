@@ -1459,26 +1459,34 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn set_viewport(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
-        _x: f32,
-        _y: f32,
-        _width: f32,
-        _height: f32,
-        _min_depth: f32,
-        _max_depth: f32,
+        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        min_depth: f32,
+        max_depth: f32,
     ) {
-        todo!()
+        let instance = self.0.instance();
+        let render_pass = self.0.table().get_mut(&render_pass).unwrap();
+        instance
+            .render_pass_set_viewport(render_pass, x, y, width, height, min_depth, max_depth)
+            .unwrap();
     }
 
     fn set_scissor_rect(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
-        _x: webgpu::GpuIntegerCoordinate,
-        _y: webgpu::GpuIntegerCoordinate,
-        _width: webgpu::GpuIntegerCoordinate,
-        _height: webgpu::GpuIntegerCoordinate,
+        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        x: webgpu::GpuIntegerCoordinate,
+        y: webgpu::GpuIntegerCoordinate,
+        width: webgpu::GpuIntegerCoordinate,
+        height: webgpu::GpuIntegerCoordinate,
     ) {
-        todo!()
+        let instance = self.0.instance();
+        let render_pass = self.0.table().get_mut(&render_pass).unwrap();
+        instance
+            .render_pass_set_scissor_rect(render_pass, x, y, width, height)
+            .unwrap();
     }
 
     fn set_blend_constant(

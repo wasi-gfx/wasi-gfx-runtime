@@ -146,8 +146,7 @@ impl<'a> ToCore<wgpu_core::pipeline::RenderPipelineDescriptor<'a>>
 {
     fn to_core(self, table: &ResourceTable) -> wgpu_core::pipeline::RenderPipelineDescriptor<'a> {
         wgpu_core::pipeline::RenderPipelineDescriptor {
-            // TODO: remove defaults
-            label: Default::default(),
+            label: self.label.map(|l| l.into()),
             layout: match self.layout {
                 webgpu::GpuLayout::GpuPipelineLayout(layout) => Some(layout.to_core(table)),
                 webgpu::GpuLayout::GpuAutoLayoutMode(mode) => match mode {
@@ -162,6 +161,7 @@ impl<'a> ToCore<wgpu_core::pipeline::RenderPipelineDescriptor<'a>>
                 .map(|ms| ms.to_core(table))
                 .unwrap_or_default(),
             fragment: self.fragment.map(|f| f.to_core(table)),
+            // TODO: remove default
             multiview: Default::default(),
             cache: None,
         }
