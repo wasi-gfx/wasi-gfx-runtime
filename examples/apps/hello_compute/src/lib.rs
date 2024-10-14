@@ -15,7 +15,6 @@ impl Guest for Example {
     }
 }
 
-
 // Indicates a u32 overflow in an intermediate Collatz value
 const OVERFLOW: u32 = 0xffffffff;
 
