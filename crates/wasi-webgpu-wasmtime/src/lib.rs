@@ -258,29 +258,30 @@ impl<T: WasiWebGpuView> webgpu::Host for WasiWebGpuImpl<T> {
 
 impl<T: WasiWebGpuView> webgpu::HostGpuColorWrite for WasiWebGpuImpl<T> {
     fn red(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::ColorWrites::RED.bits()
     }
 
     fn green(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::ColorWrites::GREEN.bits()
     }
 
     fn blue(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::ColorWrites::BLUE.bits()
     }
 
     fn alpha(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::ColorWrites::ALPHA.bits()
     }
 
     fn all(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::ColorWrites::ALL.bits()
     }
 
     fn drop(&mut self, _self_: Resource<webgpu::GpuColorWrite>) -> wasmtime::Result<()> {
         todo!()
     }
 }
+
 impl<T: WasiWebGpuView> webgpu::HostRecordGpuPipelineConstantValue for WasiWebGpuImpl<T> {
     fn new(&mut self) -> Resource<webgpu::RecordGpuPipelineConstantValue> {
         todo!()
@@ -344,15 +345,15 @@ impl<T: WasiWebGpuView> webgpu::HostRecordGpuPipelineConstantValue for WasiWebGp
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuShaderStage for WasiWebGpuImpl<T> {
     fn vertex(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::ShaderStages::VERTEX.bits()
     }
 
     fn fragment(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::ShaderStages::FRAGMENT.bits()
     }
 
     fn compute(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::ShaderStages::COMPUTE.bits()
     }
 
     fn drop(&mut self, _: Resource<webgpu::GpuShaderStage>) -> wasmtime::Result<()> {
@@ -361,19 +362,19 @@ impl<T: WasiWebGpuView> webgpu::HostGpuShaderStage for WasiWebGpuImpl<T> {
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuTextureUsage for WasiWebGpuImpl<T> {
     fn copy_src(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::TextureUsages::COPY_SRC.bits()
     }
     fn copy_dst(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::TextureUsages::COPY_DST.bits()
     }
     fn texture_binding(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::TextureUsages::TEXTURE_BINDING.bits()
     }
     fn storage_binding(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::TextureUsages::STORAGE_BINDING.bits()
     }
     fn render_attachment(&mut self) -> webgpu::GpuFlagsConstant {
-        todo!()
+        wgpu_types::TextureUsages::RENDER_ATTACHMENT.bits()
     }
     fn drop(
         &mut self,
