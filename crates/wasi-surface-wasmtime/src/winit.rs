@@ -199,6 +199,7 @@ impl WasiWinitEventLoop {
                             });
                         }
                     }
+                    WindowEvent::CloseRequested => std::process::exit(1),
                     _ => {}
                 }
             }
