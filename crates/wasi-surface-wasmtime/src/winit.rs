@@ -146,7 +146,10 @@ impl WasiWinitEventLoop {
                         self.modifiers.insert(window_id, modifiers.state());
                     }
                     WindowEvent::KeyboardInput { event: input, .. } => {
-                        let modifiers = self.modifiers.get(&window_id).unwrap();
+                        let mut modifiers = &ModifiersState::empty();
+                        if self.modifiers.contains_key(&window_id) {
+                            modifiers = self.modifiers.get(&window_id).unwrap();
+                        }
                         let event = crate::KeyEvent {
                             key: match input.physical_key {
                                 winit::keyboard::PhysicalKey::Code(code) => code.try_into().ok(),
