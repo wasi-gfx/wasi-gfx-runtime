@@ -150,11 +150,13 @@ impl WasiWinitEventLoop {
                         let event = crate::KeyEvent {
                             key: match input.physical_key {
                                 winit::keyboard::PhysicalKey::Code(code) => code.try_into().ok(),
-                                winit::keyboard::PhysicalKey::Unidentified(_) => todo!(),
+                                winit::keyboard::PhysicalKey::Unidentified(_) => None,
                             },
                             text: match input.logical_key {
                                 winit::keyboard::Key::Character(char) => Some(char.to_string()),
-                                _ => todo!(),
+                                winit::keyboard::Key::Named(_)
+                                | winit::keyboard::Key::Unidentified(_)
+                                | winit::keyboard::Key::Dead(_) => None,
                             },
                             alt_key: modifiers.alt_key(),
                             ctrl_key: modifiers.control_key(),
