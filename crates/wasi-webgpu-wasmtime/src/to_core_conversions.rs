@@ -557,6 +557,13 @@ fn pass_channel_from_options<V: Default + Copy>(
             // TODO: why default to false?
             read_only: read_only.unwrap_or(false),
         },
+        (Some(load_op), Some(store_op), None) => wgpu_core::command::PassChannel {
+            load_op,
+            store_op,
+            clear_value: V::default(),
+            // TODO: why default to false?
+            read_only: read_only.unwrap_or(false),
+        },
         (None, None, None) => wgpu_core::command::PassChannel {
             load_op: wgpu_core::command::LoadOp::Load,
             store_op: wgpu_core::command::StoreOp::Store,
