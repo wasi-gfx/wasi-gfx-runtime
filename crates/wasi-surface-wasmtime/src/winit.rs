@@ -106,6 +106,8 @@ impl WasiWinitEventLoop {
                         let window = event_loop.create_window(window_options).unwrap();
                         // TODO: remove when window is drooped.
                         self.pointer_pos.insert(window.id(), (0.0, 0.0));
+                        self.modifiers.insert(window.id(), ModifiersState::default());
+
                         let window_id = window.id();
 
                         let canvas = MiniCanvas::new(Box::new(MyWindow(window)));
@@ -146,10 +148,7 @@ impl WasiWinitEventLoop {
                         self.modifiers.insert(window_id, modifiers.state());
                     }
                     WindowEvent::KeyboardInput { event: input, .. } => {
-                        let mut modifiers = &ModifiersState::empty();
-                        if self.modifiers.contains_key(&window_id) {
-                            modifiers = self.modifiers.get(&window_id).unwrap();
-                        }
+                        let modifiers = self.modifiers.get(&window_id).unwrap();
                         let event = crate::KeyEvent {
                             key: match input.physical_key {
                                 winit::keyboard::PhysicalKey::Code(code) => code.try_into().ok(),
