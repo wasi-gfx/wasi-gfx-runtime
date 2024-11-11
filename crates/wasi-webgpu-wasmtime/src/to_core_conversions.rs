@@ -717,3 +717,22 @@ impl ToCore<wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId>> for webgpu::Gp
         }
     }
 }
+
+impl<'a> ToCore<wgpu_types::QuerySetDescriptor<wgpu_core::Label<'a>>>
+    for webgpu::GpuQuerySetDescriptor
+{
+    fn to_core(
+        self,
+        _table: &ResourceTable,
+    ) -> wgpu_types::QuerySetDescriptor<wgpu_core::Label<'a>> {
+        wgpu_types::QuerySetDescriptor::<wgpu_core::Label<'a>> {
+            label: self.label.map(|l| l.into()),
+            ty: match self.type_ {
+                webgpu::GpuQueryType::Occlusion => wgpu_types::QueryType::Occlusion,
+                webgpu::GpuQueryType::Timestamp => wgpu_types::QueryType::Timestamp,
+                // TODO: Why is PipelineStatistics missing?
+            },
+            count: self.count,
+        }
+    }
+}

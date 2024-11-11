@@ -827,10 +827,17 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
 
     fn create_query_set(
         &mut self,
-        _device: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuQuerySetDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuQuerySetDescriptor,
     ) -> Resource<webgpu::GpuQuerySet> {
-        todo!()
+        let device = self.0.table().get(&device).unwrap().device;
+        let query_set = core_result(self.0.instance().device_create_query_set::<crate::Backend>(
+            device,
+            &descriptor.to_core(&self.0.table()),
+            None,
+        ))
+        .unwrap();
+        self.0.table().push(query_set).unwrap()
     }
 
     fn label(&mut self, _device: Resource<webgpu::GpuDevice>) -> String {
