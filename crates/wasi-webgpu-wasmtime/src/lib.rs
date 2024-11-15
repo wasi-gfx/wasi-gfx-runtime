@@ -68,6 +68,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu/gpu-compute-pass-encoder": ComputePass,
         "wasi:webgpu/webgpu/gpu-shader-module": wgpu_core::id::ShaderModuleId,
         "wasi:webgpu/webgpu/gpu-render-pipeline": wgpu_core::id::RenderPipelineId,
+        "wasi:webgpu/webgpu/gpu-render-bundle-encoder": wgpu_core::command::RenderBundleEncoder,
         "wasi:webgpu/webgpu/gpu-command-buffer": wgpu_core::id::CommandBufferId,
         "wasi:webgpu/webgpu/gpu-buffer": Buffer,
         "wasi:webgpu/webgpu/non-standard-buffer": BufferPtr,
@@ -819,10 +820,12 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
 
     fn create_render_bundle_encoder(
         &mut self,
-        _device: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuRenderBundleEncoderDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuRenderBundleEncoderDescriptor,
     ) -> Resource<webgpu::GpuRenderBundleEncoder> {
-        todo!()
+        let device = self.0.table().get(&device).unwrap().device;
+        let render_bundle_encoder = wgpu_core::command::RenderBundleEncoder::new(&descriptor.to_core(&self.0.table()), device, None).unwrap();
+        self.0.table().push(render_bundle_encoder).unwrap()
     }
 
     fn create_query_set(

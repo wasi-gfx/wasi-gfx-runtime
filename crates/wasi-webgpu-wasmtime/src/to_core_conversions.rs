@@ -718,6 +718,34 @@ impl ToCore<wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId>> for webgpu::Gp
     }
 }
 
+impl<'a> ToCore<wgpu_core::command::RenderBundleEncoderDescriptor<'a>>
+    for webgpu::GpuRenderBundleEncoderDescriptor
+{
+    fn to_core(
+        self,
+        _table: &ResourceTable,
+    ) -> wgpu_core::command::RenderBundleEncoderDescriptor<'a> {
+        wgpu_core::command::RenderBundleEncoderDescriptor {
+            label: self.label.map(|l| l.into()),
+            color_formats: self
+                .color_formats
+                .iter()
+                .map(|f| f.map(|f| f.into()))
+                .collect::<Vec<_>>()
+                .into(),
+            depth_stencil: self.depth_stencil_format.map(|f| {
+                wgpu_types::RenderBundleDepthStencil {
+                    format: f.into(),
+                    depth_read_only: self.depth_read_only.unwrap_or(false),
+                    stencil_read_only: self.stencil_read_only.unwrap_or(false),
+                }
+            }),
+            sample_count: self.sample_count.unwrap_or(1),
+            multiview: None,
+        }
+    }
+}
+
 impl<'a> ToCore<wgpu_types::QuerySetDescriptor<wgpu_core::Label<'a>>>
     for webgpu::GpuQuerySetDescriptor
 {
