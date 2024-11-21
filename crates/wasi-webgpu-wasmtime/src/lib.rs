@@ -664,8 +664,9 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         self.0.table().push(limits).unwrap()
     }
 
-    fn destroy(&mut self, _device: Resource<webgpu::GpuDevice>) {
-        todo!()
+    fn destroy(&mut self, device: Resource<webgpu::GpuDevice>) {
+        let device_id = self.0.table().get(&device).unwrap().device;
+        self.instance().device_destroy::<crate::Backend>(device_id);
     }
 
     fn create_buffer(
@@ -921,8 +922,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuTexture for WasiWebGpuImpl<T> {
         self.0.table().push(texture_view).unwrap()
     }
 
-    fn destroy(&mut self, _self_: Resource<webgpu::GpuTexture>) {
-        todo!()
+    fn destroy(&mut self, texture: Resource<webgpu::GpuTexture>) {
+        let texture_id = *self.0.table().get(&texture).unwrap();
+        self.instance()
+            .texture_destroy::<crate::Backend>(texture_id)
+            .unwrap();
     }
 
     fn width(&mut self, _self_: Resource<webgpu::GpuTexture>) -> webgpu::GpuIntegerCoordinateOut {
@@ -1040,10 +1044,16 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPipeline for WasiWebGpuImpl<T> {
 
     fn get_bind_group_layout(
         &mut self,
-        _self_: Resource<wgpu_core::id::RenderPipelineId>,
-        _index: u32,
+        pipeline: Resource<wgpu_core::id::RenderPipelineId>,
+        index: u32,
     ) -> Resource<webgpu::GpuBindGroupLayout> {
-        todo!()
+        let pipeline_id = *self.0.table().get(&pipeline).unwrap();
+        let layout = core_result(
+            self.instance()
+                .render_pipeline_get_bind_group_layout::<crate::Backend>(pipeline_id, index, None),
+        )
+        .unwrap();
+        self.0.table().push(layout).unwrap()
     }
 
     fn drop(&mut self, pipeline: Resource<webgpu::GpuRenderPipeline>) -> wasmtime::Result<()> {
@@ -1332,12 +1342,20 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
 
     fn copy_buffer_to_texture(
         &mut self,
-        _self_: Resource<wgpu_core::id::CommandEncoderId>,
-        _source: webgpu::GpuImageCopyBuffer,
-        _destination: webgpu::GpuImageCopyTexture,
-        _copy_size: webgpu::GpuExtent3D,
+        command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
+        source: webgpu::GpuImageCopyBuffer,
+        destination: webgpu::GpuImageCopyTexture,
+        copy_size: webgpu::GpuExtent3D,
     ) {
-        todo!()
+        let command_encoder = *self.table().get(&command_encoder).unwrap();
+        self.instance()
+            .command_encoder_copy_buffer_to_texture::<crate::Backend>(
+                command_encoder,
+                &source.to_core(&self.table()),
+                &destination.to_core(&self.table()),
+                &copy_size.to_core(self.table()),
+            )
+            .unwrap();
     }
 
     fn copy_texture_to_buffer(
@@ -1876,11 +1894,16 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> 
 
     fn dispatch_workgroups_indirect(
         &mut self,
-        _self_: Resource<webgpu::GpuComputePassEncoder>,
-        _indirect_buffer: Resource<webgpu::GpuBuffer>,
-        _indirect_offset: webgpu::GpuSize64,
+        encoder: Resource<webgpu::GpuComputePassEncoder>,
+        indirect_buffer: Resource<webgpu::GpuBuffer>,
+        indirect_offset: webgpu::GpuSize64,
     ) {
-        todo!()
+        let instance = self.instance();
+        let indirect_buffer = self.0.table().get(&indirect_buffer).unwrap().buffer;
+        let encoder = self.0.table().get_mut(&encoder).unwrap();
+        instance
+            .compute_pass_dispatch_workgroups_indirect(encoder, indirect_buffer, indirect_offset)
+            .unwrap();
     }
 
     fn end(&mut self, cpass: Resource<wgpu_core::command::ComputePass<crate::Backend>>) {
@@ -1901,14 +1924,20 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> 
 
     fn push_debug_group(
         &mut self,
-        _self_: Resource<webgpu::GpuComputePassEncoder>,
-        _group_label: String,
+        cpass: Resource<webgpu::GpuComputePassEncoder>,
+        group_label: String,
     ) {
-        todo!()
+        let instance = self.instance();
+        let cpass = self.table().get_mut(&cpass).unwrap();
+        instance
+            .compute_pass_push_debug_group(cpass, &group_label, 0)
+            .unwrap();
     }
 
-    fn pop_debug_group(&mut self, _self_: Resource<webgpu::GpuComputePassEncoder>) {
-        todo!()
+    fn pop_debug_group(&mut self, cpass: Resource<webgpu::GpuComputePassEncoder>) {
+        let instance = self.instance();
+        let cpass = self.table().get_mut(&cpass).unwrap();
+        instance.compute_pass_pop_debug_group(cpass).unwrap();
     }
 
     fn insert_debug_marker(
