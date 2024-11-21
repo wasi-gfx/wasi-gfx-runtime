@@ -8,6 +8,7 @@ use callback_future::CallbackFuture;
 use core::slice;
 use futures::executor::block_on;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::sync::Arc;
 use std::{future::Future, mem};
@@ -83,6 +84,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu/gpu-adapter-info": wgpu_types::AdapterInfo,
         "wasi:webgpu/webgpu/gpu-query-set": wgpu_core::id::QuerySetId,
         "wasi:webgpu/webgpu/gpu-supported-limits": wgpu_types::Limits,
+        "wasi:webgpu/webgpu/record-gpu-pipeline-constant-value": RecordGpuPipelineConstantValue,
         "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
     },
 });
@@ -250,6 +252,8 @@ pub struct Device {
     // only needed when calling surface.get_capabilities in connect_graphics_context. If table would have a way to get parent from child, we could get it from device.
     pub adapter: wgpu_core::id::AdapterId,
 }
+
+pub type RecordGpuPipelineConstantValue = HashMap<String, webgpu::GpuPipelineConstantValue>;
 
 impl<T: WasiWebGpuView> webgpu::Host for WasiWebGpuImpl<T> {
     fn get_gpu(&mut self) -> Resource<webgpu::Gpu> {
@@ -824,7 +828,12 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         descriptor: webgpu::GpuRenderBundleEncoderDescriptor,
     ) -> Resource<webgpu::GpuRenderBundleEncoder> {
         let device = self.0.table().get(&device).unwrap().device;
-        let render_bundle_encoder = wgpu_core::command::RenderBundleEncoder::new(&descriptor.to_core(&self.0.table()), device, None).unwrap();
+        let render_bundle_encoder = wgpu_core::command::RenderBundleEncoder::new(
+            &descriptor.to_core(&self.0.table()),
+            device,
+            None,
+        )
+        .unwrap();
         self.0.table().push(render_bundle_encoder).unwrap()
     }
 
@@ -1213,6 +1222,9 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
         descriptor: webgpu::GpuRenderPassDescriptor,
     ) -> Resource<webgpu::GpuRenderPassEncoder> {
         let command_encoder = *self.0.table().get(&command_encoder).unwrap();
+        let timestamp_writes = descriptor
+            .timestamp_writes
+            .map(|tw| tw.to_core(&self.0.table()));
         // can't use to_core because depth_stencil_attachment is Option<&x>.
         let depth_stencil_attachment = descriptor
             .depth_stencil_attachment
@@ -1226,11 +1238,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
                 .collect::<Vec<_>>()
                 .into(),
             depth_stencil_attachment: depth_stencil_attachment.as_ref(),
-            // timestamp_writes: self.timestamp_writes,
-            // occlusion_query_set: self.occlusion_query_set,
+            timestamp_writes: timestamp_writes.as_ref(),
+            occlusion_query_set: descriptor
+                .occlusion_query_set
+                .map(|oqs| oqs.to_core(&self.0.table())),
             // TODO: self.max_draw_count not used
-            // TODO: remove default
-            ..Default::default()
         };
         let render_pass = core_result_t(
             self.0
@@ -1279,8 +1291,13 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
                 .instance()
                 .command_encoder_create_compute_pass::<crate::Backend>(
                     command_encoder,
+                    // can't use to_core because timestamp_writes is Option<&x>.
                     &wgpu_core::command::ComputePassDescriptor {
-                        label: Default::default(),
+                        // TODO: can we get rid of the clone here?
+                        label: descriptor
+                            .as_ref()
+                            .map(|d| d.label.clone().map(|l| l.into()))
+                            .flatten(),
                         timestamp_writes: descriptor
                             .map(|d| d.timestamp_writes.map(|tw| tw.to_core(&self.0.table())))
                             .flatten()
@@ -2317,10 +2334,10 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
     fn request_adapter(
         &mut self,
         _self_: Resource<webgpu::Gpu>,
-        _options: Option<webgpu::GpuRequestAdapterOptions>,
+        options: Option<webgpu::GpuRequestAdapterOptions>,
     ) -> Option<Resource<wgpu_core::id::AdapterId>> {
         let adapter = self.0.instance().request_adapter(
-            &Default::default(),
+            &options.map(|o| o.to_core(self.table())).unwrap_or_default(),
             wgpu_core::instance::AdapterInputs::Mask(wgpu_types::Backends::all(), |_| None),
         );
         if let Err(wgpu_core::instance::RequestAdapterError::NotFound) = adapter {
