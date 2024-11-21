@@ -1,5 +1,16 @@
 use crate::wasi::webgpu::webgpu;
 
+impl From<webgpu::GpuPowerPreference> for wgpu_types::PowerPreference {
+    fn from(value: webgpu::GpuPowerPreference) -> Self {
+        match value {
+            webgpu::GpuPowerPreference::LowPower => wgpu_types::PowerPreference::LowPower,
+            webgpu::GpuPowerPreference::HighPerformance => {
+                wgpu_types::PowerPreference::HighPerformance
+            }
+        }
+    }
+}
+
 impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
     fn from(value: wgpu_types::TextureFormat) -> Self {
         match value {
