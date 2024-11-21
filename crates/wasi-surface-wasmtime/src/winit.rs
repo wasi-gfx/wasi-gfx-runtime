@@ -106,7 +106,8 @@ impl WasiWinitEventLoop {
                         let window = event_loop.create_window(window_options).unwrap();
                         // TODO: remove when window is drooped.
                         self.pointer_pos.insert(window.id(), (0.0, 0.0));
-                        self.modifiers.insert(window.id(), ModifiersState::default());
+                        self.modifiers
+                            .insert(window.id(), ModifiersState::default());
 
                         let window_id = window.id();
 
