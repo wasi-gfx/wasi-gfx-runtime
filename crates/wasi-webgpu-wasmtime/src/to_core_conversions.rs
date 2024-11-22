@@ -92,7 +92,7 @@ impl<'a> ToCore<wgpu_core::binding_model::BufferBinding> for webgpu::GpuBufferBi
         let buffer = table.get(&self.buffer).unwrap();
         // https://www.w3.org/TR/webgpu/#dictdef-gpubufferbinding
         wgpu_core::binding_model::BufferBinding {
-            buffer_id: buffer.buffer,
+            buffer_id: buffer.buffer_id,
             offset: self.offset.unwrap_or(0),
             size: self.size.map(|s| s.try_into().unwrap()),
         }
@@ -905,7 +905,7 @@ impl ToCore<wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId>> for webgpu::Gp
     ) -> wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId> {
         // https://www.w3.org/TR/webgpu/#gputexelcopybufferlayout
         wgpu_types::ImageCopyBuffer {
-            buffer: table.get(&self.buffer).unwrap().buffer,
+            buffer: table.get(&self.buffer).unwrap().buffer_id,
             layout: wgpu_types::ImageDataLayout {
                 offset: self.offset.unwrap_or(0),
                 bytes_per_row: self.bytes_per_row,
