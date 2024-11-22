@@ -493,7 +493,8 @@ impl<T: WasiWebGpuView> webgpu::HostNonStandardBuffer for WasiWebGpuImpl<T> {
         buffer.slice_mut().copy_from_slice(&val);
     }
 
-    fn drop(&mut self, _rep: Resource<webgpu::NonStandardBuffer>) -> wasmtime::Result<()> {
+    fn drop(&mut self, buffer: Resource<webgpu::NonStandardBuffer>) -> wasmtime::Result<()> {
+        self.table().delete(buffer).unwrap();
         Ok(())
     }
 }
@@ -2189,7 +2190,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuImpl<T>
     }
 
     fn drop(&mut self, encoder: Resource<webgpu::GpuRenderBundleEncoder>) -> wasmtime::Result<()> {
-        self.table().push(encoder).unwrap();
+        self.table().delete(encoder).unwrap();
         Ok(())
     }
 }
@@ -2218,7 +2219,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePipeline for WasiWebGpuImpl<T> {
     }
 
     fn drop(&mut self, pipeline: Resource<webgpu::GpuComputePipeline>) -> wasmtime::Result<()> {
-        self.table().push(pipeline).unwrap();
+        self.table().delete(pipeline).unwrap();
         Ok(())
     }
 }
