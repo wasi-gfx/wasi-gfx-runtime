@@ -8,7 +8,7 @@ use crate::wasi::webgpu::webgpu;
 // can't pass generics to `wasmtime::component::bindgen`
 pub type RecordGpuPipelineConstantValue = HashMap<String, webgpu::GpuPipelineConstantValue>;
 
-// RenderPassEncoder and ComputePassEncoder need to be dropped when calling .end on them, but we can't guerenty that they'll be dropped in time in some languages. Removeable let's you take the value and leaves None in place, so that RenderPass/ComputePass technicly get's dropped, but he wasm can keep it's reference.
+// RenderPassEncoder and ComputePassEncoder need to be dropped when calling .end on them, but we can't guarantee that they'll be dropped in time in some languages. Takeable lets you take the value and leaves None in place, so that RenderPass/ComputePass get dropped from Rust's point of view, but the wasm module can keep it's reference.
 // this is caused by the same underlying issue as this one https://github.com/gfx-rs/wgpu-native/issues/412
 pub type RenderPassEncoder = Takeable<wgpu_core::command::RenderPass<crate::Backend>>;
 pub type ComputePassEncoder = Takeable<wgpu_core::command::ComputePass<crate::Backend>>;
