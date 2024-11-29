@@ -9,7 +9,7 @@ use wasmtime_wasi::WasiView;
 use crate::{
     to_core_conversions::ToCore,
     wasi::webgpu::webgpu,
-    wrapper_types::{Buffer, BufferPtr, Device},
+    wrapper_types::{Buffer, BufferPtr, ComputePassEncoder, Device, RenderPassEncoder},
     AbstractBuffer, MainThreadSpawner, WasiWebGpuImpl, WasiWebGpuView, WebGpuSurface,
 };
 
@@ -756,11 +756,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuTextureView for WasiWebGpuImpl<T> {
 }
 
 impl<T: WasiWebGpuView> webgpu::HostGpuCommandBuffer for WasiWebGpuImpl<T> {
-    fn label(&mut self, _self_: Resource<wgpu_core::id::CommandBufferId>) -> String {
+    fn label(&mut self, _self_: Resource<webgpu::GpuCommandBuffer>) -> String {
         todo!()
     }
 
-    fn set_label(&mut self, _self_: Resource<wgpu_core::id::CommandBufferId>, _label: String) {
+    fn set_label(&mut self, _self_: Resource<webgpu::GpuCommandBuffer>, _label: String) {
         todo!()
     }
 
@@ -1024,7 +1024,10 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
         )
         .unwrap();
 
-        self.0.table().push(render_pass).unwrap()
+        self.0
+            .table()
+            .push(RenderPassEncoder::new(render_pass))
+            .unwrap()
     }
 
     fn finish(
@@ -1071,7 +1074,10 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
                 ),
         )
         .unwrap();
-        self.0.table().push(compute_pass).unwrap()
+        self.0
+            .table()
+            .push(ComputePassEncoder::new(compute_pass))
+            .unwrap()
     }
 
     fn copy_buffer_to_buffer(
@@ -1218,12 +1224,13 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
 impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
     fn set_pipeline(
         &mut self,
-        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        render_pass: Resource<RenderPassEncoder>,
         pipeline: Resource<webgpu::GpuRenderPipeline>,
     ) {
         let instance = self.0.instance();
         let pipeline = pipeline.to_core(&self.0.table());
-        let render_pass = self.0.table().get_mut(&render_pass).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
         instance
             .render_pass_set_pipeline(render_pass, pipeline)
             .unwrap()
@@ -1231,17 +1238,18 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn draw(
         &mut self,
-        rpass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        render_pass: Resource<RenderPassEncoder>,
         vertex_count: webgpu::GpuSize32,
         instance_count: Option<webgpu::GpuSize32>,
         first_vertex: Option<webgpu::GpuSize32>,
         first_instance: Option<webgpu::GpuSize32>,
     ) {
         let instance = self.0.instance();
-        let rpass = self.0.table().get_mut(&rpass).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
         instance
             .render_pass_draw(
-                rpass,
+                render_pass,
                 vertex_count,
                 instance_count.unwrap_or(1),
                 first_vertex.unwrap_or(0),
@@ -1250,17 +1258,18 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
             .unwrap()
     }
 
-    fn end(&mut self, rpass: Resource<wgpu_core::command::RenderPass<crate::Backend>>) {
+    fn end(&mut self, render_pass: Resource<RenderPassEncoder>) {
         let instance = self.0.instance();
-        let mut rpass = self.0.table().get_mut(&rpass).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
+        let mut render_pass = render_pass.take().unwrap();
         instance
-            .render_pass_end::<crate::Backend>(&mut rpass)
+            .render_pass_end::<crate::Backend>(&mut render_pass)
             .unwrap();
     }
 
     fn set_viewport(
         &mut self,
-        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        render_pass: Resource<RenderPassEncoder>,
         x: f32,
         y: f32,
         width: f32,
@@ -1269,7 +1278,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
         max_depth: f32,
     ) {
         let instance = self.0.instance();
-        let render_pass = self.0.table().get_mut(&render_pass).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
         instance
             .render_pass_set_viewport(render_pass, x, y, width, height, min_depth, max_depth)
             .unwrap();
@@ -1277,14 +1287,15 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn set_scissor_rect(
         &mut self,
-        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        render_pass: Resource<RenderPassEncoder>,
         x: webgpu::GpuIntegerCoordinate,
         y: webgpu::GpuIntegerCoordinate,
         width: webgpu::GpuIntegerCoordinate,
         height: webgpu::GpuIntegerCoordinate,
     ) {
         let instance = self.0.instance();
-        let render_pass = self.0.table().get_mut(&render_pass).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
         instance
             .render_pass_set_scissor_rect(render_pass, x, y, width, height)
             .unwrap();
@@ -1292,7 +1303,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn set_blend_constant(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        _self_: Resource<RenderPassEncoder>,
         _color: webgpu::GpuColor,
     ) {
         todo!()
@@ -1300,7 +1311,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn set_stencil_reference(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        _self_: Resource<RenderPassEncoder>,
         _reference: webgpu::GpuStencilValue,
     ) {
         todo!()
@@ -1308,68 +1319,47 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn begin_occlusion_query(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        _self_: Resource<RenderPassEncoder>,
         _query_index: webgpu::GpuSize32,
     ) {
         todo!()
     }
 
-    fn end_occlusion_query(
-        &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
-    ) {
+    fn end_occlusion_query(&mut self, _self_: Resource<RenderPassEncoder>) {
         todo!()
     }
 
     fn execute_bundles(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        _self_: Resource<RenderPassEncoder>,
         _bundles: Vec<Resource<webgpu::GpuRenderBundle>>,
     ) {
         todo!()
     }
 
-    fn label(
-        &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
-    ) -> String {
+    fn label(&mut self, _self_: Resource<RenderPassEncoder>) -> String {
         todo!()
     }
 
-    fn set_label(
-        &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
-        _label: String,
-    ) {
+    fn set_label(&mut self, _self_: Resource<RenderPassEncoder>, _label: String) {
         todo!()
     }
 
-    fn push_debug_group(
-        &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
-        _group_label: String,
-    ) {
+    fn push_debug_group(&mut self, _self_: Resource<RenderPassEncoder>, _group_label: String) {
         todo!()
     }
 
-    fn pop_debug_group(
-        &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
-    ) {
+    fn pop_debug_group(&mut self, _self_: Resource<RenderPassEncoder>) {
         todo!()
     }
 
-    fn insert_debug_marker(
-        &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
-        _marker_label: String,
-    ) {
+    fn insert_debug_marker(&mut self, _self_: Resource<RenderPassEncoder>, _marker_label: String) {
         todo!()
     }
 
     fn set_bind_group(
         &mut self,
-        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        render_pass: Resource<RenderPassEncoder>,
         index: webgpu::GpuIndex32,
         bind_group: Option<Resource<webgpu::GpuBindGroup>>,
         dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
@@ -1380,7 +1370,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
             .table()
             .get(&bind_group.expect("TODO: deal with null bind_groups"))
             .unwrap();
-        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
+        let mut render_pass = render_pass.as_mut().unwrap();
         let dynamic_offsets = dynamic_offsets.unwrap();
         instance
             .render_pass_set_bind_group(&mut render_pass, index, bind_group, &dynamic_offsets)
@@ -1389,7 +1380,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn set_index_buffer(
         &mut self,
-        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        render_pass: Resource<RenderPassEncoder>,
         buffer: Resource<webgpu::GpuBuffer>,
         index_format: webgpu::GpuIndexFormat,
         offset: Option<webgpu::GpuSize64>,
@@ -1400,7 +1391,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
             let buffer = self.table().get(&buffer).unwrap();
             (buffer.buffer_id, buffer.size)
         };
-        let render_pass = self.table().get_mut(&render_pass).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
         instance
             .render_pass_set_index_buffer(
                 render_pass,
@@ -1414,7 +1406,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn set_vertex_buffer(
         &mut self,
-        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        render_pass: Resource<RenderPassEncoder>,
         slot: webgpu::GpuIndex32,
         buffer: Option<Resource<webgpu::GpuBuffer>>,
         offset: Option<webgpu::GpuSize64>,
@@ -1428,7 +1420,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
                 .unwrap();
             (buffer.buffer_id, buffer.size)
         };
-        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
+        let mut render_pass = render_pass.as_mut().unwrap();
         instance
             .render_pass_set_vertex_buffer(
                 &mut render_pass,
@@ -1442,7 +1435,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn draw_indexed(
         &mut self,
-        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        render_pass: Resource<RenderPassEncoder>,
         index_count: webgpu::GpuSize32,
         instance_count: Option<webgpu::GpuSize32>,
         first_index: Option<webgpu::GpuSize32>,
@@ -1450,7 +1443,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
         first_instance: Option<webgpu::GpuSize32>,
     ) {
         let instance = self.0.instance();
-        let render_pass = self.table().get_mut(&render_pass).unwrap();
+        let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
         instance
             .render_pass_draw_indexed(
                 render_pass,
@@ -1465,7 +1459,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn draw_indirect(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        _self_: Resource<RenderPassEncoder>,
         _indirect_buffer: Resource<webgpu::GpuBuffer>,
         _indirect_offset: webgpu::GpuSize64,
     ) {
@@ -1474,17 +1468,14 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn draw_indexed_indirect(
         &mut self,
-        _self_: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
+        _self_: Resource<RenderPassEncoder>,
         _indirect_buffer: Resource<webgpu::GpuBuffer>,
         _indirect_offset: webgpu::GpuSize64,
     ) {
         todo!()
     }
 
-    fn drop(
-        &mut self,
-        render_pass: Resource<wgpu_core::command::RenderPass<crate::Backend>>,
-    ) -> wasmtime::Result<()> {
+    fn drop(&mut self, render_pass: Resource<RenderPassEncoder>) -> wasmtime::Result<()> {
         self.table().delete(render_pass).unwrap();
         Ok(())
     }
@@ -1621,29 +1612,31 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderBundle for WasiWebGpuImpl<T> {
 impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> {
     fn set_pipeline(
         &mut self,
-        encoder: Resource<webgpu::GpuComputePassEncoder>,
+        compute_pass: Resource<webgpu::GpuComputePassEncoder>,
         pipeline: Resource<webgpu::GpuComputePipeline>,
     ) {
         let instance = self.0.instance();
         let pipeline = *self.0.table().get(&pipeline).unwrap();
-        let encoder = self.0.table().get_mut(&encoder).unwrap();
+        let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
+        let compute_pass = compute_pass.as_mut().unwrap();
         instance
-            .compute_pass_set_pipeline(encoder, pipeline)
+            .compute_pass_set_pipeline(compute_pass, pipeline)
             .unwrap();
     }
 
     fn dispatch_workgroups(
         &mut self,
-        encoder: Resource<webgpu::GpuComputePassEncoder>,
+        compute_pass: Resource<webgpu::GpuComputePassEncoder>,
         workgroup_count_x: webgpu::GpuSize32,
         workgroup_count_y: Option<webgpu::GpuSize32>,
         workgroup_count_z: Option<webgpu::GpuSize32>,
     ) {
         let instance = self.0.instance();
-        let encoder = self.0.table().get_mut(&encoder).unwrap();
+        let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
+        let compute_pass = compute_pass.as_mut().unwrap();
         instance
             .compute_pass_dispatch_workgroups(
-                encoder,
+                compute_pass,
                 workgroup_count_x,
                 workgroup_count_y.unwrap(),
                 workgroup_count_z.unwrap(),
@@ -1653,23 +1646,29 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> 
 
     fn dispatch_workgroups_indirect(
         &mut self,
-        encoder: Resource<webgpu::GpuComputePassEncoder>,
+        compute_pass: Resource<webgpu::GpuComputePassEncoder>,
         indirect_buffer: Resource<webgpu::GpuBuffer>,
         indirect_offset: webgpu::GpuSize64,
     ) {
         let instance = self.instance();
         let indirect_buffer = self.0.table().get(&indirect_buffer).unwrap().buffer_id;
-        let encoder = self.0.table().get_mut(&encoder).unwrap();
+        let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
+        let compute_pass = compute_pass.as_mut().unwrap();
         instance
-            .compute_pass_dispatch_workgroups_indirect(encoder, indirect_buffer, indirect_offset)
+            .compute_pass_dispatch_workgroups_indirect(
+                compute_pass,
+                indirect_buffer,
+                indirect_offset,
+            )
             .unwrap();
     }
 
-    fn end(&mut self, cpass: Resource<wgpu_core::command::ComputePass<crate::Backend>>) {
+    fn end(&mut self, compute_pass: Resource<webgpu::GpuComputePassEncoder>) {
         let instance = self.0.instance();
-        let mut cpass = self.0.table().get_mut(&cpass).unwrap();
+        let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
+        let mut compute_pass = compute_pass.take().unwrap();
         instance
-            .compute_pass_end::<crate::Backend>(&mut cpass)
+            .compute_pass_end::<crate::Backend>(&mut compute_pass)
             .unwrap();
     }
 
@@ -1683,37 +1682,40 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> 
 
     fn push_debug_group(
         &mut self,
-        cpass: Resource<webgpu::GpuComputePassEncoder>,
+        compute_pass: Resource<webgpu::GpuComputePassEncoder>,
         group_label: String,
     ) {
         let instance = self.instance();
-        let cpass = self.table().get_mut(&cpass).unwrap();
+        let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
+        let compute_pass = compute_pass.as_mut().unwrap();
         instance
-            .compute_pass_push_debug_group(cpass, &group_label, 0)
+            .compute_pass_push_debug_group(compute_pass, &group_label, 0)
             .unwrap();
     }
 
-    fn pop_debug_group(&mut self, cpass: Resource<webgpu::GpuComputePassEncoder>) {
+    fn pop_debug_group(&mut self, compute_pass: Resource<webgpu::GpuComputePassEncoder>) {
         let instance = self.instance();
-        let cpass = self.table().get_mut(&cpass).unwrap();
-        instance.compute_pass_pop_debug_group(cpass).unwrap();
+        let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
+        let compute_pass = compute_pass.as_mut().unwrap();
+        instance.compute_pass_pop_debug_group(compute_pass).unwrap();
     }
 
     fn insert_debug_marker(
         &mut self,
-        cpass: Resource<webgpu::GpuComputePassEncoder>,
+        compute_pass: Resource<webgpu::GpuComputePassEncoder>,
         label: String,
     ) {
         let instance = self.0.instance();
-        let cpass = self.0.table().get_mut(&cpass).unwrap();
+        let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
+        let compute_pass = compute_pass.as_mut().unwrap();
         instance
-            .compute_pass_insert_debug_marker(cpass, &label, 0)
+            .compute_pass_insert_debug_marker(compute_pass, &label, 0)
             .unwrap()
     }
 
     fn set_bind_group(
         &mut self,
-        encoder: Resource<webgpu::GpuComputePassEncoder>,
+        compute_pass: Resource<webgpu::GpuComputePassEncoder>,
         index: webgpu::GpuIndex32,
         bind_group: Option<Resource<webgpu::GpuBindGroup>>,
         dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
@@ -1724,15 +1726,19 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> 
             .table()
             .get(&bind_group.expect("TODO: deal with null bind_groups"))
             .unwrap();
-        let encoder = self.0.table().get_mut(&encoder).unwrap();
+        let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
+        let compute_pass = compute_pass.as_mut().unwrap();
         let dynamic_offsets = dynamic_offsets.unwrap();
         instance
-            .compute_pass_set_bind_group(encoder, index, bind_group, &dynamic_offsets)
+            .compute_pass_set_bind_group(compute_pass, index, bind_group, &dynamic_offsets)
             .unwrap()
     }
 
-    fn drop(&mut self, encoder: Resource<webgpu::GpuComputePassEncoder>) -> wasmtime::Result<()> {
-        self.table().delete(encoder).unwrap();
+    fn drop(
+        &mut self,
+        compute_pass: Resource<webgpu::GpuComputePassEncoder>,
+    ) -> wasmtime::Result<()> {
+        self.table().delete(compute_pass).unwrap();
         Ok(())
     }
 }

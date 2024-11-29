@@ -1,14 +1,34 @@
 // Wrappers around `wgpu_*` types
 // Every type here should have an explanation as to why we can't use the type directly.
 
-use std::{collections::HashMap, ptr::NonNull, slice};
+use std::{collections::HashMap, ptr::NonNull, slice, sync::Arc};
 
 use crate::wasi::webgpu::webgpu;
 
 // can't pass generics to `wasmtime::component::bindgen`
-pub type RenderPass = wgpu_core::command::RenderPass<crate::Backend>;
-pub type ComputePass = wgpu_core::command::ComputePass<crate::Backend>;
 pub type RecordGpuPipelineConstantValue = HashMap<String, webgpu::GpuPipelineConstantValue>;
+
+// RenderPassEncoder and ComputePassEncoder need to be dropped when calling .end on them, but we can't guerenty that they'll be dropped in time in some languages. Removeable let's you take the value and leaves None in place, so that RenderPass/ComputePass technicly get's dropped, but he wasm can keep it's reference.
+// this is caused by the same underlying issue as this one https://github.com/gfx-rs/wgpu-native/issues/412
+pub type RenderPassEncoder = Takeable<wgpu_core::command::RenderPass<crate::Backend>>;
+pub type ComputePassEncoder = Takeable<wgpu_core::command::ComputePass<crate::Backend>>;
+
+#[derive(Clone, Debug)]
+pub struct Takeable<T: std::fmt::Debug>(Arc<std::sync::Mutex<Option<T>>>);
+impl<T> Takeable<T>
+where
+    T: std::fmt::Debug,
+{
+    pub fn new(id: T) -> Self {
+        Takeable(Arc::new(std::sync::Mutex::new(Some(id))))
+    }
+    pub fn lock<'a>(&'a self) -> std::sync::MutexGuard<'a, Option<T>> {
+        self.0.lock().unwrap()
+    }
+    pub fn take(&self) -> Option<T> {
+        self.0.lock().unwrap().take()
+    }
+}
 
 // needed just to group the pointer and length together
 pub struct BufferPtr {
