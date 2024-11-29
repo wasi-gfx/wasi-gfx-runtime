@@ -1,4 +1,4 @@
-use std::{borrow::Cow, mem, sync::Arc};
+use std::{borrow::Cow, mem, num::NonZeroU64, sync::Arc};
 
 use callback_future::CallbackFuture;
 use futures::executor::block_on;
@@ -338,7 +338,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
                     device,
                     &descriptor
                         .map(|d| d.to_core(&self.0.table()))
-                        .unwrap_or_default(),
+                        .unwrap_or(wgpu_types::CommandEncoderDescriptor::default()),
                     None,
                 ),
         )
@@ -471,11 +471,27 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
     ) -> Resource<webgpu::GpuSampler> {
         let device = self.0.table().get(&device).unwrap().device;
 
-        let descriptor = descriptor.unwrap();
+        let descriptor = descriptor
+            .map(|d| d.to_core(&self.0.table()))
+            // https://www.w3.org/TR/webgpu/#dictdef-gpusamplerdescriptor
+            .unwrap_or_else(|| wgpu_core::resource::SamplerDescriptor {
+                label: None,
+                address_modes: [wgpu_types::AddressMode::ClampToEdge; 3],
+                mag_filter: wgpu_types::FilterMode::Nearest,
+                min_filter: wgpu_types::FilterMode::Nearest,
+                mipmap_filter: wgpu_types::FilterMode::Nearest,
+                lod_min_clamp: 0.0,
+                lod_max_clamp: 32.0,
+                compare: None,
+                // TODO: make sure that anisotropy_clamp actually corresponds to maxAnisotropy
+                anisotropy_clamp: 1,
+                // border_color is not present in WebGPU
+                border_color: None,
+            });
 
         let sampler = core_result(self.0.instance().device_create_sampler::<crate::Backend>(
             device,
-            &descriptor.to_core(&self.0.table()),
+            &descriptor,
             None,
         ))
         .unwrap();
@@ -673,7 +689,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuTexture for WasiWebGpuImpl<T> {
                 texture_id,
                 &descriptor
                     .map(|d| d.to_core(&self.0.table()))
-                    .unwrap_or_default(),
+                    .unwrap_or(wgpu_core::resource::TextureViewDescriptor::default()),
                 None,
             ),
         )
@@ -834,7 +850,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
                 adapter_id,
                 &descriptor
                     .map(|d| d.to_core(&self.0.table()))
-                    .unwrap_or_default(),
+                    .unwrap_or(wgpu_types::DeviceDescriptor::default()),
                 None,
                 None,
                 None,
@@ -1041,7 +1057,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
                 command_encoder,
                 &descriptor
                     .map(|d| d.to_core(&self.0.table()))
-                    .unwrap_or_default(),
+                    .unwrap_or(wgpu_types::CommandBufferDescriptor::default()),
             ),
         )
         .unwrap();
@@ -1247,6 +1263,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
         let instance = self.0.instance();
         let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
         let render_pass = render_pass.as_mut().unwrap();
+        // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
         instance
             .render_pass_draw(
                 render_pass,
@@ -1372,9 +1389,14 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
             .unwrap();
         let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
         let mut render_pass = render_pass.as_mut().unwrap();
-        let dynamic_offsets = dynamic_offsets.unwrap();
+        // https://www.w3.org/TR/webgpu/#programmable-passes
         instance
-            .render_pass_set_bind_group(&mut render_pass, index, bind_group, &dynamic_offsets)
+            .render_pass_set_bind_group(
+                &mut render_pass,
+                index,
+                bind_group,
+                &dynamic_offsets.unwrap_or(vec![]),
+            )
             .unwrap()
     }
 
@@ -1387,10 +1409,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
         size: Option<webgpu::GpuSize64>,
     ) {
         let instance = self.0.instance();
-        let (buffer_id, buffer_size) = {
-            let buffer = self.table().get(&buffer).unwrap();
-            (buffer.buffer_id, buffer.size)
-        };
+        let buffer_id = self.table().get(&buffer).unwrap().buffer_id;
         let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
         let render_pass = render_pass.as_mut().unwrap();
         instance
@@ -1398,8 +1417,9 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
                 render_pass,
                 buffer_id,
                 index_format.into(),
+                // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
                 offset.unwrap_or(0),
-                core::num::NonZeroU64::new(size.unwrap_or(buffer_size)),
+                size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
             )
             .unwrap()
     }
@@ -1413,13 +1433,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
         size: Option<webgpu::GpuSize64>,
     ) {
         let instance = self.0.instance();
-        let (buffer_id, buffer_size) = {
-            let buffer = self
-                .table()
-                .get(&buffer.expect("TODO: deal null buffers"))
-                .unwrap();
-            (buffer.buffer_id, buffer.size)
-        };
+        let buffer_id = self
+            .table()
+            .get(&buffer.expect("TODO: deal null buffers"))
+            .unwrap()
+            .buffer_id;
         let mut render_pass = self.0.table().get_mut(&render_pass).unwrap().lock();
         let mut render_pass = render_pass.as_mut().unwrap();
         instance
@@ -1427,8 +1445,9 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
                 &mut render_pass,
                 slot,
                 buffer_id,
+                // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
                 offset.unwrap_or(0),
-                core::num::NonZeroU64::new(size.unwrap_or(buffer_size)),
+                size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
             )
             .unwrap()
     }
@@ -1449,6 +1468,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
             .render_pass_draw_indexed(
                 render_pass,
                 index_count,
+                // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
                 instance_count.unwrap_or(1),
                 first_index.unwrap_or(0),
                 base_vertex.unwrap_or(0),
@@ -1634,12 +1654,13 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> 
         let instance = self.0.instance();
         let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
         let compute_pass = compute_pass.as_mut().unwrap();
+        // https://www.w3.org/TR/webgpu/#gpucomputepassencoder
         instance
             .compute_pass_dispatch_workgroups(
                 compute_pass,
                 workgroup_count_x,
-                workgroup_count_y.unwrap(),
-                workgroup_count_z.unwrap(),
+                workgroup_count_y.unwrap_or(1),
+                workgroup_count_z.unwrap_or(1),
             )
             .unwrap()
     }
@@ -1728,9 +1749,14 @@ impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> 
             .unwrap();
         let mut compute_pass = self.0.table().get_mut(&compute_pass).unwrap().lock();
         let compute_pass = compute_pass.as_mut().unwrap();
-        let dynamic_offsets = dynamic_offsets.unwrap();
+        // https://www.w3.org/TR/webgpu/#programmable-passes
         instance
-            .compute_pass_set_bind_group(compute_pass, index, bind_group, &dynamic_offsets)
+            .compute_pass_set_bind_group(
+                compute_pass,
+                index,
+                bind_group,
+                &dynamic_offsets.unwrap_or(vec![]),
+            )
             .unwrap()
     }
 
@@ -2089,7 +2115,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
                     ))),
                 };
 
-                let offset = offset.unwrap();
+                // https://www.w3.org/TR/webgpu/#gpubuffer
+                let offset = offset.unwrap_or(0);
                 instance
                     .buffer_map_async::<crate::Backend>(buffer_id, offset, size, op)
                     .unwrap();
@@ -2111,6 +2138,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
         let (ptr, len) = self
             .0
             .instance()
+            // https://www.w3.org/TR/webgpu/#gpubuffer
             .buffer_get_mapped_range::<crate::Backend>(buffer_id, offset.unwrap_or(0), size)
             .unwrap();
         let remote_buffer = BufferPtr { ptr, len };
@@ -2149,14 +2177,15 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
         options: Option<webgpu::GpuRequestAdapterOptions>,
     ) -> Option<Resource<wgpu_core::id::AdapterId>> {
         let adapter = self.0.instance().request_adapter(
-            &options.map(|o| o.to_core(self.table())).unwrap_or_default(),
+            &options
+                .map(|o| o.to_core(self.table()))
+                .unwrap_or(wgpu_types::RequestAdapterOptions::default()),
             wgpu_core::instance::AdapterInputs::Mask(wgpu_types::Backends::all(), |_| None),
         );
         if let Err(wgpu_core::instance::RequestAdapterError::NotFound) = adapter {
             return None;
         }
-        let adapter = adapter.unwrap();
-        Some(self.0.table().push(adapter).unwrap())
+        adapter.ok().map(|a| self.0.table().push(a).unwrap())
     }
 
     fn get_preferred_canvas_format(
