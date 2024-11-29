@@ -469,10 +469,9 @@ impl<'a> ToCore<wgpu_core::resource::SamplerDescriptor<'a>> for webgpu::GpuSampl
             lod_min_clamp: self.lod_min_clamp.unwrap_or(0.0),
             lod_max_clamp: self.lod_max_clamp.unwrap_or(32.0),
             compare: self.compare.map(|compare| compare.into()),
-            // TODO: `max_anisotropy` is not available on `SamplerDescriptor` yet
-            // max_anisotropy: self.max_anisotropy,
-            // anisotropy_clamp and border_color are not present in WebGPU
-            anisotropy_clamp: 1,
+            // TODO: make sure that anisotropy_clamp actually corresponds to maxAnisotropy
+            anisotropy_clamp: self.max_anisotropy.unwrap_or(1),
+            // border_color is not present in WebGPU
             border_color: None,
         }
     }
