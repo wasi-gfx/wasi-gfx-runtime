@@ -43,7 +43,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuColorWrite for WasiWebGpuImpl<T> {
     }
 
     fn drop(&mut self, _self_: Resource<webgpu::GpuColorWrite>) -> wasmtime::Result<()> {
-        todo!()
+        unreachable!()
     }
 }
 
@@ -122,7 +122,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuShaderStage for WasiWebGpuImpl<T> {
     }
 
     fn drop(&mut self, _: Resource<webgpu::GpuShaderStage>) -> wasmtime::Result<()> {
-        todo!()
+        unreachable!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuTextureUsage for WasiWebGpuImpl<T> {
@@ -145,7 +145,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuTextureUsage for WasiWebGpuImpl<T> {
         &mut self,
         _rep: wasmtime::component::Resource<webgpu::GpuTextureUsage>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        unreachable!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuMapMode for WasiWebGpuImpl<T> {
@@ -158,7 +158,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuMapMode for WasiWebGpuImpl<T> {
         0x0002
     }
     fn drop(&mut self, _rep: Resource<webgpu::GpuMapMode>) -> wasmtime::Result<()> {
-        todo!()
+        unreachable!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuBufferUsage for WasiWebGpuImpl<T> {
@@ -193,7 +193,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBufferUsage for WasiWebGpuImpl<T> {
         wgpu_types::BufferUsages::QUERY_RESOLVE.bits()
     }
     fn drop(&mut self, _rep: Resource<webgpu::GpuBufferUsage>) -> wasmtime::Result<()> {
-        todo!()
+        unreachable!()
     }
 }
 
