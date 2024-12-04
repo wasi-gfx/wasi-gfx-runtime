@@ -960,3 +960,13 @@ impl<'a> ToCore<wgpu_types::QuerySetDescriptor<wgpu_core::Label<'a>>>
         }
     }
 }
+
+impl<'a> ToCore<wgpu_core::command::RenderBundleDescriptor<'a>>
+    for webgpu::GpuRenderBundleDescriptor
+{
+    fn to_core(self, _table: &ResourceTable) -> wgpu_core::command::RenderBundleDescriptor<'a> {
+        wgpu_core::command::RenderBundleDescriptor {
+            label: self.label.map(|l| l.into()),
+        }
+    }
+}

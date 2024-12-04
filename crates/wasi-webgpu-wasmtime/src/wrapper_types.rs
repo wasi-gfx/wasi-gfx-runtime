@@ -12,6 +12,7 @@ pub type RecordGpuPipelineConstantValue = HashMap<String, webgpu::GpuPipelineCon
 // this is caused by the same underlying issue as this one https://github.com/gfx-rs/wgpu-native/issues/412
 pub type RenderPassEncoder = Takeable<wgpu_core::command::RenderPass<crate::Backend>>;
 pub type ComputePassEncoder = Takeable<wgpu_core::command::ComputePass<crate::Backend>>;
+pub type RenderBundleEncoder = Takeable<wgpu_core::command::RenderBundleEncoder>;
 
 #[derive(Clone, Debug)]
 pub struct Takeable<T: std::fmt::Debug>(Arc<std::sync::Mutex<Option<T>>>);

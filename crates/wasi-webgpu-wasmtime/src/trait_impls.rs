@@ -9,7 +9,9 @@ use wasmtime_wasi::WasiView;
 use crate::{
     to_core_conversions::ToCore,
     wasi::webgpu::webgpu,
-    wrapper_types::{Buffer, BufferPtr, ComputePassEncoder, Device, RenderPassEncoder},
+    wrapper_types::{
+        Buffer, BufferPtr, ComputePassEncoder, Device, RenderBundleEncoder, RenderPassEncoder,
+    },
     AbstractBuffer, MainThreadSpawner, WasiWebGpuImpl, WasiWebGpuView, WebGpuSurface,
 };
 
@@ -572,18 +574,18 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
 
     fn create_compute_pipeline_async(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuComputePipelineDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuComputePipelineDescriptor,
     ) -> Resource<webgpu::GpuComputePipeline> {
-        todo!()
+        self.create_compute_pipeline(device, descriptor)
     }
 
     fn create_render_pipeline_async(
         &mut self,
-        _self_: Resource<webgpu::GpuDevice>,
-        _descriptor: webgpu::GpuRenderPipelineDescriptor,
+        device: Resource<webgpu::GpuDevice>,
+        descriptor: webgpu::GpuRenderPipelineDescriptor,
     ) -> Resource<wgpu_core::id::RenderPipelineId> {
-        todo!()
+        self.create_render_pipeline(device, descriptor)
     }
 
     fn create_render_bundle_encoder(
@@ -598,7 +600,9 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
             None,
         )
         .unwrap();
-        self.table().push(render_bundle_encoder).unwrap()
+        self.table()
+            .push(RenderBundleEncoder::new(render_bundle_encoder))
+            .unwrap()
     }
 
     fn create_query_set(
@@ -1137,34 +1141,64 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
 
     fn copy_texture_to_texture(
         &mut self,
-        _self_: Resource<wgpu_core::id::CommandEncoderId>,
-        _source: webgpu::GpuImageCopyTexture,
-        _destination: webgpu::GpuImageCopyTexture,
-        _copy_size: webgpu::GpuExtent3D,
+        command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
+        source: webgpu::GpuImageCopyTexture,
+        destination: webgpu::GpuImageCopyTexture,
+        copy_size: webgpu::GpuExtent3D,
     ) {
-        todo!()
+        let command_encoder_id = *self.table().get(&command_encoder).unwrap();
+        self.instance()
+            .command_encoder_copy_texture_to_texture::<crate::Backend>(
+                command_encoder_id,
+                &source.to_core(self.table()),
+                &destination.to_core(self.table()),
+                &copy_size.to_core(self.table()),
+            )
+            .unwrap();
     }
 
     fn clear_buffer(
         &mut self,
-        _self_: Resource<wgpu_core::id::CommandEncoderId>,
-        _buffer: Resource<webgpu::GpuBuffer>,
-        _offset: Option<webgpu::GpuSize64>,
-        _size: Option<webgpu::GpuSize64>,
+        command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
+        buffer: Resource<webgpu::GpuBuffer>,
+        offset: Option<webgpu::GpuSize64>,
+        size: Option<webgpu::GpuSize64>,
     ) {
-        todo!()
+        let buffer_id = self.table().get(&buffer).unwrap().buffer_id;
+        let command_encoder_id = *self.table().get(&command_encoder).unwrap();
+        // https://www.w3.org/TR/webgpu/#gpucommandencoder
+        self.instance()
+            .command_encoder_clear_buffer::<crate::Backend>(
+                command_encoder_id,
+                buffer_id,
+                offset.unwrap_or(0),
+                size,
+            )
+            .unwrap();
     }
 
     fn resolve_query_set(
         &mut self,
-        _self_: Resource<wgpu_core::id::CommandEncoderId>,
-        _query_set: Resource<webgpu::GpuQuerySet>,
-        _first_query: webgpu::GpuSize32,
-        _query_count: webgpu::GpuSize32,
-        _destination: Resource<webgpu::GpuBuffer>,
-        _destination_offset: webgpu::GpuSize64,
+        command_encoder: Resource<wgpu_core::id::CommandEncoderId>,
+        query_set: Resource<webgpu::GpuQuerySet>,
+        first_query: webgpu::GpuSize32,
+        query_count: webgpu::GpuSize32,
+        destination: Resource<webgpu::GpuBuffer>,
+        destination_offset: webgpu::GpuSize64,
     ) {
-        todo!()
+        let query_set_id = *self.table().get(&query_set).unwrap();
+        let destination = self.table().get(&destination).unwrap().buffer_id;
+        let command_encoder_id = *self.table().get(&command_encoder).unwrap();
+        self.instance()
+            .command_encoder_resolve_query_set::<crate::Backend>(
+                command_encoder_id,
+                query_set_id,
+                first_query,
+                query_count,
+                destination,
+                destination_offset,
+            )
+            .unwrap();
     }
 
     fn label(&mut self, command_encoder: Resource<wgpu_core::id::CommandEncoderId>) -> String {
@@ -1298,38 +1332,67 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn set_blend_constant(
         &mut self,
-        _self_: Resource<RenderPassEncoder>,
-        _color: webgpu::GpuColor,
+        render_pass: Resource<RenderPassEncoder>,
+        color: webgpu::GpuColor,
     ) {
-        todo!()
+        let instance = self.instance();
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance
+            .render_pass_set_blend_constant(render_pass, color.into())
+            .unwrap();
     }
 
     fn set_stencil_reference(
         &mut self,
-        _self_: Resource<RenderPassEncoder>,
-        _reference: webgpu::GpuStencilValue,
+        render_pass: Resource<RenderPassEncoder>,
+        reference: webgpu::GpuStencilValue,
     ) {
-        todo!()
+        let instance = self.instance();
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance
+            .render_pass_set_stencil_reference(render_pass, reference)
+            .unwrap();
     }
 
     fn begin_occlusion_query(
         &mut self,
-        _self_: Resource<RenderPassEncoder>,
-        _query_index: webgpu::GpuSize32,
+        render_pass: Resource<RenderPassEncoder>,
+        query_index: webgpu::GpuSize32,
     ) {
-        todo!()
+        let instance = self.instance();
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance
+            .render_pass_begin_occlusion_query(render_pass, query_index)
+            .unwrap();
     }
 
-    fn end_occlusion_query(&mut self, _self_: Resource<RenderPassEncoder>) {
-        todo!()
+    fn end_occlusion_query(&mut self, render_pass: Resource<RenderPassEncoder>) {
+        let instance = self.instance();
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance
+            .render_pass_end_occlusion_query(render_pass)
+            .unwrap();
     }
 
     fn execute_bundles(
         &mut self,
-        _self_: Resource<RenderPassEncoder>,
-        _bundles: Vec<Resource<webgpu::GpuRenderBundle>>,
+        render_pass: Resource<RenderPassEncoder>,
+        bundles: Vec<Resource<webgpu::GpuRenderBundle>>,
     ) {
-        todo!()
+        let instance = self.instance();
+        let render_bundle_ids = bundles
+            .iter()
+            .map(|bundle| *self.table().get(bundle).unwrap())
+            .collect::<Vec<_>>();
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance
+            .render_pass_execute_bundles(render_pass, &render_bundle_ids)
+            .unwrap();
     }
 
     fn label(&mut self, _self_: Resource<RenderPassEncoder>) -> String {
@@ -1456,20 +1519,32 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
 
     fn draw_indirect(
         &mut self,
-        _self_: Resource<RenderPassEncoder>,
-        _indirect_buffer: Resource<webgpu::GpuBuffer>,
-        _indirect_offset: webgpu::GpuSize64,
+        render_pass: Resource<RenderPassEncoder>,
+        indirect_buffer: Resource<webgpu::GpuBuffer>,
+        indirect_offset: webgpu::GpuSize64,
     ) {
-        todo!()
+        let instance = self.instance();
+        let indirect_buffer = self.table().get(&indirect_buffer).unwrap().buffer_id;
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance
+            .render_pass_draw_indirect(render_pass, indirect_buffer, indirect_offset)
+            .unwrap()
     }
 
     fn draw_indexed_indirect(
         &mut self,
-        _self_: Resource<RenderPassEncoder>,
-        _indirect_buffer: Resource<webgpu::GpuBuffer>,
-        _indirect_offset: webgpu::GpuSize64,
+        render_pass: Resource<RenderPassEncoder>,
+        indirect_buffer: Resource<webgpu::GpuBuffer>,
+        indirect_offset: webgpu::GpuSize64,
     ) {
-        todo!()
+        let instance = self.instance();
+        let indirect_buffer = self.table().get(&indirect_buffer).unwrap().buffer_id;
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance
+            .render_pass_draw_indexed_indirect(render_pass, indirect_buffer, indirect_offset)
+            .unwrap()
     }
 
     fn drop(&mut self, render_pass: Resource<RenderPassEncoder>) -> wasmtime::Result<()> {
@@ -1813,6 +1888,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCompilationInfo for WasiWebGpuImpl<T> {
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuQuerySet for WasiWebGpuImpl<T> {
     fn destroy(&mut self, _self_: Resource<webgpu::GpuQuerySet>) {
+        // https://github.com/gfx-rs/wgpu/issues/6495
         todo!()
     }
 
@@ -1840,10 +1916,23 @@ impl<T: WasiWebGpuView> webgpu::HostGpuQuerySet for WasiWebGpuImpl<T> {
 impl<T: WasiWebGpuView> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuImpl<T> {
     fn finish(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
-        _descriptor: Option<webgpu::GpuRenderBundleDescriptor>,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        descriptor: Option<webgpu::GpuRenderBundleDescriptor>,
     ) -> Resource<webgpu::GpuRenderBundle> {
-        todo!()
+        let instance = self.instance();
+        let descriptor = descriptor
+            .map(|d| d.to_core(self.table()))
+            .unwrap_or(wgpu_types::RenderBundleDescriptor::default());
+        let mut bundle_encoder_lock = self.table().get_mut(&bundle_encoder).unwrap().lock();
+        let bundle_encoder = bundle_encoder_lock.take().unwrap();
+        drop(bundle_encoder_lock);
+        let render_bundle = core_result(instance.render_bundle_encoder_finish::<crate::Backend>(
+            bundle_encoder,
+            &descriptor,
+            None,
+        ))
+        .unwrap();
+        self.table().push(render_bundle).unwrap()
     }
 
     fn label(&mut self, _self_: Resource<webgpu::GpuRenderBundleEncoder>) -> String {
@@ -1876,83 +1965,156 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuImpl<T>
 
     fn set_bind_group(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
-        _index: webgpu::GpuIndex32,
-        _bind_group: Option<Resource<webgpu::GpuBindGroup>>,
-        _dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        index: webgpu::GpuIndex32,
+        bind_group: Option<Resource<webgpu::GpuBindGroup>>,
+        dynamic_offsets: Option<Vec<webgpu::GpuBufferDynamicOffset>>,
     ) {
-        todo!()
+        let dynamic_offsets = dynamic_offsets.unwrap_or(vec![]);
+        let bind_group = bind_group.expect("TODO: optional in next version of wgpu");
+        let bind_group_id = *self.table().get(&bind_group).unwrap();
+        let mut bundle_encoder = self.table().get_mut(&bundle_encoder).unwrap().lock();
+        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        unsafe {
+            wgpu_core::command::bundle_ffi::wgpu_render_bundle_set_bind_group(
+                bundle_encoder,
+                index,
+                bind_group_id,
+                dynamic_offsets.as_ptr(),
+                dynamic_offsets.len(),
+            )
+        };
     }
 
     fn set_pipeline(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
-        _pipeline: Resource<wgpu_core::id::RenderPipelineId>,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        pipeline: Resource<wgpu_core::id::RenderPipelineId>,
     ) {
-        todo!()
+        let pipeline_id = *self.table().get(&pipeline).unwrap();
+        let mut bundle_encoder = self.table().get_mut(&bundle_encoder).unwrap().lock();
+        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        wgpu_core::command::bundle_ffi::wgpu_render_bundle_set_pipeline(
+            bundle_encoder,
+            pipeline_id,
+        );
     }
 
     fn set_index_buffer(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
-        _buffer: Resource<webgpu::GpuBuffer>,
-        _index_format: webgpu::GpuIndexFormat,
-        _offset: Option<webgpu::GpuSize64>,
-        _size: Option<webgpu::GpuSize64>,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        buffer: Resource<webgpu::GpuBuffer>,
+        index_format: webgpu::GpuIndexFormat,
+        offset: Option<webgpu::GpuSize64>,
+        size: Option<webgpu::GpuSize64>,
     ) {
-        todo!()
+        let buffer_id = self.table().get(&buffer).unwrap().buffer_id;
+        let mut bundle_encoder = self.table().get_mut(&bundle_encoder).unwrap().lock();
+        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
+        wgpu_core::command::bundle_ffi::wgpu_render_bundle_set_index_buffer(
+            bundle_encoder,
+            buffer_id,
+            index_format.into(),
+            offset.unwrap_or(0),
+            size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
+        );
     }
 
     fn set_vertex_buffer(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
-        _slot: webgpu::GpuIndex32,
-        _buffer: Option<Resource<webgpu::GpuBuffer>>,
-        _offset: Option<webgpu::GpuSize64>,
-        _size: Option<webgpu::GpuSize64>,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        slot: webgpu::GpuIndex32,
+        buffer: Option<Resource<webgpu::GpuBuffer>>,
+        offset: Option<webgpu::GpuSize64>,
+        size: Option<webgpu::GpuSize64>,
     ) {
-        todo!()
+        let buffer = buffer.expect("TODO: Null buffers not yet supported in wgpu");
+        let buffer_id = self.table().get(&buffer).unwrap().buffer_id;
+        let mut bundle_encoder = self.table().get_mut(&bundle_encoder).unwrap().lock();
+        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
+        wgpu_core::command::bundle_ffi::wgpu_render_bundle_set_vertex_buffer(
+            bundle_encoder,
+            slot,
+            buffer_id,
+            offset.unwrap_or(0),
+            size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
+        );
     }
 
     fn draw(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
-        _vertex_count: webgpu::GpuSize32,
-        _instance_count: Option<webgpu::GpuSize32>,
-        _first_vertex: Option<webgpu::GpuSize32>,
-        _first_instance: Option<webgpu::GpuSize32>,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        vertex_count: webgpu::GpuSize32,
+        instance_count: Option<webgpu::GpuSize32>,
+        first_vertex: Option<webgpu::GpuSize32>,
+        first_instance: Option<webgpu::GpuSize32>,
     ) {
-        todo!()
+        let mut bundle_encoder = self.table().get_mut(&bundle_encoder).unwrap().lock();
+        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
+        wgpu_core::command::bundle_ffi::wgpu_render_bundle_draw(
+            bundle_encoder,
+            vertex_count,
+            instance_count.unwrap_or(1),
+            first_vertex.unwrap_or(0),
+            first_instance.unwrap_or(0),
+        );
     }
 
     fn draw_indexed(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
-        _index_count: webgpu::GpuSize32,
-        _instance_count: Option<webgpu::GpuSize32>,
-        _first_index: Option<webgpu::GpuSize32>,
-        _base_vertex: Option<webgpu::GpuSignedOffset32>,
-        _first_instance: Option<webgpu::GpuSize32>,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        index_count: webgpu::GpuSize32,
+        instance_count: Option<webgpu::GpuSize32>,
+        first_index: Option<webgpu::GpuSize32>,
+        base_vertex: Option<webgpu::GpuSignedOffset32>,
+        first_instance: Option<webgpu::GpuSize32>,
     ) {
-        todo!()
+        let mut bundle_encoder = self.table().get_mut(&bundle_encoder).unwrap().lock();
+        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
+        wgpu_core::command::bundle_ffi::wgpu_render_bundle_draw_indexed(
+            bundle_encoder,
+            index_count,
+            instance_count.unwrap_or(1),
+            first_index.unwrap_or(0),
+            base_vertex.unwrap_or(0),
+            first_instance.unwrap_or(0),
+        );
     }
 
     fn draw_indirect(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
-        _indirect_buffer: Resource<webgpu::GpuBuffer>,
-        _indirect_offset: webgpu::GpuSize64,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        indirect_buffer: Resource<webgpu::GpuBuffer>,
+        indirect_offset: webgpu::GpuSize64,
     ) {
-        todo!()
+        let indirect_buffer = self.table().get(&indirect_buffer).unwrap().buffer_id;
+        let mut bundle_encoder = self.table().get_mut(&bundle_encoder).unwrap().lock();
+        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        wgpu_core::command::bundle_ffi::wgpu_render_bundle_draw_indirect(
+            bundle_encoder,
+            indirect_buffer,
+            indirect_offset,
+        );
     }
 
     fn draw_indexed_indirect(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
-        _indirect_buffer: Resource<webgpu::GpuBuffer>,
-        _indirect_offset: webgpu::GpuSize64,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        indirect_buffer: Resource<webgpu::GpuBuffer>,
+        indirect_offset: webgpu::GpuSize64,
     ) {
-        todo!()
+        let indirect_buffer = self.table().get(&indirect_buffer).unwrap().buffer_id;
+        let mut bundle_encoder = self.table().get_mut(&bundle_encoder).unwrap().lock();
+        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        wgpu_core::command::bundle_ffi::wgpu_render_bundle_draw_indexed_indirect(
+            bundle_encoder,
+            indirect_buffer,
+            indirect_offset,
+        );
     }
 
     fn drop(&mut self, encoder: Resource<webgpu::GpuRenderBundleEncoder>) -> wasmtime::Result<()> {
@@ -2126,8 +2288,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
             .unwrap();
     }
 
-    fn destroy(&mut self, _self_: Resource<webgpu::GpuBuffer>) {
-        todo!()
+    fn destroy(&mut self, buffer: Resource<webgpu::GpuBuffer>) {
+        let buffer_id = self.table().get_mut(&buffer).unwrap().buffer_id;
+        self.instance()
+            .buffer_destroy::<crate::Backend>(buffer_id)
+            .unwrap();
     }
 
     fn label(&mut self, _self_: Resource<webgpu::GpuBuffer>) -> String {
@@ -2185,6 +2350,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuAdapterInfo for WasiWebGpuImpl<T> {
+    // TODO: take ideas from https://bugzilla.mozilla.org/show_bug.cgi?id=1831994
     fn vendor(&mut self, _self_: Resource<webgpu::GpuAdapterInfo>) -> String {
         todo!()
     }
