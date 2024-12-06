@@ -8,7 +8,7 @@ use crate::wasi::webgpu::webgpu;
 // can't pass generics to `wasmtime::component::bindgen`
 pub type RecordGpuPipelineConstantValue = HashMap<String, webgpu::GpuPipelineConstantValue>;
 
-// RenderPassEncoder and ComputePassEncoder need to be dropped when calling .end on them, but we can't guarantee that they'll be dropped in time by GC languages. Takeable lets you take the value and leaves None in place, so that RenderPass/ComputePass get dropped from Rust's point of view, but the wasm module can keep it's reference.
+// RenderPassEncoder, ComputePassEncoder, and RenderBundleEncoder need to be dropped when calling `.end`/`.finish` on them, but we can't guarantee that they'll be dropped in time by GC languages. Takeable lets you take the value and leaves None in place, so that RenderPass/ComputePass get dropped from Rust's point of view, but the wasm module can keep it's reference.
 // this is caused by the same underlying issue as this one https://github.com/gfx-rs/wgpu-native/issues/412
 pub type RenderPassEncoder = Takeable<wgpu_core::command::RenderPass<crate::Backend>>;
 pub type ComputePassEncoder = Takeable<wgpu_core::command::ComputePass<crate::Backend>>;
@@ -48,10 +48,13 @@ impl BufferPtr {
 unsafe impl Send for BufferPtr {}
 unsafe impl Sync for BufferPtr {}
 
-// size needed in `GpuBuffer.size`, `RenderPass.set_index_buffer`, `RenderPass.set_vertex_buffer`
+// size needed in `GpuBuffer.size`, `RenderPass.set_index_buffer`, `RenderPass.set_vertex_buffer`.
+// usage needed in `GpuBuffer.usage`
 pub struct Buffer {
     pub(crate) buffer_id: wgpu_core::id::BufferId,
     pub(crate) size: u64,
+    pub(crate) usage: wgpu_types::BufferUsages,
+    pub(crate) map_state: webgpu::GpuBufferMapState,
 }
 
 // queue needed for Device.queue
