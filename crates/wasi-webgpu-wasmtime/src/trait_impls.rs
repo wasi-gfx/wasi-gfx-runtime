@@ -431,16 +431,28 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         descriptor: webgpu::GpuBufferDescriptor,
     ) -> Resource<webgpu::GpuBuffer> {
         let device = self.table().get(&device).unwrap().device;
+        let descriptor = descriptor.to_core(&self.table());
 
         let size = descriptor.size;
+        let usage = descriptor.usage;
+        let map_state = match descriptor.mapped_at_creation {
+            true => webgpu::GpuBufferMapState::Mapped,
+            false => webgpu::GpuBufferMapState::Unmapped,
+        };
+
         let buffer_id = core_result(self.instance().device_create_buffer::<crate::Backend>(
             device,
-            &descriptor.to_core(&self.table()),
+            &descriptor,
             None,
         ))
         .unwrap();
 
-        let buffer = Buffer { buffer_id, size };
+        let buffer = Buffer {
+            buffer_id,
+            size,
+            usage,
+            map_state,
+        };
 
         self.table().push(buffer).unwrap()
     }
@@ -1403,16 +1415,33 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPassEncoder for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn push_debug_group(&mut self, _self_: Resource<RenderPassEncoder>, _group_label: String) {
-        todo!()
+    fn push_debug_group(&mut self, render_pass: Resource<RenderPassEncoder>, group_label: String) {
+        let instance = self.instance();
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance
+            .render_pass_push_debug_group(render_pass, &group_label, 0)
+            .unwrap();
     }
 
-    fn pop_debug_group(&mut self, _self_: Resource<RenderPassEncoder>) {
-        todo!()
+    fn pop_debug_group(&mut self, render_pass: Resource<RenderPassEncoder>) {
+        let instance = self.instance();
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance.render_pass_pop_debug_group(render_pass).unwrap();
     }
 
-    fn insert_debug_marker(&mut self, _self_: Resource<RenderPassEncoder>, _marker_label: String) {
-        todo!()
+    fn insert_debug_marker(
+        &mut self,
+        render_pass: Resource<RenderPassEncoder>,
+        marker_label: String,
+    ) {
+        let instance = self.instance();
+        let mut render_pass = self.table().get_mut(&render_pass).unwrap().lock();
+        let render_pass = render_pass.as_mut().unwrap();
+        instance
+            .render_pass_insert_debug_marker(render_pass, &marker_label, 0)
+            .unwrap();
     }
 
     fn set_bind_group(
@@ -1945,22 +1974,22 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuImpl<T>
 
     fn push_debug_group(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
+        _bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
         _group_label: String,
     ) {
-        todo!()
+        todo!("Debug markers for RenderBundleEncoder not yet implemented in wgpu")
     }
 
-    fn pop_debug_group(&mut self, _self_: Resource<webgpu::GpuRenderBundleEncoder>) {
-        todo!()
+    fn pop_debug_group(&mut self, _bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>) {
+        todo!("Debug markers for RenderBundleEncoder not yet implemented in wgpu")
     }
 
     fn insert_debug_marker(
         &mut self,
-        _self_: Resource<webgpu::GpuRenderBundleEncoder>,
+        _bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
         _marker_label: String,
     ) {
-        todo!()
+        todo!("Debug markers for RenderBundleEncoder not yet implemented in wgpu")
     }
 
     fn set_bind_group(
@@ -2215,12 +2244,14 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
         buffer.size
     }
 
-    fn usage(&mut self, _self_: Resource<webgpu::GpuBuffer>) -> webgpu::GpuFlagsConstant {
-        todo!()
+    fn usage(&mut self, buffer: Resource<webgpu::GpuBuffer>) -> webgpu::GpuFlagsConstant {
+        let buffer = self.table().get(&buffer).unwrap();
+        buffer.usage.bits()
     }
 
-    fn map_state(&mut self, _self_: Resource<webgpu::GpuBuffer>) -> webgpu::GpuBufferMapState {
-        todo!()
+    fn map_state(&mut self, buffer: Resource<webgpu::GpuBuffer>) -> webgpu::GpuBufferMapState {
+        let buffer = self.table().get(&buffer).unwrap();
+        buffer.map_state
     }
 
     async fn map_async(
@@ -2230,8 +2261,10 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
         offset: Option<webgpu::GpuSize64>,
         size: Option<webgpu::GpuSize64>,
     ) {
-        let buffer_id = self.table().get(&buffer).unwrap().buffer_id;
         let instance = self.instance();
+        let buffer = self.table().get_mut(&buffer).unwrap();
+        let buffer_id = buffer.buffer_id;
+        buffer.map_state = webgpu::GpuBufferMapState::Pending;
         CallbackFuture::new(Box::new(
             move |resolve: Box<
                 dyn FnOnce(Box<Result<(), wgpu_core::resource::BufferAccessError>>) + Send,
@@ -2263,6 +2296,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
         ))
         .await
         .unwrap();
+        buffer.map_state = webgpu::GpuBufferMapState::Mapped;
     }
 
     fn get_mapped_range(
@@ -2271,7 +2305,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
         offset: Option<webgpu::GpuSize64>,
         size: Option<webgpu::GpuSize64>,
     ) -> Resource<webgpu::NonStandardBuffer> {
-        let buffer_id = self.table().get(&buffer).unwrap().buffer_id;
+        let buffer = self.table().get(&buffer).unwrap();
+        if buffer.map_state != webgpu::GpuBufferMapState::Mapped {
+            todo!("Throw buffer not mapped error");
+        }
+        let buffer_id = buffer.buffer_id;
         let (ptr, len) = self
             .instance()
             // https://www.w3.org/TR/webgpu/#gpubuffer
@@ -2282,10 +2320,12 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
     }
 
     fn unmap(&mut self, buffer: Resource<webgpu::GpuBuffer>) {
-        let buffer_id = self.table().get_mut(&buffer).unwrap().buffer_id;
-        self.instance()
-            .buffer_unmap::<crate::Backend>(buffer_id)
+        let instance = self.instance();
+        let buffer = self.table().get_mut(&buffer).unwrap();
+        instance
+            .buffer_unmap::<crate::Backend>(buffer.buffer_id)
             .unwrap();
+        buffer.map_state = webgpu::GpuBufferMapState::Unmapped;
     }
 
     fn destroy(&mut self, buffer: Resource<webgpu::GpuBuffer>) {
