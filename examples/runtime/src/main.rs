@@ -12,7 +12,7 @@ use wasmtime::{
     Config, Engine, Store,
 };
 
-use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{IoView, ResourceTable};
 
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
@@ -28,16 +28,15 @@ wasmtime::component::bindgen!({
         only_imports: [],
     },
     with: {
-        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
-        "wasi:webgpu/surface": wasi_surface_wasmtime,
-        "wasi:webgpu/frame-buffer": wasi_frame_buffer_wasmtime,
-        "wasi:webgpu/webgpu": wasi_webgpu_wasmtime,
+        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime::wasi::webgpu::graphics_context,
+        "wasi:webgpu/surface": wasi_surface_wasmtime::wasi::webgpu::surface,
+        "wasi:webgpu/frame-buffer": wasi_frame_buffer_wasmtime::wasi::webgpu::frame_buffer,
+        "wasi:webgpu/webgpu": wasi_webgpu_wasmtime::wasi::webgpu::webgpu,
     },
 });
 
 struct HostState {
     pub table: ResourceTable,
-    pub ctx: WasiCtx,
     pub instance: Arc<wgpu_core::global::Global>,
     pub main_thread_proxy: wasi_surface_wasmtime::WasiWinitEventLoopProxy,
 }
@@ -46,7 +45,6 @@ impl HostState {
     fn new(main_thread_proxy: wasi_surface_wasmtime::WasiWinitEventLoopProxy) -> Self {
         Self {
             table: ResourceTable::new(),
-            ctx: WasiCtxBuilder::new().inherit_stdio().build(),
             instance: Arc::new(wgpu_core::global::Global::new(
                 "webgpu",
                 wgpu_types::InstanceDescriptor {
@@ -61,13 +59,9 @@ impl HostState {
     }
 }
 
-impl WasiView for HostState {
+impl IoView for HostState {
     fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
-    }
-
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.ctx
     }
 }
 
@@ -147,7 +141,7 @@ async fn main() -> anyhow::Result<()> {
     let component =
         Component::from_file(&engine, &wasm_path).context("Component file not found")?;
 
-    let (instance, _) = Example::instantiate_async(&mut store, &component, &linker)
+    let instance = Example::instantiate_async(&mut store, &component, &linker)
         .await
         .unwrap();
 
