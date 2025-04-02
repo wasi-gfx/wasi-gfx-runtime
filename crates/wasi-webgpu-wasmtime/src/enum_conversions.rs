@@ -31,6 +31,7 @@ impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
             wgpu_types::TextureFormat::R32Uint => webgpu::GpuTextureFormat::R32uint,
             wgpu_types::TextureFormat::R32Sint => webgpu::GpuTextureFormat::R32sint,
             wgpu_types::TextureFormat::R32Float => webgpu::GpuTextureFormat::R32float,
+            wgpu_types::TextureFormat::R64Uint => todo!(),
             wgpu_types::TextureFormat::Rg16Uint => webgpu::GpuTextureFormat::Rg16uint,
             wgpu_types::TextureFormat::Rg16Sint => webgpu::GpuTextureFormat::Rg16sint,
             wgpu_types::TextureFormat::Rg16Unorm => todo!(),
@@ -45,7 +46,7 @@ impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
             wgpu_types::TextureFormat::Rgb9e5Ufloat => webgpu::GpuTextureFormat::Rgb9e5ufloat,
             wgpu_types::TextureFormat::Rgb10a2Uint => webgpu::GpuTextureFormat::Rgb10a2uint,
             wgpu_types::TextureFormat::Rgb10a2Unorm => webgpu::GpuTextureFormat::Rgb10a2unorm,
-            wgpu_types::TextureFormat::Rg11b10Float => todo!(),
+            wgpu_types::TextureFormat::Rg11b10Ufloat => webgpu::GpuTextureFormat::Rg11b10ufloat,
             wgpu_types::TextureFormat::Rg32Uint => webgpu::GpuTextureFormat::Rg32uint,
             wgpu_types::TextureFormat::Rg32Sint => webgpu::GpuTextureFormat::Rg32sint,
             wgpu_types::TextureFormat::Rg32Float => webgpu::GpuTextureFormat::Rg32float,
@@ -141,7 +142,7 @@ impl From<webgpu::GpuTextureFormat> for wgpu_types::TextureFormat {
             webgpu::GpuTextureFormat::Rgb9e5ufloat => wgpu_types::TextureFormat::Rgb9e5Ufloat,
             webgpu::GpuTextureFormat::Rgb10a2uint => wgpu_types::TextureFormat::Rgb10a2Uint,
             webgpu::GpuTextureFormat::Rgb10a2unorm => wgpu_types::TextureFormat::Rgb10a2Unorm,
-            webgpu::GpuTextureFormat::Rg11b10ufloat => wgpu_types::TextureFormat::Rg11b10Float,
+            webgpu::GpuTextureFormat::Rg11b10ufloat => wgpu_types::TextureFormat::Rg11b10Ufloat,
             webgpu::GpuTextureFormat::Rg32uint => wgpu_types::TextureFormat::Rg32Uint,
             webgpu::GpuTextureFormat::Rg32sint => wgpu_types::TextureFormat::Rg32Sint,
             webgpu::GpuTextureFormat::Rg32float => wgpu_types::TextureFormat::Rg32Float,
@@ -369,15 +370,6 @@ impl From<webgpu::GpuBufferBindingType> for wgpu_types::BufferBindingType {
             webgpu::GpuBufferBindingType::ReadOnlyStorage => {
                 wgpu_types::BufferBindingType::Storage { read_only: true }
             }
-        }
-    }
-}
-
-impl From<webgpu::GpuLoadOp> for wgpu_core::command::LoadOp {
-    fn from(value: webgpu::GpuLoadOp) -> Self {
-        match value {
-            webgpu::GpuLoadOp::Load => wgpu_core::command::LoadOp::Load,
-            webgpu::GpuLoadOp::Clear => wgpu_core::command::LoadOp::Clear,
         }
     }
 }

@@ -10,8 +10,8 @@ pub type RecordGpuPipelineConstantValue = HashMap<String, webgpu::GpuPipelineCon
 
 // RenderPassEncoder, ComputePassEncoder, and RenderBundleEncoder need to be dropped when calling `.end`/`.finish` on them, but we can't guarantee that they'll be dropped in time by GC languages. Takeable lets you take the value and leaves None in place, so that RenderPass/ComputePass get dropped from Rust's point of view, but the wasm module can keep it's reference.
 // this is caused by the same underlying issue as this one https://github.com/gfx-rs/wgpu-native/issues/412
-pub type RenderPassEncoder = Takeable<wgpu_core::command::RenderPass<crate::Backend>>;
-pub type ComputePassEncoder = Takeable<wgpu_core::command::ComputePass<crate::Backend>>;
+pub type RenderPassEncoder = Takeable<wgpu_core::command::RenderPass>;
+pub type ComputePassEncoder = Takeable<wgpu_core::command::ComputePass>;
 pub type RenderBundleEncoder = Takeable<wgpu_core::command::RenderBundleEncoder>;
 
 #[derive(Clone, Debug)]
