@@ -1,9 +1,29 @@
+[frame-buffer]
+url = "https://github.com/WebAssembly/wasi-gfx/archive/2c0d29097f508185bf43160e46b35e02be8f9bbd.tar.gz"
+subdir = "frame-buffer"
+sha256 = "535237b1d19e702237db9b6c0d3db154c1cf78bf460b690449b6199930aa9a0b"
+sha512 = "3fd6756faab9c8cb20c5cbc2deb07345c9cec83dd40ef5eac09fa82e04fe9fbad12804fe720623c9bf56b8ecc2a5bb90243f309912134484ea4513a7a68000b9"
+
+[graphics-context]
+url = "https://github.com/WebAssembly/wasi-gfx/archive/2c0d29097f508185bf43160e46b35e02be8f9bbd.tar.gz"
+subdir = "graphics-context"
+sha256 = "cf022dcf41c7e9f6d3ca8af2f80f523306472a5548d38199d57986fc75aafb7b"
+sha512 = "b5cf0248f2cd1dbfbeb500b375e56fecbe8b1ac147b1aece73032543e696e0f7dad3da5aa99fbade290369a065059ae606def00d7d1aa94cde7f19ee03741479"
+
 [io]
 sha256 = "7210e5653539a15478f894d4da24cc69d61924cbcba21d2804d69314a88e5a4c"
 sha512 = "49184a1b0945a889abd52d25271172ed3dc2db6968fcdddb1bab7ee0081f4a3eeee0977ad2291126a37631c0d86eeea75d822fa8af224c422134500bf9f0f2bb"
 
-[webgpu]
-url = "https://github.com/WebAssembly/wasi-webgpu/archive/2d44a4c5eb93aba5ed468593410a338390f2469c.tar.gz"
-sha256 = "51a512d0d736af4c06242067c2e0ff82d688cbcf86048b71db387465d1166b37"
-sha512 = "d37efd57e25c7f35cca11a92b2348d13ee5c4c055bec226b4317332c3191ebd2938e16bd59db526518eb0bf9eff1911338275cdf52888664a4c1688842f14106"
+[surface]
+url = "https://github.com/WebAssembly/wasi-gfx/archive/2c0d29097f508185bf43160e46b35e02be8f9bbd.tar.gz"
+subdir = "surface"
+sha256 = "ca7832b1dc633c7dccf664e25aa3d8ca5aef444ee1ae5aac604f54515ddc0338"
+sha512 = "fea9c2fc53ce3425d53757d63832be949c3f5375e06e7061d10344af2a22e3ef41409a7e011e09d7cb3a02832c79937fc8e0f5c173827c1b3babd75f5587a3ad"
 deps = ["io"]
+
+[webgpu]
+url = "https://github.com/WebAssembly/wasi-gfx/archive/2c0d29097f508185bf43160e46b35e02be8f9bbd.tar.gz"
+subdir = "webgpu"
+sha256 = "ab555b2cf4e47886330ba1b759b53f76ea2d552961b9de6d997da1116a8b3c34"
+sha512 = "c4c8ad9f5f214c5e56260a1495d01c1b73876d48c92e441b2e14f2e6ba980d735bf6e2db9f15c24d06a16ba3a600aa5d87c1f1f0f8884b71e29ee45790138ce2"
+deps = ["graphics-context", "io"]

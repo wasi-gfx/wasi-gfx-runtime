@@ -14,7 +14,7 @@ impl Guest for ExampleTriangle {
     }
 }
 
-use wasi::webgpu::{graphics_context, surface, webgpu};
+use wasi::{graphics_context::graphics_context, surface::surface, webgpu::webgpu};
 
 const SHADER_CODE: &str = r#"
 @vertex
@@ -37,7 +37,7 @@ fn fs_green() -> @location(0) vec4<f32> {
 fn draw_triangle() {
     let gpu = webgpu::get_gpu();
     let adapter = gpu.request_adapter(None).unwrap();
-    let device = adapter.request_device(None);
+    let device = adapter.request_device(None).unwrap();
 
     let canvas = surface::Surface::new(surface::CreateDesc {
         height: None,
@@ -115,7 +115,7 @@ fn draw_triangle() {
             }),
             depth_stencil: None,
             multisample: None,
-            layout: webgpu::GpuLayout::GpuPipelineLayout(&pipeline_layout),
+            layout: webgpu::GpuLayoutMode::Specific(&pipeline_layout),
         };
         let render_pipeline = device.create_render_pipeline(pipeline_description);
         let pollables_res = wasi::io::poll::poll(&pollables);

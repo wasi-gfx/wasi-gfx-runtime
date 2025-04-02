@@ -266,11 +266,11 @@ impl Debug for MainThreadAction {
     }
 }
 
-impl TryFrom<winit::keyboard::KeyCode> for crate::wasi::webgpu::surface::Key {
+impl TryFrom<winit::keyboard::KeyCode> for crate::wasi::surface::surface::Key {
     type Error = ();
 
     fn try_from(value: winit::keyboard::KeyCode) -> Result<Self, Self::Error> {
-        use crate::wasi::webgpu::surface::Key;
+        use crate::wasi::surface::surface::Key;
         match value {
             winit::keyboard::KeyCode::Backquote => Ok(Key::Backquote),
             winit::keyboard::KeyCode::Backslash => Ok(Key::Backslash),

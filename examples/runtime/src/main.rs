@@ -28,9 +28,9 @@ wasmtime::component::bindgen!({
         only_imports: [],
     },
     with: {
-        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime::wasi::webgpu::graphics_context,
-        "wasi:webgpu/surface": wasi_surface_wasmtime::wasi::webgpu::surface,
-        "wasi:webgpu/frame-buffer": wasi_frame_buffer_wasmtime::wasi::webgpu::frame_buffer,
+        "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
+        "wasi:surface/surface": wasi_surface_wasmtime::wasi::surface::surface,
+        "wasi:frame-buffer/frame-buffer": wasi_frame_buffer_wasmtime::wasi::frame_buffer::frame_buffer,
         "wasi:webgpu/webgpu": wasi_webgpu_wasmtime::wasi::webgpu::webgpu,
     },
 });

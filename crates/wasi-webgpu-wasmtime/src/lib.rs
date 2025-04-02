@@ -67,7 +67,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu/gpu-render-bundle": wgpu_core::id::RenderBundleId,
         "wasi:webgpu/webgpu/gpu-command-buffer": wgpu_core::id::CommandBufferId,
         "wasi:webgpu/webgpu/gpu-buffer": wrapper_types::Buffer,
-        "wasi:webgpu/webgpu/non-standard-buffer": wrapper_types::BufferPtr,
+        // "wasi:webgpu/webgpu/non-standard-buffer": wrapper_types::BufferPtr,
         "wasi:webgpu/webgpu/gpu-pipeline-layout": wgpu_core::id::PipelineLayoutId,
         "wasi:webgpu/webgpu/gpu-bind-group-layout": wgpu_core::id::BindGroupLayoutId,
         "wasi:webgpu/webgpu/gpu-sampler": wgpu_core::id::SamplerId,
@@ -80,7 +80,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu/gpu-query-set": wgpu_core::id::QuerySetId,
         "wasi:webgpu/webgpu/gpu-supported-limits": wgpu_types::Limits,
         "wasi:webgpu/webgpu/record-gpu-pipeline-constant-value": wrapper_types::RecordGpuPipelineConstantValue,
-        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime::wasi::webgpu::graphics_context,
+        "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
     },
 });
 
