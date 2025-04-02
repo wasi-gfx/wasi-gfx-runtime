@@ -4,7 +4,7 @@ use std::{
 };
 use wasi_graphics_context_wasmtime::DisplayApi;
 
-use crate::wasi::webgpu::surface::{self, Context as GraphicsContext, Pollable};
+use crate::wasi::surface::surface::{self, Context as GraphicsContext, Pollable};
 use async_broadcast::{Receiver, TrySendError};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use wasmtime::component::Resource;
@@ -20,7 +20,7 @@ pub trait HasDisplayAndWindowHandle: HasDisplayHandle + HasWindowHandle {}
 
 impl<T: HasDisplayHandle + HasWindowHandle> HasDisplayAndWindowHandle for T {}
 
-pub use crate::wasi::webgpu::surface::{
+pub use crate::wasi::surface::surface::{
     FrameEvent, KeyEvent, PointerEvent, {CreateDesc as MiniCanvasDesc, ResizeEvent},
 };
 
@@ -32,8 +32,8 @@ wasmtime::component::bindgen!({
     },
     with: {
         "wasi:io": wasmtime_wasi::bindings::io,
-        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime::wasi::webgpu::graphics_context,
-        "wasi:webgpu/surface/surface": MiniCanvasArc,
+        "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
+        "wasi:surface/surface/surface": MiniCanvasArc,
     },
 });
 
@@ -292,7 +292,7 @@ where
         val
     }
     let closure = type_annotate::<T, _>(|t| WasiMiniCanvasImpl(t));
-    wasi::webgpu::surface::add_to_linker_get_host(l, closure)?;
+    wasi::surface::surface::add_to_linker_get_host(l, closure)?;
     Ok(())
 }
 

@@ -10,7 +10,7 @@ export!(ExampleSkybox);
 
 struct ExampleSkybox;
 
-use wasi::webgpu::{graphics_context, surface, webgpu};
+use wasi::{graphics_context::graphics_context, surface::surface, webgpu::webgpu};
 
 impl Guest for ExampleSkybox {
     fn start() {
@@ -183,7 +183,8 @@ impl Example {
         let device = webgpu::get_gpu()
             .request_adapter(None)
             .unwrap()
-            .request_device(None);
+            .request_device(None)
+            .unwrap();
         let canvas = surface::Surface::new(surface::CreateDesc {
             height: None,
             width: None,
@@ -298,12 +299,12 @@ impl Example {
 
         let pipeline_layout = device.create_pipeline_layout(&webgpu::GpuPipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: vec![&bind_group_layout],
+            bind_group_layouts: vec![Some(&bind_group_layout)],
         });
 
         let sky_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
             label: None,
-            layout: webgpu::GpuLayout::GpuPipelineLayout(&pipeline_layout),
+            layout: webgpu::GpuLayoutMode::Specific(&pipeline_layout),
             vertex: webgpu::GpuVertexState {
                 module: &shader,
                 entry_point: Some("vs_sky".into()),
@@ -350,7 +351,7 @@ impl Example {
         let entity_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
             label: Some("Entity".into()),
             // layout: None,
-            layout: webgpu::GpuLayout::GpuPipelineLayout(&pipeline_layout),
+            layout: webgpu::GpuLayoutMode::Specific(&pipeline_layout),
             vertex: webgpu::GpuVertexState {
                 module: &shader,
                 entry_point: Some("vs_entity".into()),
@@ -570,13 +571,16 @@ impl Example {
         // update rotation
         let raw_uniforms = self.camera.to_uniform_data();
 
-        self.device.queue().write_buffer(
-            &self.uniform_buf.buffer,
-            0,
-            None,
-            bytemuck::cast_slice(&raw_uniforms),
-            Some(raw_uniforms.len() as u64 * 4),
-        );
+        self.device
+            .queue()
+            .write_buffer_cloned(
+                &self.uniform_buf.buffer,
+                0,
+                bytemuck::cast_slice(&raw_uniforms),
+                None,
+                Some(raw_uniforms.len() as u64 * 4),
+            )
+            .unwrap();
 
         {
             let rpass = encoder.begin_render_pass(&webgpu::GpuRenderPassDescriptor {
@@ -610,7 +614,9 @@ impl Example {
                 max_draw_count: None,
             });
 
-            rpass.set_bind_group(0, Some(&self.bind_group), Some(&[]));
+            rpass
+                .set_bind_group(0, Some(&self.bind_group), None, None, None)
+                .unwrap();
             rpass.set_pipeline(&self.entity_pipeline);
 
             for entity in self.entities.iter() {
@@ -718,8 +724,8 @@ fn device_create_texture_with_data(
 
             let end_offset = binary_offset + data_size as usize;
 
-            device.queue().write_texture(
-                &webgpu::GpuImageCopyTexture {
+            device.queue().write_texture_cloned(
+                &webgpu::GpuTexelCopyTextureInfo {
                     texture: &texture,
                     mip_level: Some(mip),
                     origin: Some(webgpu::GpuOrigin3D {
@@ -730,7 +736,7 @@ fn device_create_texture_with_data(
                     aspect: Some(webgpu::GpuTextureAspect::All),
                 },
                 &data[binary_offset..end_offset],
-                webgpu::GpuImageDataLayout {
+                webgpu::GpuTexelCopyBufferLayout {
                     offset: Some(0),
                     bytes_per_row: Some(bytes_per_row),
                     rows_per_image: Some(height_blocks),
@@ -823,10 +829,13 @@ fn device_create_buffer_init(
             mapped_at_creation: Some(true),
         });
 
-        let remote_buffer = buffer.get_mapped_range(None, None);
-        remote_buffer.set(descriptor.contents);
+        // let remote_buffer = buffer.get_mapped_range(None, None);
+        // remote_buffer.set(descriptor.contents);
+        buffer
+            .get_mapped_range_set_cloned(&descriptor.contents, None, None)
+            .unwrap();
 
-        buffer.unmap();
+        buffer.unmap().unwrap();
         MyBuffer {
             buffer,
             size: padded_size,

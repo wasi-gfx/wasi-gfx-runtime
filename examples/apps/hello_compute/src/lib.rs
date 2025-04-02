@@ -41,7 +41,8 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     let device = webgpu::get_gpu()
         .request_adapter(None)
         .unwrap()
-        .request_device(None);
+        .request_device(None)
+        .unwrap();
 
     // Loads the shader from WGSL
     let cs_module = device.create_shader_module(&webgpu::GpuShaderModuleDescriptor {
@@ -81,9 +82,13 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
         mapped_at_creation: Some(true),
     });
 
-    let data = storage_buffer.get_mapped_range(None, None);
-    data.set(contents);
-    storage_buffer.unmap();
+    // let data = storage_buffer.get_mapped_range(None, None);
+    // data.set(contents);
+    storage_buffer
+        .get_mapped_range_set_cloned(contents, None, None)
+        .unwrap();
+
+    storage_buffer.unmap().unwrap();
 
     // A bind group defines how buffers are accessed by shaders.
     // It is to WebGPU what a descriptor set is to Vulkan.
@@ -94,7 +99,7 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     // Instantiates the pipeline.
     let compute_pipeline = device.create_compute_pipeline(webgpu::GpuComputePipelineDescriptor {
         label: None,
-        layout: webgpu::GpuLayout::GpuAutoLayoutMode(webgpu::GpuAutoLayoutMode::Auto),
+        layout: webgpu::GpuLayoutMode::Auto,
         compute: webgpu::GpuProgrammableStage {
             module: &cs_module,
             entry_point: Some("main".to_string()),
@@ -124,7 +129,9 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     {
         let cpass = encoder.begin_compute_pass(None);
         cpass.set_pipeline(&compute_pipeline);
-        cpass.set_bind_group(0, Some(&bind_group), Some(&[]));
+        cpass
+            .set_bind_group(0, Some(&bind_group), None, None, None)
+            .unwrap();
         cpass.insert_debug_marker("compute collatz iterations");
         cpass.dispatch_workgroups(numbers.len() as u32, Some(1), Some(1)); // Number of cells to run, the (x,y,z) size of item being processed
         cpass.end();
@@ -136,21 +143,25 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     // Submits command encoder for processing
     device.queue().submit(&[&encoder.finish(None)]);
 
-    staging_buffer.map_async(webgpu::GpuMapMode::read(), Some(0), None);
+    staging_buffer
+        .map_async(webgpu::GpuMapMode::read(), Some(0), None)
+        .unwrap();
 
     // Gets contents of buffer
-    let data = staging_buffer.get_mapped_range(None, None);
+    let data = staging_buffer
+        .get_mapped_range_get_cloned(None, None)
+        .unwrap();
     // Since contents are got in bytes, this converts these bytes back to u32
-    let result = bytemuck::cast_slice(&data.get()).to_vec();
+    let result = bytemuck::cast_slice(&data).to_vec();
 
     // With the current interface, we have to make sure all mapped views are
     // dropped before we unmap the buffer.
     drop(data);
-    staging_buffer.unmap(); // Unmaps buffer from memory
-                            // If you are familiar with C++ these 2 lines can be thought of similarly to:
-                            //   delete myPointer;
-                            //   myPointer = NULL;
-                            // It effectively frees the memory
+    staging_buffer.unmap().unwrap(); // Unmaps buffer from memory
+                                     // If you are familiar with C++ these 2 lines can be thought of similarly to:
+                                     //   delete myPointer;
+                                     //   myPointer = NULL;
+                                     // It effectively frees the memory and sets the pointer to NULL.
 
     // Returns data from buffer
     Some(result)

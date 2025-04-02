@@ -15,7 +15,7 @@ impl Guest for Example {
 }
 
 use std::cmp::min;
-use wasi::webgpu::{frame_buffer, graphics_context, surface};
+use wasi::{frame_buffer::frame_buffer, graphics_context::graphics_context, surface::surface};
 
 fn draw_rectangle() {
     let canvas = surface::Surface::new(surface::CreateDesc {

@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use crate::wasi::webgpu::graphics_context;
+use crate::wasi::graphics_context::graphics_context;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -12,8 +12,8 @@ wasmtime::component::bindgen!({
     world: "example",
     async: false,
     with: {
-        "wasi:webgpu/graphics-context/context": Context,
-        "wasi:webgpu/graphics-context/abstract-buffer": AbstractBuffer,
+        "wasi:graphics-context/graphics-context/context": Context,
+        "wasi:graphics-context/graphics-context/abstract-buffer": AbstractBuffer,
     },
 });
 
@@ -112,7 +112,7 @@ where
         val
     }
     let closure = type_annotate::<T, _>(|t| WasiGraphicsContextImpl(t));
-    wasi::webgpu::graphics_context::add_to_linker_get_host(l, closure)?;
+    wasi::graphics_context::graphics_context::add_to_linker_get_host(l, closure)?;
     Ok(())
 }
 

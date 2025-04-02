@@ -6,7 +6,7 @@ use raw_window_handle::{DisplayHandle, WindowHandle};
 use wasmtime::component::Resource;
 use wasmtime_wasi::IoView;
 
-use crate::wasi::webgpu::frame_buffer;
+use crate::wasi::frame_buffer::frame_buffer;
 use wasi_graphics_context_wasmtime::{AbstractBuffer, Context, DisplayApi, DrawApi};
 
 wasmtime::component::bindgen!({
@@ -16,9 +16,9 @@ wasmtime::component::bindgen!({
         only_imports: [],
     },
     with: {
-        "wasi:webgpu/frame-buffer/device": FBDeviceArc,
-        "wasi:webgpu/frame-buffer/buffer": FBBuffer,
-        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime::wasi::webgpu::graphics_context,
+        "wasi:frame-buffer/frame-buffer/device": FBDeviceArc,
+        "wasi:frame-buffer/frame-buffer/buffer": FBBuffer,
+        "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
     },
 });
 
@@ -129,7 +129,7 @@ where
         val
     }
     let closure = type_annotate::<T, _>(|t| WasiFrameBufferImpl(t));
-    wasi::webgpu::frame_buffer::add_to_linker_get_host(l, closure)?;
+    wasi::frame_buffer::frame_buffer::add_to_linker_get_host(l, closure)?;
     Ok(())
 }
 
@@ -150,7 +150,7 @@ impl<T: WasiFrameBufferView> WasiFrameBufferView for WasiFrameBufferImpl<T> {}
 impl<T: WasiFrameBufferView> frame_buffer::Host for WasiFrameBufferImpl<T> {}
 
 impl<T: WasiFrameBufferView> frame_buffer::HostDevice for WasiFrameBufferImpl<T> {
-    fn new(&mut self) -> Resource<crate::wasi::webgpu::frame_buffer::Device> {
+    fn new(&mut self) -> Resource<crate::wasi::frame_buffer::frame_buffer::Device> {
         self.table().push(FBDeviceArc::new()).unwrap()
     }
 

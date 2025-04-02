@@ -158,7 +158,11 @@ impl<'a> ToCore<wgpu_core::binding_model::PipelineLayoutDescriptor<'a>>
             bind_group_layouts: self
                 .bind_group_layouts
                 .into_iter()
-                .map(|bind_group_layout| *table.get(&bind_group_layout).unwrap())
+                .map(|bind_group_layout| {
+                    *table
+                        .get(&bind_group_layout.expect("TODO: handle null"))
+                        .unwrap()
+                })
                 .collect::<Vec<_>>()
                 .into(),
             push_constant_ranges: vec![].into(),
@@ -173,10 +177,8 @@ impl<'a> ToCore<wgpu_core::pipeline::RenderPipelineDescriptor<'a>>
         wgpu_core::pipeline::RenderPipelineDescriptor {
             label: self.label.map(|l| l.into()),
             layout: match self.layout {
-                webgpu::GpuLayout::GpuPipelineLayout(layout) => Some(layout.to_core(table)),
-                webgpu::GpuLayout::GpuAutoLayoutMode(mode) => match mode {
-                    webgpu::GpuAutoLayoutMode::Auto => None,
-                },
+                webgpu::GpuLayoutMode::Specific(layout) => Some(layout.to_core(table)),
+                webgpu::GpuLayoutMode::Auto => None,
             },
             vertex: self.vertex.to_core(table),
             primitive: self.primitive.map(|p| p.to_core(table)).unwrap_or_default(),
@@ -728,6 +730,7 @@ impl<'a> ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
                 webgpu::GpuFeatureName::TextureCompressionAstc => {
                     wgpu_types::Features::TEXTURE_COMPRESSION_ASTC
                 }
+                webgpu::GpuFeatureName::TextureCompressionAstcSliced3d => todo!(),
                 webgpu::GpuFeatureName::TimestampQuery => wgpu_types::Features::TIMESTAMP_QUERY,
                 webgpu::GpuFeatureName::IndirectFirstInstance => {
                     wgpu_types::Features::INDIRECT_FIRST_INSTANCE
@@ -742,10 +745,12 @@ impl<'a> ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
                 webgpu::GpuFeatureName::Float32Filterable => {
                     wgpu_types::Features::FLOAT32_FILTERABLE
                 }
+                webgpu::GpuFeatureName::Float32Blendable => todo!(),
                 webgpu::GpuFeatureName::ClipDistances => todo!(), // wgpu_types::Features::CLIP_DISTANCES,
                 webgpu::GpuFeatureName::DualSourceBlending => {
                     wgpu_types::Features::DUAL_SOURCE_BLENDING
                 }
+                webgpu::GpuFeatureName::Subgroups => todo!(),
             })
             .collect()
     }
@@ -794,7 +799,7 @@ impl<'a> ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
 // }
 
 impl ToCore<wgpu_types::ImageCopyTexture<wgpu_core::id::TextureId>>
-    for webgpu::GpuImageCopyTexture
+    for webgpu::GpuTexelCopyTextureInfo
 {
     fn to_core(
         self,
@@ -824,7 +829,7 @@ impl ToCore<wgpu_types::Origin3d> for webgpu::GpuOrigin3D {
     }
 }
 
-impl ToCore<wgpu_types::ImageDataLayout> for webgpu::GpuImageDataLayout {
+impl ToCore<wgpu_types::ImageDataLayout> for webgpu::GpuTexelCopyBufferLayout {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::ImageDataLayout {
         // https://www.w3.org/TR/webgpu/#gputexelcopybufferlayout
         wgpu_types::ImageDataLayout {
@@ -842,10 +847,8 @@ impl<'a> ToCore<wgpu_core::pipeline::ComputePipelineDescriptor<'a>>
         wgpu_core::pipeline::ComputePipelineDescriptor {
             label: self.label.map(|l| l.into()),
             layout: match self.layout {
-                webgpu::GpuLayout::GpuPipelineLayout(layout) => Some(layout.to_core(table)),
-                webgpu::GpuLayout::GpuAutoLayoutMode(mode) => match mode {
-                    webgpu::GpuAutoLayoutMode::Auto => None,
-                },
+                webgpu::GpuLayoutMode::Specific(layout) => Some(layout.to_core(table)),
+                webgpu::GpuLayoutMode::Auto => None,
             },
             stage: self.compute.to_core(table),
             cache: None,
@@ -897,7 +900,9 @@ impl ToCore<wgpu_core::command::PassTimestampWrites> for webgpu::GpuRenderPassTi
     }
 }
 
-impl ToCore<wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId>> for webgpu::GpuImageCopyBuffer {
+impl ToCore<wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId>>
+    for webgpu::GpuTexelCopyBufferInfo
+{
     fn to_core(
         self,
         table: &ResourceTable,
