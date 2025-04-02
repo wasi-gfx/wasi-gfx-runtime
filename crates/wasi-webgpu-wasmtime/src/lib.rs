@@ -7,7 +7,7 @@
 use std::{future::Future, sync::Arc};
 
 use wasi_graphics_context_wasmtime::{AbstractBuffer, DisplayApi, DrawApi};
-use wasmtime_wasi::WasiView;
+use wasmtime_wasi::IoView;
 use wgpu_core::id::SurfaceId;
 
 // ToCore trait used for resources, records, and variants.
@@ -80,7 +80,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu/gpu-query-set": wgpu_core::id::QuerySetId,
         "wasi:webgpu/webgpu/gpu-supported-limits": wgpu_types::Limits,
         "wasi:webgpu/webgpu/record-gpu-pipeline-constant-value": wrapper_types::RecordGpuPipelineConstantValue,
-        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
+        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime::wasi::webgpu::graphics_context,
     },
 });
 
@@ -99,7 +99,7 @@ where
     Ok(())
 }
 
-pub trait WasiWebGpuView: WasiView {
+pub trait WasiWebGpuView: IoView {
     fn instance(&self) -> Arc<wgpu_core::global::Global>;
 
     /// Provide the ability to run closure on the UI thread.
@@ -107,25 +107,11 @@ pub trait WasiWebGpuView: WasiView {
     fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner>;
 }
 
-pub struct WasiWebGpuImpl<T>(pub T);
-
-impl<T: WasiView> WasiView for WasiWebGpuImpl<T> {
+#[repr(transparent)]
+pub struct WasiWebGpuImpl<T: WasiWebGpuView>(pub T);
+impl<T: WasiWebGpuView> wasmtime_wasi::IoView for WasiWebGpuImpl<T> {
     fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
-        self.0.table()
-    }
-
-    fn ctx(&mut self) -> &mut wasmtime_wasi::WasiCtx {
-        self.0.ctx()
-    }
-}
-
-impl<T: WasiWebGpuView> WasiWebGpuView for WasiWebGpuImpl<T> {
-    fn instance(&self) -> Arc<wgpu_core::global::Global> {
-        self.0.instance()
-    }
-
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner + 'static> {
-        self.0.ui_thread_spawner()
+        T::table(&mut self.0)
     }
 }
 
@@ -134,8 +120,26 @@ impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for &mut T {
         T::instance(self)
     }
 
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner + 'static> {
-        T::ui_thread_spawner(self)
+    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
+        T::ui_thread_spawner(&self)
+    }
+}
+impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for Box<T> {
+    fn instance(&self) -> Arc<wgpu_core::global::Global> {
+        T::instance(self)
+    }
+
+    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
+        T::ui_thread_spawner(&self)
+    }
+}
+impl<T: WasiWebGpuView> WasiWebGpuView for WasiWebGpuImpl<T> {
+    fn instance(&self) -> Arc<wgpu_core::global::Global> {
+        T::instance(&self.0)
+    }
+
+    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
+        T::ui_thread_spawner(&self.0)
     }
 }
 

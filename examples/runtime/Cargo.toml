@@ -13,7 +13,6 @@ anyhow.workspace = true
 winit.workspace = true
 wgpu-types.workspace = true
 raw-window-handle.workspace = true
-async-trait.workspace = true
 rand.workspace = true
 futures.workspace = true
 tokio.workspace = true

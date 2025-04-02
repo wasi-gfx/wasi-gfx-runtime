@@ -5,7 +5,7 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 use wasmtime::component::Resource;
-use wasmtime_wasi::WasiView;
+use wasmtime_wasi::{IoView, ResourceTable};
 
 wasmtime::component::bindgen!({
     path: "../../wit/",
@@ -106,20 +106,33 @@ where
 {
     fn type_annotate<T, F>(val: F) -> F
     where
-        F: Fn(&mut T) -> &mut dyn WasiGraphicsContextView,
+        T: WasiGraphicsContextView,
+        F: Fn(&mut T) -> WasiGraphicsContextImpl<&mut T>,
     {
         val
     }
-    let closure = type_annotate::<T, _>(|t| t);
+    let closure = type_annotate::<T, _>(|t| WasiGraphicsContextImpl(t));
     wasi::webgpu::graphics_context::add_to_linker_get_host(l, closure)?;
     Ok(())
 }
 
-pub trait WasiGraphicsContextView: WasiView {}
+pub trait WasiGraphicsContextView: IoView {}
 
-impl graphics_context::Host for dyn WasiGraphicsContextView + '_ {}
+#[repr(transparent)]
+pub struct WasiGraphicsContextImpl<T: WasiGraphicsContextView>(pub T);
+impl<T: WasiGraphicsContextView> IoView for WasiGraphicsContextImpl<T> {
+    fn table(&mut self) -> &mut ResourceTable {
+        T::table(&mut self.0)
+    }
+}
 
-impl graphics_context::HostContext for dyn WasiGraphicsContextView + '_ {
+impl<T: ?Sized + WasiGraphicsContextView> WasiGraphicsContextView for &mut T {}
+impl<T: ?Sized + WasiGraphicsContextView> WasiGraphicsContextView for Box<T> {}
+impl<T: WasiGraphicsContextView> WasiGraphicsContextView for WasiGraphicsContextImpl<T> {}
+
+impl<T: WasiGraphicsContextView> graphics_context::Host for WasiGraphicsContextImpl<T> {}
+
+impl<T: WasiGraphicsContextView> graphics_context::HostContext for WasiGraphicsContextImpl<T> {
     fn new(&mut self) -> Resource<Context> {
         self.table().push(Context::new()).unwrap()
     }
@@ -148,7 +161,9 @@ impl graphics_context::HostContext for dyn WasiGraphicsContextView + '_ {
     }
 }
 
-impl graphics_context::HostAbstractBuffer for dyn WasiGraphicsContextView + '_ {
+impl<T: WasiGraphicsContextView> graphics_context::HostAbstractBuffer
+    for WasiGraphicsContextImpl<T>
+{
     fn drop(&mut self, _rep: Resource<AbstractBuffer>) -> wasmtime::Result<()> {
         todo!()
     }

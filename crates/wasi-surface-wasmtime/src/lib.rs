@@ -8,7 +8,7 @@ use crate::wasi::webgpu::surface::{self, Context as GraphicsContext, Pollable};
 use async_broadcast::{Receiver, TrySendError};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use wasmtime::component::Resource;
-use wasmtime_wasi::WasiView;
+use wasmtime_wasi::{IoImpl, IoView};
 
 #[cfg(feature = "winit")]
 mod winit;
@@ -24,44 +24,6 @@ pub use crate::wasi::webgpu::surface::{
     FrameEvent, KeyEvent, PointerEvent, {CreateDesc as MiniCanvasDesc, ResizeEvent},
 };
 
-pub trait WasiMiniCanvasView: WasiView {
-    fn create_canvas(&self, desc: MiniCanvasDesc) -> MiniCanvas;
-}
-
-pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
-where
-    T: WasiMiniCanvasView,
-{
-    fn type_annotate<T, F>(val: F) -> F
-    where
-        F: Fn(&mut T) -> &mut dyn WasiMiniCanvasView,
-    {
-        val
-    }
-    let closure = type_annotate::<T, _>(|t| t);
-    wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(l, closure)?;
-    wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(l, closure)?;
-    add_only_mini_canvas_to_linker(l)?;
-    Ok(())
-}
-
-pub fn add_only_mini_canvas_to_linker<T>(
-    l: &mut wasmtime::component::Linker<T>,
-) -> wasmtime::Result<()>
-where
-    T: WasiMiniCanvasView,
-{
-    fn type_annotate<T, F>(val: F) -> F
-    where
-        F: Fn(&mut T) -> &mut dyn WasiMiniCanvasView,
-    {
-        val
-    }
-    let closure = type_annotate::<T, _>(|t| t);
-    wasi::webgpu::surface::add_to_linker_get_host(l, closure)?;
-    Ok(())
-}
-
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
@@ -70,7 +32,7 @@ wasmtime::component::bindgen!({
     },
     with: {
         "wasi:io": wasmtime_wasi::bindings::io,
-        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
+        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime::wasi::webgpu::graphics_context,
         "wasi:webgpu/surface/surface": MiniCanvasArc,
     },
 });
@@ -298,9 +260,73 @@ fn unwrap_unless_inactive_or_full<T>(res: Result<Option<T>, TrySendError<T>>) {
 }
 
 // wasmtime
-impl surface::Host for dyn WasiMiniCanvasView + '_ {}
+pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
+where
+    T: WasiMiniCanvasView + IoView,
+{
+    fn type_annotate_io<T, F>(val: F) -> F
+    where
+        T: IoView,
+        F: Fn(&mut T) -> IoImpl<&mut T>,
+    {
+        val
+    }
+    let closure_io = type_annotate_io::<T, _>(|t| IoImpl(t));
+    wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(l, closure_io)?;
+    wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(l, closure_io)?;
+    add_only_mini_canvas_to_linker(l)?;
+    Ok(())
+}
 
-impl surface::HostSurface for dyn WasiMiniCanvasView + '_ {
+pub fn add_only_mini_canvas_to_linker<T>(
+    l: &mut wasmtime::component::Linker<T>,
+) -> wasmtime::Result<()>
+where
+    T: WasiMiniCanvasView,
+{
+    fn type_annotate<T, F>(val: F) -> F
+    where
+        T: WasiMiniCanvasView,
+        F: Fn(&mut T) -> WasiMiniCanvasImpl<&mut T>,
+    {
+        val
+    }
+    let closure = type_annotate::<T, _>(|t| WasiMiniCanvasImpl(t));
+    wasi::webgpu::surface::add_to_linker_get_host(l, closure)?;
+    Ok(())
+}
+
+pub trait WasiMiniCanvasView: IoView {
+    fn create_canvas(&self, desc: MiniCanvasDesc) -> MiniCanvas;
+}
+
+#[repr(transparent)]
+pub struct WasiMiniCanvasImpl<T: WasiMiniCanvasView>(pub T);
+impl<T: WasiMiniCanvasView> IoView for WasiMiniCanvasImpl<T> {
+    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
+        T::table(&mut self.0)
+    }
+}
+
+impl<T: ?Sized + WasiMiniCanvasView> WasiMiniCanvasView for &mut T {
+    fn create_canvas(&self, desc: MiniCanvasDesc) -> MiniCanvas {
+        T::create_canvas(self, desc)
+    }
+}
+impl<T: ?Sized + WasiMiniCanvasView> WasiMiniCanvasView for Box<T> {
+    fn create_canvas(&self, desc: MiniCanvasDesc) -> MiniCanvas {
+        T::create_canvas(self, desc)
+    }
+}
+impl<T: WasiMiniCanvasView> WasiMiniCanvasView for WasiMiniCanvasImpl<T> {
+    fn create_canvas(&self, desc: MiniCanvasDesc) -> MiniCanvas {
+        T::create_canvas(&self.0, desc)
+    }
+}
+
+impl<T: WasiMiniCanvasView> surface::Host for WasiMiniCanvasImpl<T> {}
+
+impl<T: WasiMiniCanvasView> surface::HostSurface for WasiMiniCanvasImpl<T> {
     fn new(&mut self, desc: MiniCanvasDesc) -> Resource<MiniCanvasArc> {
         let canvas = self.create_canvas(desc);
         let mini_canvas = MiniCanvasArc(Arc::new(canvas));
@@ -486,8 +512,8 @@ where
     }
 }
 
-#[async_trait::async_trait]
-impl<T, F> wasmtime_wasi::Subscribe for Listener<T, F>
+#[async_trait::async_trait] // TODO: remove async_trait crate once wasmtime drops it
+impl<T, F> wasmtime_wasi::Pollable for Listener<T, F>
 where
     T: Debug + Clone + Send + Sync + 'static,
     F: Fn(T) + Send + Sync + 'static,

@@ -4,7 +4,7 @@ use callback_future::CallbackFuture;
 use futures::executor::block_on;
 use wasi_graphics_context_wasmtime::{Context, DisplayApi};
 use wasmtime::component::Resource;
-use wasmtime_wasi::WasiView;
+use wasmtime_wasi::IoView;
 
 use crate::{
     to_core_conversions::ToCore,
@@ -2237,7 +2237,6 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSampler for WasiWebGpuImpl<T> {
     }
 }
 
-#[async_trait::async_trait]
 impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
     fn size(&mut self, buffer: Resource<webgpu::GpuBuffer>) -> webgpu::GpuSize64Out {
         let buffer = self.table().get(&buffer).unwrap();

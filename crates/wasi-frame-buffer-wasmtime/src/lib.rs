@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use raw_window_handle::{DisplayHandle, WindowHandle};
 use wasmtime::component::Resource;
-use wasmtime_wasi::WasiView;
+use wasmtime_wasi::IoView;
 
 use crate::wasi::webgpu::frame_buffer;
 use wasi_graphics_context_wasmtime::{AbstractBuffer, Context, DisplayApi, DrawApi};
@@ -18,7 +18,7 @@ wasmtime::component::bindgen!({
     with: {
         "wasi:webgpu/frame-buffer/device": FBDeviceArc,
         "wasi:webgpu/frame-buffer/buffer": FBBuffer,
-        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime,
+        "wasi:webgpu/graphics-context": wasi_graphics_context_wasmtime::wasi::webgpu::graphics_context,
     },
 });
 
@@ -123,20 +123,33 @@ where
 {
     fn type_annotate<T, F>(val: F) -> F
     where
-        F: Fn(&mut T) -> &mut dyn WasiFrameBufferView,
+        T: WasiFrameBufferView,
+        F: Fn(&mut T) -> WasiFrameBufferImpl<&mut T>,
     {
         val
     }
-    let closure = type_annotate::<T, _>(|t| t);
+    let closure = type_annotate::<T, _>(|t| WasiFrameBufferImpl(t));
     wasi::webgpu::frame_buffer::add_to_linker_get_host(l, closure)?;
     Ok(())
 }
 
-pub trait WasiFrameBufferView: WasiView {}
+pub trait WasiFrameBufferView: IoView {}
 
-impl frame_buffer::Host for dyn WasiFrameBufferView + '_ {}
+#[repr(transparent)]
+pub struct WasiFrameBufferImpl<T: WasiFrameBufferView>(pub T);
+impl<T: WasiFrameBufferView> IoView for WasiFrameBufferImpl<T> {
+    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
+        T::table(&mut self.0)
+    }
+}
 
-impl frame_buffer::HostDevice for dyn WasiFrameBufferView + '_ {
+impl<T: ?Sized + WasiFrameBufferView> WasiFrameBufferView for &mut T {}
+impl<T: ?Sized + WasiFrameBufferView> WasiFrameBufferView for Box<T> {}
+impl<T: WasiFrameBufferView> WasiFrameBufferView for WasiFrameBufferImpl<T> {}
+
+impl<T: WasiFrameBufferView> frame_buffer::Host for WasiFrameBufferImpl<T> {}
+
+impl<T: WasiFrameBufferView> frame_buffer::HostDevice for WasiFrameBufferImpl<T> {
     fn new(&mut self) -> Resource<crate::wasi::webgpu::frame_buffer::Device> {
         self.table().push(FBDeviceArc::new()).unwrap()
     }
@@ -156,7 +169,7 @@ impl frame_buffer::HostDevice for dyn WasiFrameBufferView + '_ {
     }
 }
 
-impl frame_buffer::HostBuffer for dyn WasiFrameBufferView + '_ {
+impl<T: WasiFrameBufferView> frame_buffer::HostBuffer for WasiFrameBufferImpl<T> {
     fn from_graphics_buffer(&mut self, buffer: Resource<AbstractBuffer>) -> Resource<FBBuffer> {
         let host_buffer: AbstractBuffer = self.table().delete(buffer).unwrap();
         let host_buffer: FBBuffer = host_buffer.inner_type();
