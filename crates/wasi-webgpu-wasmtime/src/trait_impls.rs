@@ -920,7 +920,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuQueue for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn write_buffer_cloned(
+    fn write_buffer_with_copy(
         &mut self,
         queue: Resource<wgpu_core::id::QueueId>,
         buffer: Resource<webgpu::GpuBuffer>,
@@ -946,7 +946,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuQueue for WasiWebGpuImpl<T> {
         Ok(())
     }
 
-    fn write_texture_cloned(
+    fn write_texture_with_copy(
         &mut self,
         queue: Resource<wgpu_core::id::QueueId>,
         destination: webgpu::GpuTexelCopyTextureInfo,
@@ -2299,7 +2299,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
         Ok(())
     }
 
-    fn get_mapped_range_get_cloned(
+    fn get_mapped_range_get_with_copy(
         &mut self,
         buffer: Resource<webgpu::GpuBuffer>,
         offset: Option<webgpu::GpuSize64>,
@@ -2321,7 +2321,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
         Ok(output)
     }
 
-    fn get_mapped_range_set_cloned(
+    fn get_mapped_range_set_with_copy(
         &mut self,
         buffer: Resource<webgpu::GpuBuffer>,
         data: Vec<u8>,

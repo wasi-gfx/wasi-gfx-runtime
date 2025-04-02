@@ -85,7 +85,7 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     // let data = storage_buffer.get_mapped_range(None, None);
     // data.set(contents);
     storage_buffer
-        .get_mapped_range_set_cloned(contents, None, None)
+        .get_mapped_range_set_with_copy(contents, None, None)
         .unwrap();
 
     storage_buffer.unmap().unwrap();
@@ -149,7 +149,7 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
 
     // Gets contents of buffer
     let data = staging_buffer
-        .get_mapped_range_get_cloned(None, None)
+        .get_mapped_range_get_with_copy(None, None)
         .unwrap();
     // Since contents are got in bytes, this converts these bytes back to u32
     let result = bytemuck::cast_slice(&data).to_vec();

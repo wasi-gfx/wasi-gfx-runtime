@@ -1,15 +1,15 @@
 [webgpu]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/2c0d29097f508185bf43160e46b35e02be8f9bbd.tar.gz"
+url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
 subdir = "webgpu"
 
 [surface]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/2c0d29097f508185bf43160e46b35e02be8f9bbd.tar.gz"
+url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
 subdir = "surface"
 
 [graphics-context]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/2c0d29097f508185bf43160e46b35e02be8f9bbd.tar.gz"
+url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
 subdir = "graphics-context"
 
 [frame-buffer]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/2c0d29097f508185bf43160e46b35e02be8f9bbd.tar.gz"
+url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
 subdir = "frame-buffer"
