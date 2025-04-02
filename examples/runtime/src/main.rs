@@ -5,7 +5,7 @@ use clap::Parser;
 use futures::executor::block_on;
 use wasi_frame_buffer_wasmtime::WasiFrameBufferView;
 use wasi_graphics_context_wasmtime::WasiGraphicsContextView;
-use wasi_surface_wasmtime::{MiniCanvas, MiniCanvasDesc, WasiMiniCanvasView};
+use wasi_surface_wasmtime::{Surface, SurfaceDesc, WasiSurfaceView};
 use wasi_webgpu_wasmtime::WasiWebGpuView;
 use wasmtime::{
     component::{Component, Linker},
@@ -89,8 +89,8 @@ impl WasiWebGpuView for HostState {
     }
 }
 
-impl WasiMiniCanvasView for HostState {
-    fn create_canvas(&self, desc: MiniCanvasDesc) -> MiniCanvas {
+impl WasiSurfaceView for HostState {
+    fn create_canvas(&self, desc: SurfaceDesc) -> Surface {
         block_on(self.main_thread_proxy.create_window(desc))
     }
 }

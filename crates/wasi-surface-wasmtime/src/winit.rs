@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{MiniCanvas, MiniCanvasDesc, MiniCanvasProxy};
+use crate::{Surface, SurfaceDesc, SurfaceProxy};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -41,7 +41,7 @@ impl WasiWinitEventLoop {
     /// This has to be run on the main thread.
     /// This call will block the thread.
     pub fn run(self) {
-        let proxies: Arc<Mutex<HashMap<WindowId, MiniCanvasProxy>>> = Default::default();
+        let proxies: Arc<Mutex<HashMap<WindowId, SurfaceProxy>>> = Default::default();
 
         {
             let proxies = Arc::clone(&proxies);
@@ -85,8 +85,8 @@ impl WasiWinitEventLoop {
         struct App {
             pointer_pos: HashMap<WindowId, (f64, f64)>,
             modifiers: HashMap<WindowId, ModifiersState>,
-            proxies: HashMap<WindowId, MiniCanvasProxy>,
-            arc_proxies: Arc<Mutex<HashMap<WindowId, MiniCanvasProxy>>>,
+            proxies: HashMap<WindowId, SurfaceProxy>,
+            arc_proxies: Arc<Mutex<HashMap<WindowId, SurfaceProxy>>>,
         }
 
         impl ApplicationHandler<MainThreadAction> for App {
@@ -111,7 +111,7 @@ impl WasiWinitEventLoop {
 
                         let window_id = window.id();
 
-                        let canvas = MiniCanvas::new(Box::new(MyWindow(window)));
+                        let canvas = Surface::new(Box::new(MyWindow(window)));
 
                         self.proxies.insert(window_id, canvas.proxy());
                         self.arc_proxies
@@ -220,7 +220,7 @@ pub struct WasiWinitEventLoopProxy {
 }
 
 impl WasiWinitEventLoopProxy {
-    pub async fn create_window(&self, desc: MiniCanvasDesc) -> MiniCanvas {
+    pub async fn create_window(&self, desc: SurfaceDesc) -> Surface {
         let (sender, receiver) = oneshot::channel();
         self.proxy
             .send_event(MainThreadAction::CreateWindow(desc, sender))
@@ -246,7 +246,7 @@ impl WasiWinitEventLoopProxy {
 }
 
 enum MainThreadAction {
-    CreateWindow(MiniCanvasDesc, oneshot::Sender<MiniCanvas>),
+    CreateWindow(SurfaceDesc, oneshot::Sender<Surface>),
     Spawn(
         Box<dyn FnOnce() -> Box<dyn Any + Send + Sync> + Send + Sync>,
         oneshot::Sender<Box<dyn Any + Send + Sync>>,
