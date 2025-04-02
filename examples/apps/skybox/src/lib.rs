@@ -573,7 +573,7 @@ impl Example {
 
         self.device
             .queue()
-            .write_buffer_cloned(
+            .write_buffer_with_copy(
                 &self.uniform_buf.buffer,
                 0,
                 bytemuck::cast_slice(&raw_uniforms),
@@ -724,7 +724,7 @@ fn device_create_texture_with_data(
 
             let end_offset = binary_offset + data_size as usize;
 
-            device.queue().write_texture_cloned(
+            device.queue().write_texture_with_copy(
                 &webgpu::GpuTexelCopyTextureInfo {
                     texture: &texture,
                     mip_level: Some(mip),
@@ -832,7 +832,7 @@ fn device_create_buffer_init(
         // let remote_buffer = buffer.get_mapped_range(None, None);
         // remote_buffer.set(descriptor.contents);
         buffer
-            .get_mapped_range_set_cloned(&descriptor.contents, None, None)
+            .get_mapped_range_set_with_copy(&descriptor.contents, None, None)
             .unwrap();
 
         buffer.unmap().unwrap();
