@@ -3,6 +3,7 @@
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "example:example/example",
+    generate_all,
 });
 
 export!(ExampleSkybox);
