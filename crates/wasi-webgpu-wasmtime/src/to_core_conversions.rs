@@ -118,7 +118,7 @@ impl<'a> ToCore<wgpu_core::pipeline::ShaderModuleDescriptor<'a>>
     fn to_core(self, _table: &ResourceTable) -> wgpu_core::pipeline::ShaderModuleDescriptor<'a> {
         wgpu_core::pipeline::ShaderModuleDescriptor {
             label: self.label.map(|label| label.into()),
-            shader_bound_checks: wgpu_types::ShaderBoundChecks::new(),
+            runtime_checks: wgpu_types::ShaderRuntimeChecks::default(),
         }
     }
 }
@@ -142,6 +142,9 @@ impl<'a> ToCore<wgpu_core::resource::TextureViewDescriptor<'a>>
                 base_array_layer: self.base_array_layer.unwrap_or(0),
                 array_layer_count: self.array_layer_count,
             },
+            usage: self
+                .usage
+                .map(|usage| wgpu_types::TextureUsages::from_bits(usage).unwrap()),
         }
     }
 }
@@ -294,7 +297,6 @@ impl<'a> ToCore<wgpu_core::pipeline::FragmentState<'a>> for webgpu::GpuFragmentS
                     })
                     .unwrap_or_default(),
                 zero_initialize_workgroup_memory: true,
-                vertex_pulling_transform: false,
             },
             targets: self
                 .targets
@@ -362,7 +364,6 @@ impl<'a> ToCore<wgpu_core::pipeline::VertexState<'a>> for webgpu::GpuVertexState
                     })
                     .unwrap_or_default(),
                 zero_initialize_workgroup_memory: true,
-                vertex_pulling_transform: false,
             },
             buffers: self
                 .buffers
@@ -608,51 +609,41 @@ impl ToCore<wgpu_core::command::RenderPassDepthStencilAttachment>
         self,
         table: &ResourceTable,
     ) -> wgpu_core::command::RenderPassDepthStencilAttachment {
+        fn pass_channel_from_options<V>(
+            load_op: Option<webgpu::GpuLoadOp>,
+            store_op: Option<webgpu::GpuStoreOp>,
+            clear_value: Option<V>,
+            read_only: Option<bool>,
+        ) -> wgpu_core::command::PassChannel<Option<V>> {
+            let load_op = load_op.map(|load_op| match load_op {
+                webgpu::GpuLoadOp::Load => wgpu_core::command::LoadOp::Load,
+                webgpu::GpuLoadOp::Clear => wgpu_core::command::LoadOp::Clear(clear_value),
+            });
+
+            wgpu_core::command::PassChannel {
+                load_op,
+                store_op: store_op.map(|x| x.into()),
+                // https://www.w3.org/TR/webgpu/#dictdef-gpurenderpassdepthstencilattachment
+                read_only: read_only.unwrap_or(false), //: read_only.unwrap_or(false),
+            }
+        }
+
         // https://www.w3.org/TR/webgpu/#dictdef-gpurenderpassdepthstencilattachment
         wgpu_core::command::RenderPassDepthStencilAttachment {
             view: self.view.to_core(table),
-            depth: pass_channel_from_options(
-                self.depth_load_op.map(|x| x.into()),
-                self.depth_store_op.map(|x| x.into()),
-                self.depth_clear_value.map(|x| x.into()),
-                self.depth_read_only.unwrap_or(false),
+            depth: pass_channel_from_options::<f32>(
+                self.depth_load_op,
+                self.depth_store_op,
+                self.depth_clear_value,
+                self.depth_read_only,
             ),
-            stencil: pass_channel_from_options(
-                self.stencil_load_op.map(|x| x.into()),
-                self.stencil_store_op.map(|x| x.into()),
-                self.stencil_clear_value.map(|x| x.into()),
-                self.stencil_read_only.unwrap_or(false),
+            stencil: pass_channel_from_options::<u32>(
+                self.stencil_load_op,
+                self.stencil_store_op,
+                self.stencil_clear_value,
+                self.stencil_read_only,
             ),
         }
-    }
-}
-
-fn pass_channel_from_options<V: Default + Copy>(
-    load_op: Option<wgpu_core::command::LoadOp>,
-    store_op: Option<wgpu_core::command::StoreOp>,
-    clear_value: Option<V>,
-    read_only: bool,
-) -> wgpu_core::command::PassChannel<V> {
-    match (load_op, store_op, clear_value) {
-        (Some(load_op), Some(store_op), Some(clear_value)) => wgpu_core::command::PassChannel {
-            load_op,
-            store_op,
-            clear_value,
-            read_only,
-        },
-        (Some(load_op), Some(store_op), None) => wgpu_core::command::PassChannel {
-            load_op,
-            store_op,
-            clear_value: V::default(),
-            read_only,
-        },
-        (None, None, None) => wgpu_core::command::PassChannel {
-            load_op: wgpu_core::command::LoadOp::Load,
-            store_op: wgpu_core::command::StoreOp::Store,
-            clear_value: V::default(),
-            read_only,
-        },
-        _ => todo!(),
     }
 }
 
@@ -660,18 +651,26 @@ impl ToCore<wgpu_core::command::RenderPassColorAttachment>
     for webgpu::GpuRenderPassColorAttachment
 {
     fn to_core(self, table: &ResourceTable) -> wgpu_core::command::RenderPassColorAttachment {
+        // https://gpuweb.github.io/gpuweb/#dom-gpurenderpasscolorattachment-clearvalue
+        let clear_value = self.clear_value.unwrap_or(webgpu::GpuColor {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        });
+
+        let load_op = match self.load_op {
+            webgpu::GpuLoadOp::Load => wgpu_core::command::LoadOp::Load,
+            webgpu::GpuLoadOp::Clear => wgpu_core::command::LoadOp::Clear(clear_value.into()),
+        };
+
         wgpu_core::command::RenderPassColorAttachment {
             view: self.view.to_core(table),
             resolve_target: self
                 .resolve_target
                 .map(|resolve_target| resolve_target.to_core(table)),
-            channel: pass_channel_from_options(
-                Some(self.load_op.into()),
-                Some(self.store_op.into()),
-                self.clear_value.map(|c| c.into()),
-                // TODO: why default to false?
-                false,
-            ),
+            load_op,
+            store_op: self.store_op.into(),
             // TODO: didn't use self.depth_slice
         }
     }
@@ -798,15 +797,15 @@ impl<'a> ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
 //     }
 // }
 
-impl ToCore<wgpu_types::ImageCopyTexture<wgpu_core::id::TextureId>>
+impl ToCore<wgpu_types::TexelCopyTextureInfo<wgpu_core::id::TextureId>>
     for webgpu::GpuTexelCopyTextureInfo
 {
     fn to_core(
         self,
         table: &ResourceTable,
-    ) -> wgpu_types::ImageCopyTexture<wgpu_core::id::TextureId> {
+    ) -> wgpu_types::TexelCopyTextureInfo<wgpu_core::id::TextureId> {
         // https://www.w3.org/TR/webgpu/#gputexelcopytextureinfo
-        wgpu_types::ImageCopyTexture {
+        wgpu_types::TexelCopyTextureInfo {
             texture: self.texture.to_core(table),
             mip_level: self.mip_level.unwrap_or(0),
             origin: self.origin.map(|o| o.to_core(table)).unwrap_or_default(),
@@ -829,10 +828,10 @@ impl ToCore<wgpu_types::Origin3d> for webgpu::GpuOrigin3D {
     }
 }
 
-impl ToCore<wgpu_types::ImageDataLayout> for webgpu::GpuTexelCopyBufferLayout {
-    fn to_core(self, _table: &ResourceTable) -> wgpu_types::ImageDataLayout {
+impl ToCore<wgpu_types::TexelCopyBufferLayout> for webgpu::GpuTexelCopyBufferLayout {
+    fn to_core(self, _table: &ResourceTable) -> wgpu_types::TexelCopyBufferLayout {
         // https://www.w3.org/TR/webgpu/#gputexelcopybufferlayout
-        wgpu_types::ImageDataLayout {
+        wgpu_types::TexelCopyBufferLayout {
             offset: self.offset.unwrap_or(0),
             bytes_per_row: self.bytes_per_row,
             rows_per_image: self.rows_per_image,
@@ -875,7 +874,6 @@ impl<'a> ToCore<wgpu_core::pipeline::ProgrammableStageDescriptor<'a>>
                 })
                 .unwrap_or_default(),
             zero_initialize_workgroup_memory: true,
-            vertex_pulling_transform: false,
         }
     }
 }
@@ -900,17 +898,17 @@ impl ToCore<wgpu_core::command::PassTimestampWrites> for webgpu::GpuRenderPassTi
     }
 }
 
-impl ToCore<wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId>>
+impl ToCore<wgpu_types::TexelCopyBufferInfo<wgpu_core::id::BufferId>>
     for webgpu::GpuTexelCopyBufferInfo
 {
     fn to_core(
         self,
         table: &ResourceTable,
-    ) -> wgpu_types::ImageCopyBuffer<wgpu_core::id::BufferId> {
+    ) -> wgpu_types::TexelCopyBufferInfo<wgpu_core::id::BufferId> {
         // https://www.w3.org/TR/webgpu/#gputexelcopybufferlayout
-        wgpu_types::ImageCopyBuffer {
+        wgpu_types::TexelCopyBufferInfo {
             buffer: table.get(&self.buffer).unwrap().buffer_id,
-            layout: wgpu_types::ImageDataLayout {
+            layout: wgpu_types::TexelCopyBufferLayout {
                 offset: self.offset.unwrap_or(0),
                 bytes_per_row: self.bytes_per_row,
                 rows_per_image: self.rows_per_image,
