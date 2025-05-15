@@ -46,6 +46,7 @@ wasmtime::component::bindgen!({
         ],
     },
     with: {
+        "wasi:io": wasmtime_wasi::bindings::io,
         "wasi:webgpu/webgpu/gpu-adapter": wgpu_core::id::AdapterId,
         "wasi:webgpu/webgpu/gpu-device": wrapper_types::Device,
         "wasi:webgpu/webgpu/gpu-queue": wgpu_core::id::QueueId,
