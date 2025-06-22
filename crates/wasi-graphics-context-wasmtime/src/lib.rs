@@ -155,8 +155,8 @@ impl<T: WasiGraphicsContextView> graphics_context::HostContext for WasiGraphicsC
         context.draw_api.as_mut().unwrap().present().unwrap();
     }
 
-    fn drop(&mut self, _graphics_context: Resource<Context>) -> wasmtime::Result<()> {
-        // todo!()
+    fn drop(&mut self, graphics_context: Resource<Context>) -> wasmtime::Result<()> {
+        self.table().delete(graphics_context).unwrap();
         Ok(())
     }
 }
