@@ -1,5 +1,10 @@
 use core::slice;
-use std::{borrow::Cow, mem, num::NonZeroU64, sync::Arc};
+use std::{
+    borrow::Cow,
+    mem,
+    num::NonZeroU64,
+    sync::{Arc, Weak},
+};
 
 use callback_future::CallbackFuture;
 use futures::executor::block_on;
@@ -274,11 +279,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
 
         let surface = WebGpuSurface {
             get_instance: {
-                let instance = instance.clone();
+                let instance = Weak::clone(&instance);
                 move || instance.upgrade().unwrap()
             },
             create_surface: {
-                let instance = instance.clone();
+                let instance = Weak::clone(&instance);
                 move |display: &(dyn DisplayApi + Send + Sync)| {
                     let instance = instance.upgrade().unwrap();
 

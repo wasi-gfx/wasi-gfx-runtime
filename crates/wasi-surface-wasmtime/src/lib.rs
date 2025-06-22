@@ -328,8 +328,8 @@ impl<T: WasiSurfaceView> surface::Host for WasiSurfaceImpl<T> {}
 
 impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
     fn new(&mut self, desc: SurfaceDesc) -> Resource<SurfaceArc> {
-        let canvas = self.create_canvas(desc);
-        let surface = SurfaceArc(Arc::new(canvas));
+        let surface = self.create_canvas(desc);
+        let surface = SurfaceArc(Arc::new(surface));
         self.table().push(surface).unwrap()
     }
 
