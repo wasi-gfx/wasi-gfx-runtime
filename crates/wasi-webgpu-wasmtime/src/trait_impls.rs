@@ -270,7 +270,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
     fn connect_graphics_context(&mut self, device: Resource<Device>, context: Resource<Context>) {
         let device = self.table().get(&device).unwrap();
         let device_id = device.device;
-        let adapter_id = device.adapter;
+        let _adapter_id = device.adapter;
 
         let instance = Arc::downgrade(&self.instance());
         let surface_creator = self.ui_thread_spawner();
@@ -318,7 +318,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
                 }
             },
             device_id,
-            adapter_id,
+            _adapter_id,
             surface_id: None,
         };
 
@@ -2397,7 +2397,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
         &mut self,
         _gpu: Resource<webgpu::Gpu>,
     ) -> webgpu::GpuTextureFormat {
-        // https://searchfox.org/mozilla-central/source/dom/webgpu/Instance.h#42
+        // https://searchfox.org/mozilla-central/source/dom/webgpu/Instance.h#68
         #[cfg(target_os = "android")]
         return webgpu::GpuTextureFormat::Rgba8unorm;
         #[cfg(not(target_os = "android"))]
