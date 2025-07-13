@@ -317,7 +317,7 @@ impl Example {
                 entry_point: Some("fs_sky".into()),
                 constants: None,
                 targets: vec![Some(webgpu::GpuColorTargetState {
-                    format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
+                    format: webgpu::get_gpu().get_preferred_canvas_format(),
                     blend: None,
                     write_mask: Some(ColorWrites::ALL.bits()),
                 })],
@@ -379,7 +379,7 @@ impl Example {
                 entry_point: Some("fs_entity".into()),
                 constants: None,
                 targets: vec![Some(webgpu::GpuColorTargetState {
-                    format: webgpu::GpuTextureFormat::Bgra8unormSrgb,
+                    format: webgpu::get_gpu().get_preferred_canvas_format(),
                     blend: None,
                     write_mask: Some(ColorWrites::ALL.bits()),
                 })],

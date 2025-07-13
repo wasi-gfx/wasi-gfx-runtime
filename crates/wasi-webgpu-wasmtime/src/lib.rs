@@ -151,7 +151,8 @@ where
     get_instance: GI,
     create_surface: CS,
     device_id: wgpu_core::id::DeviceId,
-    adapter_id: wgpu_core::id::AdapterId,
+    // Might be needed one day for surface configuration.
+    _adapter_id: wgpu_core::id::AdapterId,
     surface_id: Option<wgpu_core::id::SurfaceId>,
 }
 
@@ -183,21 +184,21 @@ where
 
     fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
         let surface_id = (self.create_surface)(display.as_ref());
+        // TODO: fix this once user can pass in configuration options. For now just taking from `gpu.get-preferred-canvas-format()`.
+        #[cfg(target_os = "android")]
+        let swapchain_format = wgpu_types::TextureFormat::Rgba8Unorm;
+        #[cfg(not(target_os = "android"))]
+        let swapchain_format = wgpu_types::TextureFormat::Bgra8Unorm;
 
-        let swapchain_capabilities = (self.get_instance)()
-            .as_ref()
-            .surface_get_capabilities(surface_id, self.adapter_id)
-            .unwrap();
-        let swapchain_format = swapchain_capabilities.formats[0];
-
+        // https://www.w3.org/TR/webgpu/#dictdef-gpucanvasconfiguration
         let config = wgpu_types::SurfaceConfiguration {
-            usage: wgpu_types::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
+            usage: wgpu_types::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: vec![],
+            alpha_mode: wgpu_types::CompositeAlphaMode::Opaque,
             width: display.width(),
             height: display.height(),
             present_mode: wgpu_types::PresentMode::Fifo,
-            alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![swapchain_format],
             // TODO: not sure what the correct value is
             desired_maximum_frame_latency: 2,
         };
