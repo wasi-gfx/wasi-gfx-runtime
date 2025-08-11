@@ -187,13 +187,25 @@ impl<T: WasiFrameBufferView> frame_buffer::HostBuffer for WasiFrameBufferImpl<T>
     fn set(&mut self, buffer: Resource<FBBuffer>, val: Vec<u8>) {
         let buffer = self.table().get_mut(&buffer).unwrap();
         let val = bytemuck::try_cast_slice(&val).unwrap();
-        buffer
-            .buffer
-            .lock()
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .copy_from_slice(&val);
+        let mut guard = buffer.buffer.lock().unwrap();
+        if let Some(dest) = guard.as_mut() {
+            if dest.len() == val.len() {
+                dest.copy_from_slice(&val);
+            } else {
+                println!(
+                    "set: buffer size mismatch: dest={}, src={}",
+                    dest.len(),
+                    val.len()
+                );
+            }
+        }
+        //buffer
+        //    .buffer
+        //    .lock()
+        //    .unwrap()
+        //    .as_mut()
+        //    .unwrap()
+        //    .copy_from_slice(&val);
     }
 
     fn drop(&mut self, frame_buffer: Resource<FBBuffer>) -> wasmtime::Result<()> {

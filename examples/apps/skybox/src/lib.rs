@@ -21,7 +21,7 @@ impl Guest for ExampleSkybox {
         let pointer_move_pollable = example.canvas.subscribe_pointer_move();
         let key_up_pollable = example.canvas.subscribe_key_up();
         let key_down_pollable = example.canvas.subscribe_key_down();
-        // let resize_pollable = example.canvas.subscribe_resize();
+        let resize_pollable = example.canvas.subscribe_resize();
         let frame_pollable = example.canvas.subscribe_frame();
         let pollables = vec![
             &pointer_up_pollable,
@@ -29,7 +29,7 @@ impl Guest for ExampleSkybox {
             &pointer_move_pollable,
             &key_up_pollable,
             &key_down_pollable,
-            // &resize_pollable,
+            &resize_pollable,
             &frame_pollable,
         ];
         loop {
@@ -57,11 +57,11 @@ impl Guest for ExampleSkybox {
                 let event = example.canvas.get_key_down();
                 print(&format!("key_down: {:?}", event));
             }
-            // if pollables_res.contains(&5) {
-            //     let event = example.canvas.get_resize();
-            //     print(&format!("resize: {:?}", event));
-            //     my_run();
-            // }
+            if pollables_res.contains(&5) {
+                let event = example.canvas.get_resize();
+                print(&format!("resize: {:?}", event));
+                my_run();
+            }
 
             if pollables_res.contains(&5) {
                 example.canvas.get_frame();

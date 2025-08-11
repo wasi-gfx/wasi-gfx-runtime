@@ -1,3 +1,5 @@
+use crate::surface::PointerEvent;
+
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "example:example/example",
@@ -33,22 +35,40 @@ fn draw_rectangle() {
     let frame_pollable = canvas.subscribe_frame();
     let pollables = vec![&pointer_up_pollable, &resize_pollable, &frame_pollable];
     let mut green = false;
-    let mut height = canvas.height();
-    let mut width = canvas.width();
+    //let mut height = canvas.height();
+    //let mut width = canvas.width();
+    let mut height = 200;
+    let mut width = 200;
     loop {
         let pollables_res = wasi::io::poll::poll(&pollables);
 
         if pollables_res.contains(&0) {
+
+            println!("Drawing rectangle example started 0");
+            print("Drawing rectangle example started 1");
             let event = canvas.get_pointer_up();
-            print(&format!("up: {:?}", event));
+            match event {
+                Some(PointerEvent { x, y }) => {
+                    print(&format!("pointer up: {:?}", event));
+                    print(&format!("x: {}, y: {}", x, y));
+                }
+                None => {
+                    print("pointer up event not found");
+                }
+            }
+            print(&format!("up: ___ {:?}", event));
             green = !green;
         }
 
         if pollables_res.contains(&1) {
-            let event = canvas.get_resize().unwrap();
-            print(&format!("resize: {:?}", event));
-            height = event.height;
-            width = event.width;
+            if let event = canvas.get_resize() {
+                print(&format!("resize: {:?}", event));
+                //canvas.request_set_size(Some(event.unwrap().width), Some(event.unwrap().height));
+                //height = event.height;
+                //width = event.width;
+            } else {
+                print("resize event not found");
+            }
         }
 
         if pollables_res.contains(&2) {
@@ -56,8 +76,9 @@ fn draw_rectangle() {
             print(&format!("frame event"));
 
             let graphics_buffer = graphics_context.get_current_buffer();
-
+            println!("before buffer");
             let buffer = frame_buffer::Buffer::from_graphics_buffer(graphics_buffer);
+            println!("after buffer");
 
             const RED: u32 = 0b_00000000_11111111_00000000_00000000;
             const GREEN: u32 = 0b_00000000_00000000_11111111_00000000;
@@ -68,6 +89,9 @@ fn draw_rectangle() {
             let mut buf = vec![0; (width * height) as usize];
             for y in 0..local_height {
                 for x in 0..local_width {
+                    if (x < 1 || y < 1) {
+                        continue;
+                    }
                     let color = if green { GREEN } else { RED };
                     let v = if is_on_rect(local_width, local_height, x, y) {
                         color
