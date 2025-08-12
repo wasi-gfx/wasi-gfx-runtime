@@ -24,6 +24,7 @@ fn draw_rectangle() {
         height: None,
         width: None,
     });
+    canvas.request_set_size(Some(1024), Some(768));
     let graphics_context = graphics_context::Context::new();
     canvas.connect_graphics_context(&graphics_context);
 
@@ -35,16 +36,15 @@ fn draw_rectangle() {
     let frame_pollable = canvas.subscribe_frame();
     let pollables = vec![&pointer_up_pollable, &resize_pollable, &frame_pollable];
     let mut green = false;
-    //let mut height = canvas.height();
-    //let mut width = canvas.width();
-    let mut height = 200;
-    let mut width = 200;
+    let mut height = canvas.height();
+    let mut width = canvas.width();
+    //let mut height = 800;
+    //let mut width = 600;
     loop {
         let pollables_res = wasi::io::poll::poll(&pollables);
 
         if pollables_res.contains(&0) {
 
-            println!("Drawing rectangle example started 0");
             print("Drawing rectangle example started 1");
             let event = canvas.get_pointer_up();
             match event {
@@ -72,13 +72,11 @@ fn draw_rectangle() {
         }
 
         if pollables_res.contains(&2) {
-            canvas.get_frame();
-            print(&format!("frame event"));
+            let event = canvas.get_frame();
+            print(&format!("frame event {:?}", event));
 
             let graphics_buffer = graphics_context.get_current_buffer();
-            println!("before buffer");
             let buffer = frame_buffer::Buffer::from_graphics_buffer(graphics_buffer);
-            println!("after buffer");
 
             const RED: u32 = 0b_00000000_11111111_00000000_00000000;
             const GREEN: u32 = 0b_00000000_00000000_11111111_00000000;
@@ -86,7 +84,8 @@ fn draw_rectangle() {
 
             let local_width = min(width, 100);
             let local_height = min(height, 100);
-            let mut buf = vec![0; (width * height) as usize];
+            //let mut buf = vec![0; (width * height) as usize];
+            let mut buf = vec![0; 3145728];
             for y in 0..local_height {
                 for x in 0..local_width {
                     if (x < 1 || y < 1) {
@@ -105,9 +104,21 @@ fn draw_rectangle() {
                 }
             }
 
-            buffer.set(bytemuck::cast_slice(&buf));
+            print("before buffer");
+            print(&format!("buffer size {}", buf.len()));
+            // increase buffer size to 399920004
+            let frame_data: &[u8] = bytemuck::cast_slice(&buf);
+            print(&format!("frame data len {}", frame_data.len()));
 
+            //let frame_data = bytemuck::cast_slice(&buf);
+            //print(format!("frame data {:?}", frame_data).as_str());
+            print(format!("frame data len {}", frame_data.len()).as_str());
+            buffer.set(frame_data);;
+            print("after buffer");
+
+            print("draw before");
             graphics_context.present();
+            print("draw after");
         }
     }
 }

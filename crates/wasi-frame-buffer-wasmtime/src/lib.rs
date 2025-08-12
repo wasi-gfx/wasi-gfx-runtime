@@ -191,6 +191,11 @@ impl<T: WasiFrameBufferView> frame_buffer::HostBuffer for WasiFrameBufferImpl<T>
         if let Some(dest) = guard.as_mut() {
             if dest.len() == val.len() {
                 dest.copy_from_slice(&val);
+                println!(
+                    "set: buffer size correct: dest={}, src={}",
+                    dest.len(),
+                    val.len()
+                );
             } else {
                 println!(
                     "set: buffer size mismatch: dest={}, src={}",

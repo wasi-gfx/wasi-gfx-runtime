@@ -60,7 +60,7 @@ impl Guest for ExampleSkybox {
             if pollables_res.contains(&5) {
                 let event = example.canvas.get_resize();
                 print(&format!("resize: {:?}", event));
-                my_run();
+                //my_run();
             }
 
             if pollables_res.contains(&5) {

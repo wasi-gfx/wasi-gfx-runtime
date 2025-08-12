@@ -91,8 +91,8 @@ impl WasiWebGpuView for HostState {
 
 impl WasiSurfaceView for HostState {
     fn create_canvas(&self, mut desc: SurfaceDesc) -> Surface {
-        desc.width = Some(desc.width.unwrap_or(9999));
-        desc.height = Some(desc.height.unwrap_or(9999));
+        desc.width = Some(desc.width.unwrap_or(1024));
+        desc.height = Some(desc.height.unwrap_or(768));
         block_on(self.main_thread_proxy.create_window(desc))
     }
 }
