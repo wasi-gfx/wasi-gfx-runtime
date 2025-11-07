@@ -167,7 +167,7 @@ where
             .as_ref()
             .surface_get_current_texture(self.surface_id.unwrap(), None)
             .unwrap()
-            .texture_id
+            .texture
             .unwrap();
         let buff = Box::new(texture);
         let buff: AbstractBuffer = buff.into();
