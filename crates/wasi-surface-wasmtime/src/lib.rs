@@ -278,9 +278,7 @@ where
     Ok(())
 }
 
-pub fn add_only_surface_to_linker<T>(
-    l: &mut wasmtime::component::Linker<T>,
-) -> wasmtime::Result<()>
+pub fn add_only_surface_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
 where
     T: WasiSurfaceView,
 {

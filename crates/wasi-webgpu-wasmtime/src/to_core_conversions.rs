@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use wasmtime::component::ResourceTable;
 
 use crate::wasi::webgpu::webgpu;
@@ -92,7 +90,7 @@ impl<'a> ToCore<wgpu_core::binding_model::BufferBinding> for webgpu::GpuBufferBi
         let buffer = table.get(&self.buffer).unwrap();
         // https://www.w3.org/TR/webgpu/#dictdef-gpubufferbinding
         wgpu_core::binding_model::BufferBinding {
-            buffer_id: buffer.buffer_id,
+            buffer: buffer.buffer_id,
             offset: self.offset.unwrap_or(0),
             size: self.size.map(|s| s.try_into().unwrap()),
         }
@@ -293,7 +291,7 @@ impl<'a> ToCore<wgpu_core::pipeline::FragmentState<'a>> for webgpu::GpuFragmentS
                     .map(|constants| {
                         // TODO: can we get rid of the clone here?
                         let constants = table.get(&constants).unwrap().clone();
-                        Cow::Owned(constants)
+                        constants.into_iter().collect()
                     })
                     .unwrap_or_default(),
                 zero_initialize_workgroup_memory: true,
@@ -360,7 +358,7 @@ impl<'a> ToCore<wgpu_core::pipeline::VertexState<'a>> for webgpu::GpuVertexState
                     .map(|constants| {
                         // TODO: can we get rid of the clone here?
                         let constants = table.get(&constants).unwrap().clone();
-                        Cow::Owned(constants)
+                        constants.into_iter().collect()
                     })
                     .unwrap_or_default(),
                 zero_initialize_workgroup_memory: true,
@@ -705,53 +703,63 @@ impl<'a> ToCore<wgpu_types::DeviceDescriptor<wgpu_core::Label<'a>>>
             // TODO: use self.default_queue?
             // memory_hints is not present in WebGPU
             memory_hints: wgpu_types::MemoryHints::default(),
+            // trace is not present in WebGPU
+            trace: wgpu_types::Trace::default(),
         }
     }
 }
 
 impl<'a> ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::Features {
-        self.into_iter()
+        let features_webgpu = self
+            .into_iter()
             .map(|feature| match feature {
                 webgpu::GpuFeatureName::DepthClipControl => {
-                    wgpu_types::Features::DEPTH_CLIP_CONTROL
+                    wgpu_types::FeaturesWebGPU::DEPTH_CLIP_CONTROL
                 }
                 webgpu::GpuFeatureName::Depth32floatStencil8 => {
-                    wgpu_types::Features::DEPTH32FLOAT_STENCIL8
+                    wgpu_types::FeaturesWebGPU::DEPTH32FLOAT_STENCIL8
                 }
                 webgpu::GpuFeatureName::TextureCompressionBc => {
-                    wgpu_types::Features::TEXTURE_COMPRESSION_BC
+                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC
                 }
-                webgpu::GpuFeatureName::TextureCompressionBcSliced3d => todo!(), // wgpu_types::Features::TEXTURE_COMPRESSION_BC_SLICED_3D,
+                webgpu::GpuFeatureName::TextureCompressionBcSliced3d => todo!(), // wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC_SLICED_3D,
                 webgpu::GpuFeatureName::TextureCompressionEtc2 => {
-                    wgpu_types::Features::TEXTURE_COMPRESSION_ETC2
+                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ETC2
                 }
                 webgpu::GpuFeatureName::TextureCompressionAstc => {
-                    wgpu_types::Features::TEXTURE_COMPRESSION_ASTC
+                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ASTC
                 }
                 webgpu::GpuFeatureName::TextureCompressionAstcSliced3d => todo!(),
-                webgpu::GpuFeatureName::TimestampQuery => wgpu_types::Features::TIMESTAMP_QUERY,
-                webgpu::GpuFeatureName::IndirectFirstInstance => {
-                    wgpu_types::Features::INDIRECT_FIRST_INSTANCE
+                webgpu::GpuFeatureName::TimestampQuery => {
+                    wgpu_types::FeaturesWebGPU::TIMESTAMP_QUERY
                 }
-                webgpu::GpuFeatureName::ShaderF16 => wgpu_types::Features::SHADER_F16,
+                webgpu::GpuFeatureName::IndirectFirstInstance => {
+                    wgpu_types::FeaturesWebGPU::INDIRECT_FIRST_INSTANCE
+                }
+                webgpu::GpuFeatureName::ShaderF16 => wgpu_types::FeaturesWebGPU::SHADER_F16,
                 webgpu::GpuFeatureName::Rg11b10ufloatRenderable => {
-                    wgpu_types::Features::RG11B10UFLOAT_RENDERABLE
+                    wgpu_types::FeaturesWebGPU::RG11B10UFLOAT_RENDERABLE
                 }
                 webgpu::GpuFeatureName::Bgra8unormStorage => {
-                    wgpu_types::Features::BGRA8UNORM_STORAGE
+                    wgpu_types::FeaturesWebGPU::BGRA8UNORM_STORAGE
                 }
                 webgpu::GpuFeatureName::Float32Filterable => {
-                    wgpu_types::Features::FLOAT32_FILTERABLE
+                    wgpu_types::FeaturesWebGPU::FLOAT32_FILTERABLE
                 }
                 webgpu::GpuFeatureName::Float32Blendable => todo!(),
-                webgpu::GpuFeatureName::ClipDistances => todo!(), // wgpu_types::Features::CLIP_DISTANCES,
+                webgpu::GpuFeatureName::ClipDistances => todo!(), // wgpu_types::FeaturesWebGPU::CLIP_DISTANCES,
                 webgpu::GpuFeatureName::DualSourceBlending => {
-                    wgpu_types::Features::DUAL_SOURCE_BLENDING
+                    wgpu_types::FeaturesWebGPU::DUAL_SOURCE_BLENDING
                 }
                 webgpu::GpuFeatureName::Subgroups => todo!(),
             })
-            .collect()
+            .collect();
+        wgpu_types::Features {
+            features_webgpu,
+            // Don't enable any native features
+            features_wgpu: wgpu_types::FeaturesWGPU::default(),
+        }
     }
 }
 
@@ -870,7 +878,7 @@ impl<'a> ToCore<wgpu_core::pipeline::ProgrammableStageDescriptor<'a>>
                 .map(|constants| {
                     // TODO: can we get rid of the clone here?
                     let constants = table.get(&constants).unwrap().clone();
-                    Cow::Owned(constants)
+                    constants.into_iter().collect()
                 })
                 .unwrap_or_default(),
             zero_initialize_workgroup_memory: true,

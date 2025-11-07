@@ -848,7 +848,6 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
                     .unwrap_or(wgpu_types::DeviceDescriptor::default()),
                 None,
                 None,
-                None,
             )
             .unwrap();
 
@@ -1016,7 +1015,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
         };
         let render_pass = core_result_t(
             self.instance()
-                .command_encoder_create_render_pass(command_encoder, &descriptor),
+                .command_encoder_begin_render_pass(command_encoder, &descriptor),
         )
         .unwrap();
 
@@ -1050,7 +1049,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
     ) -> Resource<webgpu::GpuComputePassEncoder> {
         let command_encoder = *self.table().get(&command_encoder).unwrap();
         let compute_pass = core_result_t(
-            self.instance().command_encoder_create_compute_pass(
+            self.instance().command_encoder_begin_compute_pass(
                 command_encoder,
                 // can't use to_core because timestamp_writes is Option<&x>.
                 &wgpu_core::command::ComputePassDescriptor {
@@ -1061,8 +1060,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
                         .flatten(),
                     timestamp_writes: descriptor
                         .map(|d| d.timestamp_writes.map(|tw| tw.to_core(&self.table())))
-                        .flatten()
-                        .as_ref(),
+                        .flatten(),
                 },
             ),
         )
@@ -2387,7 +2385,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
             wgpu_types::Backends::all(),
             None,
         );
-        if let Err(wgpu_core::instance::RequestAdapterError::NotFound) = adapter {
+        if let Err(wgpu_types::RequestAdapterError::NotFound { .. }) = &adapter {
             return None;
         }
         adapter.ok().map(|a| self.table().push(a).unwrap())
