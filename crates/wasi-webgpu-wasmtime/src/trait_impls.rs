@@ -388,7 +388,6 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
             host_device,
             &descriptor.to_core(&self.table()),
             None,
-            None,
         ))
         .unwrap();
 
@@ -566,7 +565,6 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
             device,
             &descriptor.to_core(&self.table()),
             None,
-            None,
         ))
         .unwrap();
         self.table().push(compute_pipeline).unwrap()
@@ -694,7 +692,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuTexture for WasiWebGpuImpl<T> {
 
     fn destroy(&mut self, texture: Resource<webgpu::GpuTexture>) {
         let texture_id = *self.table().get(&texture).unwrap();
-        self.instance().texture_destroy(texture_id).unwrap();
+        self.instance().texture_destroy(texture_id);
     }
 
     fn width(&mut self, _self_: Resource<webgpu::GpuTexture>) -> webgpu::GpuIntegerCoordinateOut {
@@ -1036,6 +1034,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
                 &descriptor
                     .map(|d| d.to_core(&self.table()))
                     .unwrap_or(wgpu_types::CommandBufferDescriptor::default()),
+                None,
             ),
         )
         .unwrap();
@@ -1089,7 +1088,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
                 source_offset,
                 destination,
                 destination_offset,
-                size,
+                Some(size),
             )
             .unwrap();
     }
@@ -2356,7 +2355,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBuffer for WasiWebGpuImpl<T> {
 
     fn destroy(&mut self, buffer: Resource<webgpu::GpuBuffer>) {
         let buffer_id = self.table().get_mut(&buffer).unwrap().buffer_id;
-        self.instance().buffer_destroy(buffer_id).unwrap();
+        self.instance().buffer_destroy(buffer_id);
     }
 
     fn label(&mut self, _self_: Resource<webgpu::GpuBuffer>) -> String {

@@ -51,6 +51,7 @@ impl HostState {
                     backends: wgpu_types::Backends::all(),
                     flags: wgpu_types::InstanceFlags::from_build_config(),
                     backend_options: Default::default(),
+                    memory_budget_thresholds: Default::default(),
                 },
             )),
             main_thread_proxy,
