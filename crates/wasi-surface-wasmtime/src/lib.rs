@@ -4,11 +4,10 @@ use std::{
 };
 use wasi_graphics_context_wasmtime::DisplayApi;
 
-use crate::wasi::surface::surface::{self, Context as GraphicsContext, Pollable};
 use async_broadcast::{Receiver, TrySendError};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use wasmtime::component::Resource;
-use wasmtime_wasi::{IoImpl, IoView};
+use wasmtime_wasi::p2::Pollable;
+use wasmtime_wasi::{ResourceTable, WasiView};
 
 #[cfg(feature = "winit")]
 mod winit;
@@ -27,13 +26,10 @@ pub use crate::wasi::surface::surface::{
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
-    async: {
-        only_imports: [],
-    },
     with: {
-        "wasi:io": wasmtime_wasi::bindings::io,
         "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
         "wasi:surface/surface/surface": SurfaceArc,
+        "wasi:io/poll/pollable": wasmtime_wasi::p2::DynPollable,
     },
 });
 
@@ -42,29 +38,29 @@ pub struct Surface {
 
     // Keeping inactive receivers to keep channels open.
     // See https://docs.rs/async-broadcast/0.7.1/async_broadcast/struct.InactiveReceiver.html
-    pointer_up_sender: async_broadcast::Sender<PointerEvent>,
+    pub pointer_up_sender: async_broadcast::Sender<PointerEvent>,
     _pointer_up_receiver: async_broadcast::InactiveReceiver<PointerEvent>,
-    pointer_down_sender: async_broadcast::Sender<PointerEvent>,
+    pub pointer_down_sender: async_broadcast::Sender<PointerEvent>,
     _pointer_down_receiver: async_broadcast::InactiveReceiver<PointerEvent>,
-    pointer_move_sender: async_broadcast::Sender<PointerEvent>,
+    pub pointer_move_sender: async_broadcast::Sender<PointerEvent>,
     _pointer_move_receiver: async_broadcast::InactiveReceiver<PointerEvent>,
-    key_up_sender: async_broadcast::Sender<KeyEvent>,
+    pub key_up_sender: async_broadcast::Sender<KeyEvent>,
     _key_up_receiver: async_broadcast::InactiveReceiver<KeyEvent>,
-    key_down_sender: async_broadcast::Sender<KeyEvent>,
+    pub key_down_sender: async_broadcast::Sender<KeyEvent>,
     _key_down_receiver: async_broadcast::InactiveReceiver<KeyEvent>,
-    canvas_resize_sender: async_broadcast::Sender<ResizeEvent>,
+    pub canvas_resize_sender: async_broadcast::Sender<ResizeEvent>,
     _canvas_resize_receiver: async_broadcast::InactiveReceiver<ResizeEvent>,
-    frame_sender: async_broadcast::Sender<()>,
+    pub frame_sender: async_broadcast::Sender<()>,
     _frame_receiver: async_broadcast::InactiveReceiver<()>,
 
     // TODO: remove once we get rid of pollable
-    pointer_up_data: Mutex<Option<PointerEvent>>,
-    pointer_down_data: Mutex<Option<PointerEvent>>,
-    pointer_move_data: Mutex<Option<PointerEvent>>,
-    key_up_data: Mutex<Option<KeyEvent>>,
-    key_down_data: Mutex<Option<KeyEvent>>,
-    canvas_resize_data: Mutex<Option<ResizeEvent>>,
-    frame_data: Mutex<Option<FrameEvent>>,
+    pub pointer_up_data: Mutex<Option<PointerEvent>>,
+    pub pointer_down_data: Mutex<Option<PointerEvent>>,
+    pub pointer_move_data: Mutex<Option<PointerEvent>>,
+    pub key_up_data: Mutex<Option<KeyEvent>>,
+    pub key_down_data: Mutex<Option<KeyEvent>>,
+    pub canvas_resize_data: Mutex<Option<ResizeEvent>>,
+    pub frame_data: Mutex<Option<FrameEvent>>,
 }
 
 impl Debug for Surface {
@@ -260,130 +256,155 @@ fn unwrap_unless_inactive_or_full<T>(res: Result<Option<T>, TrySendError<T>>) {
 }
 
 // wasmtime
-pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
-where
-    T: WasiSurfaceView + IoView,
-{
-    fn type_annotate_io<T, F>(val: F) -> F
-    where
-        T: IoView,
-        F: Fn(&mut T) -> IoImpl<&mut T>,
-    {
-        val
-    }
-    let closure_io = type_annotate_io::<T, _>(|t| IoImpl(t));
-    wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(l, closure_io)?;
-    wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(l, closure_io)?;
-    add_only_surface_to_linker(l)?;
-    Ok(())
-}
-
-pub fn add_only_surface_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
-where
-    T: WasiSurfaceView,
-{
-    fn type_annotate<T, F>(val: F) -> F
-    where
-        T: WasiSurfaceView,
-        F: Fn(&mut T) -> WasiSurfaceImpl<&mut T>,
-    {
-        val
-    }
-    let closure = type_annotate::<T, _>(|t| WasiSurfaceImpl(t));
-    wasi::surface::surface::add_to_linker_get_host(l, closure)?;
-    Ok(())
-}
-
-pub trait WasiSurfaceView: IoView {
+pub trait WasiSurfaceView: Send {
+    fn table(&mut self) -> &mut ResourceTable;
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_>;
     fn create_canvas(&self, desc: SurfaceDesc) -> Surface;
 }
 
 #[repr(transparent)]
 pub struct WasiSurfaceImpl<T: WasiSurfaceView>(pub T);
-impl<T: WasiSurfaceView> IoView for WasiSurfaceImpl<T> {
-    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
-        T::table(&mut self.0)
+
+impl<T: WasiSurfaceView + 'static> wasmtime::component::HasData for WasiSurfaceImpl<T> {
+    type Data<'a> = WasiSurfaceImpl<&'a mut T>;
+}
+
+impl<T: WasiSurfaceView> WasiView for WasiSurfaceImpl<T> {
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_> {
+        T::ctx(&mut self.0)
     }
 }
 
-impl<T: ?Sized + WasiSurfaceView> WasiSurfaceView for &mut T {
-    fn create_canvas(&self, desc: SurfaceDesc) -> Surface {
-        T::create_canvas(self, desc)
-    }
-}
-impl<T: ?Sized + WasiSurfaceView> WasiSurfaceView for Box<T> {
-    fn create_canvas(&self, desc: SurfaceDesc) -> Surface {
-        T::create_canvas(self, desc)
-    }
-}
 impl<T: WasiSurfaceView> WasiSurfaceView for WasiSurfaceImpl<T> {
+    fn table(&mut self) -> &mut ResourceTable {
+        T::table(&mut self.0)
+    }
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_> {
+        T::ctx(&mut self.0)
+    }
     fn create_canvas(&self, desc: SurfaceDesc) -> Surface {
         T::create_canvas(&self.0, desc)
     }
 }
 
-impl<T: WasiSurfaceView> surface::Host for WasiSurfaceImpl<T> {}
-
-impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
-    fn new(&mut self, desc: SurfaceDesc) -> Resource<SurfaceArc> {
-        let surface = self.create_canvas(desc);
-        let surface = SurfaceArc(Arc::new(surface));
-        self.table().push(surface).unwrap()
+impl<T: ?Sized + WasiSurfaceView> WasiSurfaceView for &mut T {
+    fn table(&mut self) -> &mut ResourceTable {
+        T::table(self)
     }
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_> {
+        T::ctx(self)
+    }
+    fn create_canvas(&self, desc: SurfaceDesc) -> Surface {
+        T::create_canvas(self, desc)
+    }
+}
 
+// Implement Host trait for the wrapped type
+impl<T: WasiSurfaceView> wasi::surface::surface::Host for WasiSurfaceImpl<T> {}
+
+impl<T: WasiSurfaceView> wasi::surface::surface::HostSurface for WasiSurfaceImpl<T> {
+    fn new(&mut self, desc: SurfaceDesc) -> wasmtime::component::Resource<SurfaceArc> {
+        let surface = self.0.create_canvas(desc);
+        let surface = SurfaceArc(std::sync::Arc::new(surface));
+        WasiSurfaceView::table(&mut self.0)
+            .push(surface)
+            .expect("failed to push surface to resource table")
+    }
     fn connect_graphics_context(
         &mut self,
-        surface: Resource<SurfaceArc>,
-        context: Resource<GraphicsContext>,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+        context: wasmtime::component::Resource<wasi_graphics_context_wasmtime::Context>,
     ) {
-        let surface = self.table().get(&surface).unwrap().clone();
-        let graphics_context = self.table().get_mut(&context).unwrap();
-
+        let surface = WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource")
+            .clone();
+        let graphics_context = WasiSurfaceView::table(&mut self.0)
+            .get_mut(&context)
+            .expect("invalid graphics context resource");
         graphics_context.connect_display_api(Box::new(surface));
     }
 
-    fn height(&mut self, surface: Resource<SurfaceArc>) -> u32 {
-        let surface = self.table().get(&surface).unwrap();
+    fn height(&mut self, surface: wasmtime::component::Resource<SurfaceArc>) -> u32 {
+        use wasi_graphics_context_wasmtime::DisplayApi;
+        let surface = WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource");
         surface.height()
     }
 
-    fn width(&mut self, surface: Resource<SurfaceArc>) -> u32 {
-        let surface = self.table().get(&surface).unwrap();
+    fn width(&mut self, surface: wasmtime::component::Resource<SurfaceArc>) -> u32 {
+        use wasi_graphics_context_wasmtime::DisplayApi;
+        let surface = WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource");
         surface.width()
     }
 
     fn request_set_size(
         &mut self,
-        surface: Resource<SurfaceArc>,
+        surface: wasmtime::component::Resource<SurfaceArc>,
         width: Option<u32>,
         height: Option<u32>,
     ) {
-        let surface = self.table().get(&surface).unwrap();
+        use wasi_graphics_context_wasmtime::DisplayApi;
+        let surface = WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource");
         surface.request_set_size(width, height);
     }
 
-    fn subscribe_resize(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_resize(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> wasmtime::component::Resource<wasi::surface::surface::Pollable> {
+        let canvas = std::sync::Arc::clone(
+            &WasiSurfaceView::table(&mut self.0)
+                .get(&surface)
+                .expect("invalid surface resource")
+                .0,
+        );
         let receiver = canvas.canvas_resize_sender.new_receiver();
-        let listener = self
-            .table()
+        let listener = WasiSurfaceView::table(&mut self.0)
             .push(Listener::new(receiver, move |data| {
-                canvas.canvas_resize_data.lock().unwrap().replace(data);
+                canvas
+                    .canvas_resize_data
+                    .lock()
+                    .expect("failed to acquire lock")
+                    .replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi::p2::subscribe(WasiSurfaceView::table(&mut self.0), listener)
+            .expect("failed to subscribe to pollable")
     }
 
-    fn get_resize(&mut self, surface: Resource<SurfaceArc>) -> Option<ResizeEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.canvas_resize_data.lock().unwrap().take()
+    fn get_resize(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> Option<ResizeEvent> {
+        let canvas = &WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource")
+            .0;
+        canvas
+            .canvas_resize_data
+            .lock()
+            .expect("failed to acquire lock")
+            .take()
     }
 
-    fn subscribe_frame(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_frame(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> wasmtime::component::Resource<wasi::surface::surface::Pollable> {
+        let canvas = std::sync::Arc::clone(
+            &WasiSurfaceView::table(&mut self.0)
+                .get(&surface)
+                .expect("invalid surface resource")
+                .0,
+        );
         let receiver = canvas.frame_sender.new_receiver();
-        let listener = self
-            .table()
+        let listener = WasiSurfaceView::table(&mut self.0)
             .push(Listener::new(receiver, move |_d| {
                 canvas
                     .frame_data
@@ -392,102 +413,235 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
                     .replace(FrameEvent { nothing: false });
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi::p2::subscribe(WasiSurfaceView::table(&mut self.0), listener)
+            .expect("failed to subscribe to pollable")
     }
 
-    fn get_frame(&mut self, surface: Resource<SurfaceArc>) -> Option<FrameEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.frame_data.lock().unwrap().take()
+    fn get_frame(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> Option<FrameEvent> {
+        let canvas = &WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource")
+            .0;
+        canvas
+            .frame_data
+            .lock()
+            .expect("failed to acquire lock")
+            .take()
     }
 
-    fn subscribe_pointer_up(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_pointer_up(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> wasmtime::component::Resource<wasi::surface::surface::Pollable> {
+        let canvas = std::sync::Arc::clone(
+            &WasiSurfaceView::table(&mut self.0)
+                .get(&surface)
+                .expect("invalid surface resource")
+                .0,
+        );
         let receiver = canvas.pointer_up_sender.new_receiver();
-        let listener = self
-            .table()
+        let listener = WasiSurfaceView::table(&mut self.0)
             .push(Listener::new(receiver, move |data| {
-                canvas.pointer_up_data.lock().unwrap().replace(data);
+                canvas
+                    .pointer_up_data
+                    .lock()
+                    .expect("failed to acquire lock")
+                    .replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi::p2::subscribe(WasiSurfaceView::table(&mut self.0), listener)
+            .expect("failed to subscribe to pollable")
     }
 
-    fn get_pointer_up(&mut self, surface: Resource<SurfaceArc>) -> Option<PointerEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.pointer_up_data.lock().unwrap().take()
+    fn get_pointer_up(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> Option<PointerEvent> {
+        let canvas = &WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource")
+            .0;
+        canvas
+            .pointer_up_data
+            .lock()
+            .expect("failed to acquire lock")
+            .take()
     }
 
-    fn subscribe_pointer_down(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_pointer_down(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> wasmtime::component::Resource<wasi::surface::surface::Pollable> {
+        let canvas = std::sync::Arc::clone(
+            &WasiSurfaceView::table(&mut self.0)
+                .get(&surface)
+                .expect("invalid surface resource")
+                .0,
+        );
         let receiver = canvas.pointer_down_sender.new_receiver();
-        let listener = self
-            .table()
+        let listener = WasiSurfaceView::table(&mut self.0)
             .push(Listener::new(receiver, move |data| {
-                canvas.pointer_down_data.lock().unwrap().replace(data);
+                canvas
+                    .pointer_down_data
+                    .lock()
+                    .expect("failed to acquire lock")
+                    .replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi::p2::subscribe(WasiSurfaceView::table(&mut self.0), listener)
+            .expect("failed to subscribe to pollable")
     }
 
-    fn get_pointer_down(&mut self, surface: Resource<SurfaceArc>) -> Option<PointerEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.pointer_down_data.lock().unwrap().take()
+    fn get_pointer_down(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> Option<PointerEvent> {
+        let canvas = &WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource")
+            .0;
+        canvas
+            .pointer_down_data
+            .lock()
+            .expect("failed to acquire lock")
+            .take()
     }
 
-    fn subscribe_pointer_move(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_pointer_move(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> wasmtime::component::Resource<wasi::surface::surface::Pollable> {
+        let canvas = std::sync::Arc::clone(
+            &WasiSurfaceView::table(&mut self.0)
+                .get(&surface)
+                .expect("invalid surface resource")
+                .0,
+        );
         let receiver = canvas.pointer_move_sender.new_receiver();
-        let listener = self
-            .table()
+        let listener = WasiSurfaceView::table(&mut self.0)
             .push(Listener::new(receiver, move |data| {
-                canvas.pointer_move_data.lock().unwrap().replace(data);
+                canvas
+                    .pointer_move_data
+                    .lock()
+                    .expect("failed to acquire lock")
+                    .replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi::p2::subscribe(WasiSurfaceView::table(&mut self.0), listener)
+            .expect("failed to subscribe to pollable")
     }
 
-    fn get_pointer_move(&mut self, surface: Resource<SurfaceArc>) -> Option<PointerEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.pointer_move_data.lock().unwrap().take()
+    fn get_pointer_move(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> Option<PointerEvent> {
+        let canvas = &WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource")
+            .0;
+        canvas
+            .pointer_move_data
+            .lock()
+            .expect("failed to acquire lock")
+            .take()
     }
 
-    fn subscribe_key_up(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_key_up(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> wasmtime::component::Resource<wasi::surface::surface::Pollable> {
+        let canvas = std::sync::Arc::clone(
+            &WasiSurfaceView::table(&mut self.0)
+                .get(&surface)
+                .expect("invalid surface resource")
+                .0,
+        );
         let receiver = canvas.key_up_sender.new_receiver();
-        let listener = self
-            .table()
+        let listener = WasiSurfaceView::table(&mut self.0)
             .push(Listener::new(receiver, move |data| {
-                canvas.key_up_data.lock().unwrap().replace(data);
+                canvas
+                    .key_up_data
+                    .lock()
+                    .expect("failed to acquire lock")
+                    .replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi::p2::subscribe(WasiSurfaceView::table(&mut self.0), listener)
+            .expect("failed to subscribe to pollable")
     }
 
-    fn get_key_up(&mut self, surface: Resource<SurfaceArc>) -> Option<KeyEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.key_up_data.lock().unwrap().take()
+    fn get_key_up(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> Option<KeyEvent> {
+        let canvas = &WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource")
+            .0;
+        canvas
+            .key_up_data
+            .lock()
+            .expect("failed to acquire lock")
+            .take()
     }
 
-    fn subscribe_key_down(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_key_down(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> wasmtime::component::Resource<wasi::surface::surface::Pollable> {
+        let canvas = std::sync::Arc::clone(
+            &WasiSurfaceView::table(&mut self.0)
+                .get(&surface)
+                .expect("invalid surface resource")
+                .0,
+        );
         let receiver = canvas.key_down_sender.new_receiver();
-        let listener = self
-            .table()
+        let listener = WasiSurfaceView::table(&mut self.0)
             .push(Listener::new(receiver, move |data| {
-                canvas.key_down_data.lock().unwrap().replace(data);
+                canvas
+                    .key_down_data
+                    .lock()
+                    .expect("failed to acquire lock")
+                    .replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi::p2::subscribe(WasiSurfaceView::table(&mut self.0), listener)
+            .expect("failed to subscribe to pollable")
     }
 
-    fn get_key_down(&mut self, surface: Resource<SurfaceArc>) -> Option<KeyEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.key_down_data.lock().unwrap().take()
+    fn get_key_down(
+        &mut self,
+        surface: wasmtime::component::Resource<SurfaceArc>,
+    ) -> Option<KeyEvent> {
+        let canvas = &WasiSurfaceView::table(&mut self.0)
+            .get(&surface)
+            .expect("invalid surface resource")
+            .0;
+        canvas
+            .key_down_data
+            .lock()
+            .expect("failed to acquire lock")
+            .take()
     }
 
-    fn drop(&mut self, _self_: Resource<SurfaceArc>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _rep: wasmtime::component::Resource<SurfaceArc>) -> wasmtime::Result<()> {
         Ok(())
     }
+}
+
+// Add to linker helper
+pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
+where
+    T: WasiSurfaceView + 'static,
+{
+    fn get_impl<T: WasiSurfaceView>(t: &mut T) -> WasiSurfaceImpl<&mut T> {
+        WasiSurfaceImpl(t)
+    }
+    wasi::surface::surface::add_to_linker::<T, WasiSurfaceImpl<T>>(l, get_impl)?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -511,7 +665,7 @@ where
 }
 
 #[async_trait::async_trait] // TODO: remove async_trait crate once wasmtime drops it
-impl<T, F> wasmtime_wasi::Pollable for Listener<T, F>
+impl<T, F> Pollable for Listener<T, F>
 where
     T: Debug + Clone + Send + Sync + 'static,
     F: Fn(T) + Send + Sync + 'static,

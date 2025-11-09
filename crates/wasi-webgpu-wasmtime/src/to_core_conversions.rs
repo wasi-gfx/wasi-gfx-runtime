@@ -212,7 +212,7 @@ impl ToCore<wgpu_types::DepthStencilState> for webgpu::GpuDepthStencilState {
         // https://www.w3.org/TR/webgpu/#depth-stencil-state
         wgpu_types::DepthStencilState {
             format: self.format.into(),
-            depth_write_enabled: self.depth_write_enabled.expect("TODO: handle null").into(),
+            depth_write_enabled: self.depth_write_enabled.expect("TODO: handle null"),
             depth_compare: self.depth_compare.expect("TODO: handle null").into(),
             stencil: wgpu_types::StencilState {
                 front: self
@@ -512,7 +512,7 @@ impl<'a> ToCore<wgpu_core::binding_model::BindGroupLayoutDescriptor<'a>>
 impl ToCore<wgpu_types::BindGroupLayoutEntry> for webgpu::GpuBindGroupLayoutEntry {
     fn to_core(self, table: &ResourceTable) -> wgpu_types::BindGroupLayoutEntry {
         wgpu_types::BindGroupLayoutEntry {
-            binding: self.binding.into(),
+            binding: self.binding,
             visibility: wgpu_types::ShaderStages::from_bits(self.visibility).unwrap(),
             ty: match (
                 self.buffer,

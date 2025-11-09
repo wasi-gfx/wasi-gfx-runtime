@@ -7,7 +7,7 @@
 use std::{future::Future, sync::Arc};
 
 use wasi_graphics_context_wasmtime::{AbstractBuffer, DisplayApi, DrawApi};
-use wasmtime_wasi::IoView;
+use wasmtime_wasi::{ResourceTable, WasiView};
 use wgpu_core::id::SurfaceId;
 
 // ToCore trait used for resources, records, and variants.
@@ -34,19 +34,11 @@ pub mod reexports {
 pub(crate) type Backend = wgpu_core::api::Gl;
 
 // needed for wasmtime::component::bindgen! as it only looks in the current crate.
-pub(crate) use wgpu_core;
-pub(crate) use wgpu_types;
 
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
-    async: {
-        only_imports: [
-            "[method]gpu-buffer.map-async",
-        ],
-    },
     with: {
-        "wasi:io": wasmtime_wasi::bindings::io,
         "wasi:webgpu/webgpu/gpu-adapter": wgpu_core::id::AdapterId,
         "wasi:webgpu/webgpu/gpu-device": wrapper_types::Device,
         "wasi:webgpu/webgpu/gpu-queue": wgpu_core::id::QueueId,
@@ -76,63 +68,69 @@ wasmtime::component::bindgen!({
     },
 });
 
-fn type_annotate<T, F>(val: F) -> F
-where
-    F: Fn(&mut T) -> WasiWebGpuImpl<&mut T>,
-{
-    val
-}
-pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
-where
-    T: WasiWebGpuView,
-{
-    let closure = type_annotate::<T, _>(|t| WasiWebGpuImpl(t));
-    wasi::webgpu::webgpu::add_to_linker_get_host(l, closure)?;
-    Ok(())
-}
-
-pub trait WasiWebGpuView: IoView {
+// Helper trait for implementing WebGPU functionality
+pub trait WasiWebGpuView: Send {
+    fn table(&mut self) -> &mut ResourceTable;
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_>;
     fn instance(&self) -> Arc<wgpu_core::global::Global>;
 
     /// Provide the ability to run closure on the UI thread.
     /// On platforms that don't require UI to run on the UI thread, this can just execute in place.
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner>;
+    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner + 'static>;
 }
 
 #[repr(transparent)]
 pub struct WasiWebGpuImpl<T: WasiWebGpuView>(pub T);
-impl<T: WasiWebGpuView> wasmtime_wasi::IoView for WasiWebGpuImpl<T> {
-    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
+
+impl<T: WasiWebGpuView + 'static> wasmtime::component::HasData for WasiWebGpuImpl<T> {
+    type Data<'a> = WasiWebGpuImpl<&'a mut T>;
+}
+
+impl<T: WasiWebGpuView> WasiView for WasiWebGpuImpl<T> {
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_> {
+        T::ctx(&mut self.0)
+    }
+}
+
+impl<T: WasiWebGpuView> WasiWebGpuView for WasiWebGpuImpl<T> {
+    fn table(&mut self) -> &mut ResourceTable {
         T::table(&mut self.0)
+    }
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_> {
+        T::ctx(&mut self.0)
+    }
+    fn instance(&self) -> Arc<wgpu_core::global::Global> {
+        T::instance(&self.0)
+    }
+    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner + 'static> {
+        T::ui_thread_spawner(&self.0)
     }
 }
 
 impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for &mut T {
+    fn table(&mut self) -> &mut ResourceTable {
+        T::table(self)
+    }
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_> {
+        T::ctx(self)
+    }
     fn instance(&self) -> Arc<wgpu_core::global::Global> {
         T::instance(self)
     }
-
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
-        T::ui_thread_spawner(&self)
+    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner + 'static> {
+        T::ui_thread_spawner(self)
     }
 }
-impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for Box<T> {
-    fn instance(&self) -> Arc<wgpu_core::global::Global> {
-        T::instance(self)
-    }
 
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
-        T::ui_thread_spawner(&self)
+pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
+where
+    T: WasiWebGpuView + 'static,
+{
+    fn get_impl<T: WasiWebGpuView>(t: &mut T) -> WasiWebGpuImpl<&mut T> {
+        WasiWebGpuImpl(t)
     }
-}
-impl<T: WasiWebGpuView> WasiWebGpuView for WasiWebGpuImpl<T> {
-    fn instance(&self) -> Arc<wgpu_core::global::Global> {
-        T::instance(&self.0)
-    }
-
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
-        T::ui_thread_spawner(&self.0)
-    }
+    wasi::webgpu::webgpu::add_to_linker::<T, WasiWebGpuImpl<T>>(l, get_impl)?;
+    Ok(())
 }
 
 pub trait MainThreadSpawner: Send + Sync + 'static {

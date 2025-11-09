@@ -148,7 +148,7 @@ fn draw_triangle() {
 
         if pollables_res.contains(&6) {
             canvas.get_frame();
-            print(&format!("frame event"));
+            print(&"frame event".to_string());
 
             let graphics_buffer = graphics_context.get_current_buffer();
             let texture = webgpu::GpuTexture::from_graphics_buffer(graphics_buffer);

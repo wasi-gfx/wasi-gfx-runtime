@@ -1,16 +1,13 @@
 use std::any::Any;
 
-use crate::wasi::graphics_context::graphics_context;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
-use wasmtime::component::Resource;
-use wasmtime_wasi::{IoView, ResourceTable};
+use wasmtime_wasi::ResourceTable;
 
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
-    async: false,
     with: {
         "wasi:graphics-context/graphics-context@0.0.1/context": Context,
         "wasi:graphics-context/graphics-context@0.0.1/abstract-buffer": AbstractBuffer,
@@ -18,8 +15,8 @@ wasmtime::component::bindgen!({
 });
 
 pub struct Context {
-    draw_api: Option<Box<dyn DrawApi + Send + Sync>>,
-    display_api: Option<Box<dyn DisplayApi + Send + Sync>>,
+    pub draw_api: Option<Box<dyn DrawApi + Send + Sync>>,
+    pub display_api: Option<Box<dyn DisplayApi + Send + Sync>>,
 }
 
 impl Context {
@@ -39,9 +36,15 @@ impl Context {
 
     pub fn connect_draw_api(&mut self, mut draw_api: Box<dyn DrawApi + Send + Sync>) {
         if let Some(display_api) = &self.display_api {
-            draw_api.display_api_ready(&*display_api)
+            draw_api.display_api_ready(display_api)
         }
         self.draw_api = Some(draw_api);
+    }
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -99,72 +102,116 @@ impl AbstractBuffer {
     }
 }
 
-// wasmtime
-pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
-where
-    T: WasiGraphicsContextView,
-{
-    fn type_annotate<T, F>(val: F) -> F
-    where
-        T: WasiGraphicsContextView,
-        F: Fn(&mut T) -> WasiGraphicsContextImpl<&mut T>,
-    {
-        val
-    }
-    let closure = type_annotate::<T, _>(|t| WasiGraphicsContextImpl(t));
-    wasi::graphics_context::graphics_context::add_to_linker_get_host(l, closure)?;
-    Ok(())
+// Helper trait for implementing graphics context functionality
+pub trait WasiGraphicsContextView: Send {
+    fn table(&mut self) -> &mut ResourceTable;
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_>;
 }
-
-pub trait WasiGraphicsContextView: IoView {}
 
 #[repr(transparent)]
 pub struct WasiGraphicsContextImpl<T: WasiGraphicsContextView>(pub T);
-impl<T: WasiGraphicsContextView> IoView for WasiGraphicsContextImpl<T> {
+
+impl<T: WasiGraphicsContextView + 'static> wasmtime::component::HasData
+    for WasiGraphicsContextImpl<T>
+{
+    type Data<'a> = WasiGraphicsContextImpl<&'a mut T>;
+}
+
+impl<T: WasiGraphicsContextView> WasiGraphicsContextView for WasiGraphicsContextImpl<T> {
     fn table(&mut self) -> &mut ResourceTable {
         T::table(&mut self.0)
     }
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_> {
+        T::ctx(&mut self.0)
+    }
 }
 
-impl<T: ?Sized + WasiGraphicsContextView> WasiGraphicsContextView for &mut T {}
-impl<T: ?Sized + WasiGraphicsContextView> WasiGraphicsContextView for Box<T> {}
-impl<T: WasiGraphicsContextView> WasiGraphicsContextView for WasiGraphicsContextImpl<T> {}
+// Blanket impl for &mut T - required for the get_impl function in add_to_linker
+impl<T: ?Sized + WasiGraphicsContextView> WasiGraphicsContextView for &mut T {
+    fn table(&mut self) -> &mut ResourceTable {
+        T::table(self)
+    }
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_> {
+        T::ctx(self)
+    }
+}
 
-impl<T: WasiGraphicsContextView> graphics_context::Host for WasiGraphicsContextImpl<T> {}
+// Forward Host trait implementations to the wrapped type
+impl<T: WasiGraphicsContextView> wasi::graphics_context::graphics_context::Host
+    for WasiGraphicsContextImpl<T>
+{
+}
 
-impl<T: WasiGraphicsContextView> graphics_context::HostContext for WasiGraphicsContextImpl<T> {
-    fn new(&mut self) -> Resource<Context> {
-        self.table().push(Context::new()).unwrap()
+impl<T: WasiGraphicsContextView> wasi::graphics_context::graphics_context::HostContext
+    for WasiGraphicsContextImpl<T>
+{
+    fn new(&mut self) -> wasmtime::component::Resource<Context> {
+        WasiGraphicsContextView::table(&mut self.0)
+            .push(Context::new())
+            .expect("failed to push graphics context to resource table")
     }
 
-    fn get_current_buffer(&mut self, context: Resource<Context>) -> Resource<AbstractBuffer> {
-        let context_kind = self.table().get_mut(&context).unwrap();
+    fn get_current_buffer(
+        &mut self,
+        context: wasmtime::component::Resource<Context>,
+    ) -> wasmtime::component::Resource<AbstractBuffer> {
+        let context_kind = WasiGraphicsContextView::table(&mut self.0)
+            .get_mut(&context)
+            .expect("invalid graphics context resource");
         let next_frame = context_kind
             .draw_api
             .as_mut()
-            .expect("draw_api not set")
+            .expect("draw_api not set - must call connect_draw_api first")
             .get_current_buffer()
-            .unwrap();
-        let next_frame = self.table().push(next_frame).unwrap();
-        next_frame
+            .expect("failed to get current buffer from draw API");
+        WasiGraphicsContextView::table(&mut self.0)
+            .push(next_frame)
+            .expect("failed to push abstract buffer to resource table")
     }
 
-    fn present(&mut self, context: Resource<Context>) {
-        let context = self.table().get_mut(&context).unwrap();
-        // context.display_api.as_mut().unwrap().present().unwrap();
-        context.draw_api.as_mut().unwrap().present().unwrap();
+    fn present(&mut self, context: wasmtime::component::Resource<Context>) {
+        let context = WasiGraphicsContextView::table(&mut self.0)
+            .get_mut(&context)
+            .expect("invalid graphics context resource");
+        context
+            .draw_api
+            .as_mut()
+            .expect("draw_api not set - must call connect_draw_api first")
+            .present()
+            .expect("failed to present frame");
     }
 
-    fn drop(&mut self, graphics_context: Resource<Context>) -> wasmtime::Result<()> {
-        self.table().delete(graphics_context).unwrap();
+    fn drop(&mut self, rep: wasmtime::component::Resource<Context>) -> wasmtime::Result<()> {
+        WasiGraphicsContextView::table(&mut self.0)
+            .delete(rep)
+            .map_err(|e| {
+                wasmtime::Error::msg(format!("failed to delete graphics context: {}", e))
+            })?;
         Ok(())
     }
 }
 
-impl<T: WasiGraphicsContextView> graphics_context::HostAbstractBuffer
+impl<T: WasiGraphicsContextView> wasi::graphics_context::graphics_context::HostAbstractBuffer
     for WasiGraphicsContextImpl<T>
 {
-    fn drop(&mut self, _rep: Resource<AbstractBuffer>) -> wasmtime::Result<()> {
-        todo!()
+    fn drop(
+        &mut self,
+        _rep: wasmtime::component::Resource<AbstractBuffer>,
+    ) -> wasmtime::Result<()> {
+        Ok(())
     }
+}
+
+// Add to linker helper
+pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
+where
+    T: WasiGraphicsContextView + 'static,
+{
+    fn get_impl<T: WasiGraphicsContextView>(t: &mut T) -> WasiGraphicsContextImpl<&mut T> {
+        WasiGraphicsContextImpl(t)
+    }
+    wasi::graphics_context::graphics_context::add_to_linker::<T, WasiGraphicsContextImpl<T>>(
+        l, get_impl,
+    )?;
+    Ok(())
 }

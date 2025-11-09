@@ -65,7 +65,7 @@ impl Guest for ExampleSkybox {
 
             if pollables_res.contains(&5) {
                 example.canvas.get_frame();
-                print(&format!("frame event"));
+                print(&"frame event".to_string());
                 example.render();
             }
         }
@@ -776,8 +776,8 @@ fn physical_size(extend: &webgpu::GpuExtent3D) -> webgpu::GpuExtent3D {
     // let (block_width, block_height) = format.block_dimensions();
     let (block_width, block_height) = (1, 1);
 
-    let width = ((extend.width + block_width - 1) / block_width) * block_width;
-    let height = ((extend.height.unwrap() + block_height - 1) / block_height) * block_height;
+    let width = extend.width.div_ceil(block_width) * block_width;
+    let height = extend.height.unwrap().div_ceil(block_height) * block_height;
 
     webgpu::GpuExtent3D {
         width,
@@ -832,7 +832,7 @@ fn device_create_buffer_init(
         // let remote_buffer = buffer.get_mapped_range(None, None);
         // remote_buffer.set(descriptor.contents);
         buffer
-            .get_mapped_range_set_with_copy(&descriptor.contents, None, None)
+            .get_mapped_range_set_with_copy(descriptor.contents, None, None)
             .unwrap();
 
         buffer.unmap().unwrap();
