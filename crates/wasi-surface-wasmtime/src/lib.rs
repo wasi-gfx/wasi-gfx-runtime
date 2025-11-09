@@ -182,14 +182,14 @@ impl SurfaceProxy {
 impl HasDisplayHandle for Surface {
     fn display_handle(
         &self,
-    ) -> Result<raw_window_handle::DisplayHandle, raw_window_handle::HandleError> {
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
         self.window.display_handle()
     }
 }
 impl HasWindowHandle for Surface {
     fn window_handle(
         &self,
-    ) -> Result<raw_window_handle::WindowHandle, raw_window_handle::HandleError> {
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
         self.window.window_handle()
     }
 }

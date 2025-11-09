@@ -669,7 +669,7 @@ impl ToCore<wgpu_core::command::RenderPassColorAttachment>
                 .map(|resolve_target| resolve_target.to_core(table)),
             load_op,
             store_op: self.store_op.into(),
-            // TODO: didn't use self.depth_slice
+            depth_slice: self.depth_slice,
         }
     }
 }
@@ -705,6 +705,8 @@ impl<'a> ToCore<wgpu_types::DeviceDescriptor<wgpu_core::Label<'a>>>
             memory_hints: wgpu_types::MemoryHints::default(),
             // trace is not present in WebGPU
             trace: wgpu_types::Trace::default(),
+            // Don't enable any experimental features
+            experimental_features: wgpu_types::ExperimentalFeatures::disabled(),
         }
     }
 }
