@@ -470,7 +470,8 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
         canvas.key_down_data.lock().unwrap().take()
     }
 
-    fn drop(&mut self, _self_: Resource<SurfaceArc>) -> wasmtime::Result<()> {
+    fn drop(&mut self, surface: Resource<SurfaceArc>) -> wasmtime::Result<()> {
+        self.table().delete(surface).unwrap();
         Ok(())
     }
 }
