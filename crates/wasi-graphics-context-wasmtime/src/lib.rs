@@ -4,13 +4,13 @@ use crate::wasi::graphics_context::graphics_context;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
-use wasmtime::component::Resource;
-use wasmtime_wasi::{IoView, ResourceTable};
+use wasmtime::component::{HasData, Resource};
+use wasmtime_wasi::ResourceTable;
+use wasmtime_wasi_io::IoView;
 
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
-    async: false,
     with: {
         "wasi:graphics-context/graphics-context@0.0.1/context": Context,
         "wasi:graphics-context/graphics-context@0.0.1/abstract-buffer": AbstractBuffer,
@@ -100,26 +100,24 @@ impl AbstractBuffer {
 }
 
 // wasmtime
+struct WasiGraphicsContext<T: Send>(T);
+impl<T: Send + 'static> HasData for WasiGraphicsContext<T> {
+    type Data<'a> = WasiGraphicsContextImpl<&'a mut T>;
+}
 pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
 where
     T: WasiGraphicsContextView,
 {
-    fn type_annotate<T, F>(val: F) -> F
-    where
-        T: WasiGraphicsContextView,
-        F: Fn(&mut T) -> WasiGraphicsContextImpl<&mut T>,
-    {
-        val
-    }
-    let closure = type_annotate::<T, _>(|t| WasiGraphicsContextImpl(t));
-    wasi::graphics_context::graphics_context::add_to_linker_get_host(l, closure)?;
+    wasi::graphics_context::graphics_context::add_to_linker::<_, WasiGraphicsContext<T>>(l, |x| {
+        WasiGraphicsContextImpl(x)
+    })?;
     Ok(())
 }
 
-pub trait WasiGraphicsContextView: IoView {}
+pub trait WasiGraphicsContextView: IoView + Send {}
 
 #[repr(transparent)]
-pub struct WasiGraphicsContextImpl<T: WasiGraphicsContextView>(pub T);
+pub struct WasiGraphicsContextImpl<T>(pub T);
 impl<T: WasiGraphicsContextView> IoView for WasiGraphicsContextImpl<T> {
     fn table(&mut self) -> &mut ResourceTable {
         T::table(&mut self.0)

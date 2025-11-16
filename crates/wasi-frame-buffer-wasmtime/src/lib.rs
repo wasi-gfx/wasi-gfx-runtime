@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 
 use raw_window_handle::{DisplayHandle, WindowHandle};
-use wasmtime::component::Resource;
-use wasmtime_wasi::IoView;
+use wasmtime::component::{HasData, Resource};
+use wasmtime_wasi_io::IoView;
 
 use crate::wasi::frame_buffer::frame_buffer;
 use wasi_graphics_context_wasmtime::{AbstractBuffer, Context, DisplayApi, DrawApi};
@@ -12,9 +12,6 @@ use wasi_graphics_context_wasmtime::{AbstractBuffer, Context, DisplayApi, DrawAp
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
-    async: {
-        only_imports: [],
-    },
     with: {
         "wasi:frame-buffer/frame-buffer/device": FBDeviceArc,
         "wasi:frame-buffer/frame-buffer/buffer": FBBuffer,
@@ -117,26 +114,24 @@ impl From<softbuffer::Buffer<'static, Context, Context>> for FBBuffer {
 }
 
 // wasmtime
+struct WasiFrameBuffer<T: Send>(T);
+impl<T: Send + 'static> HasData for WasiFrameBuffer<T> {
+    type Data<'a> = WasiFrameBufferImpl<&'a mut T>;
+}
 pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
 where
     T: WasiFrameBufferView,
 {
-    fn type_annotate<T, F>(val: F) -> F
-    where
-        T: WasiFrameBufferView,
-        F: Fn(&mut T) -> WasiFrameBufferImpl<&mut T>,
-    {
-        val
-    }
-    let closure = type_annotate::<T, _>(|t| WasiFrameBufferImpl(t));
-    wasi::frame_buffer::frame_buffer::add_to_linker_get_host(l, closure)?;
+    wasi::frame_buffer::frame_buffer::add_to_linker::<_, WasiFrameBuffer<T>>(l, |x| {
+        WasiFrameBufferImpl(x)
+    })?;
     Ok(())
 }
 
-pub trait WasiFrameBufferView: IoView {}
+pub trait WasiFrameBufferView: IoView + Send {}
 
 #[repr(transparent)]
-pub struct WasiFrameBufferImpl<T: WasiFrameBufferView>(pub T);
+pub struct WasiFrameBufferImpl<T>(pub T);
 impl<T: WasiFrameBufferView> IoView for WasiFrameBufferImpl<T> {
     fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
         T::table(&mut self.0)

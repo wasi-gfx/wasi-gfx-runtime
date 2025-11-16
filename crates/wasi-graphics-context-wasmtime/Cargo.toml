@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
+wasmtime-wasi-io.workspace = true
 raw-window-handle.workspace = true

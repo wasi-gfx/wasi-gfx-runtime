@@ -10,7 +10,7 @@ use callback_future::CallbackFuture;
 use futures::executor::block_on;
 use wasi_graphics_context_wasmtime::{Context, DisplayApi};
 use wasmtime::component::Resource;
-use wasmtime_wasi::IoView;
+use wasmtime_wasi_io::IoView;
 
 use crate::{
     to_core_conversions::ToCore,
