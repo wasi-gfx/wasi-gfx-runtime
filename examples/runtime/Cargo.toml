@@ -9,6 +9,7 @@ edition = "2021"
 clap.workspace = true
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
+wasmtime-wasi-io.workspace = true
 anyhow.workspace = true
 winit.workspace = true
 wgpu-types.workspace = true

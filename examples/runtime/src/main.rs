@@ -12,7 +12,8 @@ use wasmtime::{
     Config, Engine, Store,
 };
 
-use wasmtime_wasi::{IoView, ResourceTable};
+use wasmtime_wasi::ResourceTable;
+use wasmtime_wasi_io::IoView;
 
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
@@ -24,9 +25,10 @@ struct RuntimeArgs {
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
-    async: {
-        only_imports: [],
+    exports: {
+        "start": async,
     },
+    require_store_data_send: true,
     with: {
         "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
         "wasi:surface/surface": wasi_surface_wasmtime::wasi::surface::surface,
@@ -39,6 +41,9 @@ struct HostState {
     pub table: ResourceTable,
     pub instance: Arc<wgpu_core::global::Global>,
     pub main_thread_proxy: wasi_surface_wasmtime::WasiWinitEventLoopProxy,
+}
+impl wasmtime::component::HasData for HostState {
+    type Data<'a> = &'a mut HostState;
 }
 
 impl HostState {
@@ -120,15 +125,7 @@ async fn main() -> anyhow::Result<()> {
     wasi_frame_buffer_wasmtime::add_to_linker(&mut linker)?;
     wasi_graphics_context_wasmtime::add_to_linker(&mut linker)?;
     wasi_surface_wasmtime::add_to_linker(&mut linker)?;
-
-    fn type_annotate<F>(val: F) -> F
-    where
-        F: Fn(&mut HostState) -> &mut dyn ExampleImports,
-    {
-        val
-    }
-    let closure = type_annotate::<_>(|t| t);
-    Example::add_to_linker_imports_get_host(&mut linker, closure)?;
+    Example::add_to_linker_imports::<_, HostState>(&mut linker, |x| x)?;
 
     let (main_thread_loop, main_thread_proxy) =
         wasi_surface_wasmtime::create_wasi_winit_event_loop();

@@ -7,7 +7,8 @@
 use std::{future::Future, sync::Arc};
 
 use wasi_graphics_context_wasmtime::{AbstractBuffer, DisplayApi, DrawApi};
-use wasmtime_wasi::IoView;
+use wasmtime::component::HasData;
+use wasmtime_wasi_io::IoView;
 use wgpu_core::id::SurfaceId;
 
 // ToCore trait used for resources, records, and variants.
@@ -40,13 +41,11 @@ pub(crate) use wgpu_types;
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
-    async: {
-        only_imports: [
-            "[method]gpu-buffer.map-async",
-        ],
+    imports: {
+        "wasi:webgpu/webgpu/[method]gpu-buffer.map-async": async
     },
     with: {
-        "wasi:io": wasmtime_wasi::bindings::io,
+        "wasi:io": wasmtime_wasi_io::bindings::wasi::io,
         "wasi:webgpu/webgpu/gpu-adapter": wgpu_core::id::AdapterId,
         "wasi:webgpu/webgpu/gpu-device": wrapper_types::Device,
         "wasi:webgpu/webgpu/gpu-queue": wgpu_core::id::QueueId,
@@ -76,22 +75,19 @@ wasmtime::component::bindgen!({
     },
 });
 
-fn type_annotate<T, F>(val: F) -> F
-where
-    F: Fn(&mut T) -> WasiWebGpuImpl<&mut T>,
-{
-    val
+struct WasiWebGpu<T: Send>(T);
+impl<T: Send + 'static> HasData for WasiWebGpu<T> {
+    type Data<'a> = WasiWebGpuImpl<&'a mut T>;
 }
 pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
 where
     T: WasiWebGpuView,
 {
-    let closure = type_annotate::<T, _>(|t| WasiWebGpuImpl(t));
-    wasi::webgpu::webgpu::add_to_linker_get_host(l, closure)?;
+    wasi::webgpu::webgpu::add_to_linker::<_, WasiWebGpu<T>>(l, |x| WasiWebGpuImpl(x))?;
     Ok(())
 }
 
-pub trait WasiWebGpuView: IoView {
+pub trait WasiWebGpuView: IoView + Send {
     fn instance(&self) -> Arc<wgpu_core::global::Global>;
 
     /// Provide the ability to run closure on the UI thread.
@@ -100,8 +96,8 @@ pub trait WasiWebGpuView: IoView {
 }
 
 #[repr(transparent)]
-pub struct WasiWebGpuImpl<T: WasiWebGpuView>(pub T);
-impl<T: WasiWebGpuView> wasmtime_wasi::IoView for WasiWebGpuImpl<T> {
+pub struct WasiWebGpuImpl<T>(pub T);
+impl<T: WasiWebGpuView> wasmtime_wasi_io::IoView for WasiWebGpuImpl<T> {
     fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
         T::table(&mut self.0)
     }

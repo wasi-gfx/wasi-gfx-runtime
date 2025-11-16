@@ -7,8 +7,8 @@ use wasi_graphics_context_wasmtime::DisplayApi;
 use crate::wasi::surface::surface::{self, Context as GraphicsContext, Pollable};
 use async_broadcast::{Receiver, TrySendError};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use wasmtime::component::Resource;
-use wasmtime_wasi::{IoImpl, IoView};
+use wasmtime::component::{HasData, Resource};
+use wasmtime_wasi_io::IoView;
 
 #[cfg(feature = "winit")]
 mod winit;
@@ -27,11 +27,9 @@ pub use crate::wasi::surface::surface::{
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
-    async: {
-        only_imports: [],
-    },
+    require_store_data_send: true,
     with: {
-        "wasi:io": wasmtime_wasi::bindings::io,
+        "wasi:io": wasmtime_wasi_io::bindings::wasi::io,
         "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
         "wasi:surface/surface/surface": SurfaceArc,
     },
@@ -260,20 +258,15 @@ fn unwrap_unless_inactive_or_full<T>(res: Result<Option<T>, TrySendError<T>>) {
 }
 
 // wasmtime
+struct WasiSurface<T: Send>(T);
+impl<T: Send + 'static> HasData for WasiSurface<T> {
+    type Data<'a> = WasiSurfaceImpl<&'a mut T>;
+}
 pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
 where
-    T: WasiSurfaceView + IoView,
+    T: WasiSurfaceView,
 {
-    fn type_annotate_io<T, F>(val: F) -> F
-    where
-        T: IoView,
-        F: Fn(&mut T) -> IoImpl<&mut T>,
-    {
-        val
-    }
-    let closure_io = type_annotate_io::<T, _>(|t| IoImpl(t));
-    wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(l, closure_io)?;
-    wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(l, closure_io)?;
+    wasmtime_wasi_io::add_to_linker_async(l)?;
     add_only_surface_to_linker(l)?;
     Ok(())
 }
@@ -282,24 +275,16 @@ pub fn add_only_surface_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> 
 where
     T: WasiSurfaceView,
 {
-    fn type_annotate<T, F>(val: F) -> F
-    where
-        T: WasiSurfaceView,
-        F: Fn(&mut T) -> WasiSurfaceImpl<&mut T>,
-    {
-        val
-    }
-    let closure = type_annotate::<T, _>(|t| WasiSurfaceImpl(t));
-    wasi::surface::surface::add_to_linker_get_host(l, closure)?;
+    wasi::surface::surface::add_to_linker::<_, WasiSurface<T>>(l, |x| WasiSurfaceImpl(x))?;
     Ok(())
 }
 
-pub trait WasiSurfaceView: IoView {
+pub trait WasiSurfaceView: IoView + Send {
     fn create_canvas(&self, desc: SurfaceDesc) -> Surface;
 }
 
 #[repr(transparent)]
-pub struct WasiSurfaceImpl<T: WasiSurfaceView>(pub T);
+pub struct WasiSurfaceImpl<T>(pub T);
 impl<T: WasiSurfaceView> IoView for WasiSurfaceImpl<T> {
     fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
         T::table(&mut self.0)
@@ -371,7 +356,7 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
                 canvas.canvas_resize_data.lock().unwrap().replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
     }
 
     fn get_resize(&mut self, surface: Resource<SurfaceArc>) -> Option<ResizeEvent> {
@@ -392,7 +377,7 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
                     .replace(FrameEvent { nothing: false });
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
     }
 
     fn get_frame(&mut self, surface: Resource<SurfaceArc>) -> Option<FrameEvent> {
@@ -409,7 +394,7 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
                 canvas.pointer_up_data.lock().unwrap().replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
     }
 
     fn get_pointer_up(&mut self, surface: Resource<SurfaceArc>) -> Option<PointerEvent> {
@@ -426,7 +411,7 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
                 canvas.pointer_down_data.lock().unwrap().replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
     }
 
     fn get_pointer_down(&mut self, surface: Resource<SurfaceArc>) -> Option<PointerEvent> {
@@ -443,7 +428,7 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
                 canvas.pointer_move_data.lock().unwrap().replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
     }
 
     fn get_pointer_move(&mut self, surface: Resource<SurfaceArc>) -> Option<PointerEvent> {
@@ -460,7 +445,7 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
                 canvas.key_up_data.lock().unwrap().replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
     }
 
     fn get_key_up(&mut self, surface: Resource<SurfaceArc>) -> Option<KeyEvent> {
@@ -477,7 +462,7 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
                 canvas.key_down_data.lock().unwrap().replace(data);
             }))
             .unwrap();
-        wasmtime_wasi::subscribe(self.table(), listener).unwrap()
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
     }
 
     fn get_key_down(&mut self, surface: Resource<SurfaceArc>) -> Option<KeyEvent> {
@@ -511,7 +496,7 @@ where
 }
 
 #[async_trait::async_trait] // TODO: remove async_trait crate once wasmtime drops it
-impl<T, F> wasmtime_wasi::Pollable for Listener<T, F>
+impl<T, F> wasmtime_wasi_io::poll::Pollable for Listener<T, F>
 where
     T: Debug + Clone + Send + Sync + 'static,
     F: Fn(T) + Send + Sync + 'static,
