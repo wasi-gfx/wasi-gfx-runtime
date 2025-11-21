@@ -203,49 +203,58 @@ impl<T: WasiWebGpuView> webgpu::HostGpuBufferUsage for WasiWebGpuImpl<T> {
 
 impl<T: WasiWebGpuView> webgpu::HostRecordOptionGpuSize64 for WasiWebGpuImpl<T> {
     fn new(&mut self) -> Resource<webgpu::RecordOptionGpuSize64> {
-        todo!()
+        let record = std::collections::HashMap::new();
+        self.table().push(record).unwrap()
     }
     fn add(
         &mut self,
-        _self_: Resource<webgpu::RecordOptionGpuSize64>,
-        _key: String,
-        _value: Option<webgpu::GpuSize64>,
+        record: Resource<webgpu::RecordOptionGpuSize64>,
+        key: String,
+        value: Option<webgpu::GpuSize64>,
     ) {
-        todo!()
+        let record = self.table().get_mut(&record).unwrap();
+        record.insert(key, value);
     }
     fn get(
         &mut self,
-        _self_: Resource<webgpu::RecordOptionGpuSize64>,
-        _key: String,
+        record: Resource<webgpu::RecordOptionGpuSize64>,
+        key: String,
     ) -> Option<Option<webgpu::GpuSize64>> {
-        todo!()
+        let record = self.table().get(&record).unwrap();
+        record.get(&key).copied()
     }
-    fn has(&mut self, _self_: Resource<webgpu::RecordOptionGpuSize64>, _key: String) -> bool {
-        todo!()
+    fn has(&mut self, record: Resource<webgpu::RecordOptionGpuSize64>, key: String) -> bool {
+        let record = self.table().get(&record).unwrap();
+        record.contains_key(&key)
     }
-    fn remove(&mut self, _self_: Resource<webgpu::RecordOptionGpuSize64>, _key: String) {
-        todo!()
+    fn remove(&mut self, record: Resource<webgpu::RecordOptionGpuSize64>, key: String) {
+        let record = self.table().get_mut(&record).unwrap();
+        record.remove(&key);
     }
-    fn keys(&mut self, _self_: Resource<webgpu::RecordOptionGpuSize64>) -> Vec<String> {
-        todo!()
+    fn keys(&mut self, record: Resource<webgpu::RecordOptionGpuSize64>) -> Vec<String> {
+        let record = self.table().get(&record).unwrap();
+        record.keys().cloned().collect()
     }
     fn values(
         &mut self,
-        _self_: Resource<webgpu::RecordOptionGpuSize64>,
+        record: Resource<webgpu::RecordOptionGpuSize64>,
     ) -> Vec<Option<webgpu::GpuSize64>> {
-        todo!()
+        let record = self.table().get(&record).unwrap();
+        record.values().cloned().collect()
     }
     fn entries(
         &mut self,
-        _self_: Resource<webgpu::RecordOptionGpuSize64>,
+        record: Resource<webgpu::RecordOptionGpuSize64>,
     ) -> Vec<(String, Option<webgpu::GpuSize64>)> {
-        todo!()
+        let record = self.table().get(&record).unwrap();
+        record.iter().map(|(k, v)| (k.clone(), *v)).collect()
     }
     fn drop(
         &mut self,
-        _rep: wasmtime::component::Resource<webgpu::RecordOptionGpuSize64>,
+        record: wasmtime::component::Resource<webgpu::RecordOptionGpuSize64>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        self.table().delete(record).unwrap();
+        Ok(())
     }
 }
 
@@ -2646,15 +2655,17 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedLimits for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn max_color_attachments(&mut self, _limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
-        todo!()
+    fn max_color_attachments(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> u32 {
+        let limits = self.table().get(&limits).unwrap();
+        limits.max_color_attachments
     }
 
     fn max_color_attachment_bytes_per_sample(
         &mut self,
-        _limits: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> u32 {
-        todo!()
+        let limits = self.table().get(&limits).unwrap();
+        limits.max_color_attachment_bytes_per_sample
     }
 
     fn max_compute_workgroup_storage_size(
