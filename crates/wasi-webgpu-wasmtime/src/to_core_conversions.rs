@@ -698,8 +698,10 @@ impl<'a> ToCore<wgpu_types::DeviceDescriptor<wgpu_core::Label<'a>>>
                 .required_features
                 .map(|f| f.to_core(table))
                 .unwrap_or_default(),
-            // TODO: take from self.required_limits once it's a record type in wit
-            required_limits: Default::default(),
+            required_limits: self
+                .required_limits
+                .map(|limit| table.get(&limit).unwrap().to_core(table))
+                .unwrap_or(wgpu_types::Limits::defaults()),
             // TODO: use self.default_queue?
             // memory_hints is not present in WebGPU
             memory_hints: wgpu_types::MemoryHints::default(),
@@ -765,47 +767,186 @@ impl<'a> ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
     }
 }
 
-// impl<'a> ToCore<wgpu_types::Limits> for Vec<webgpu::RecordGpuSize64> {
-//     fn to_core(self, _table: &ResourceTable) -> wgpu_types::Limits {
-//         let defaults = wgpu_types::Limits::default();
-//         wgpu_types::Limits {
-//             max_texture_dimension_1d: (),
-//             max_texture_dimension_2d: (),
-//             max_texture_dimension_3d: (),
-//             max_texture_array_layers: (),
-//             max_bind_groups: (),
-//             max_bindings_per_bind_group: (),
-//             max_dynamic_uniform_buffers_per_pipeline_layout: (),
-//             max_dynamic_storage_buffers_per_pipeline_layout: (),
-//             max_sampled_textures_per_shader_stage: (),
-//             max_samplers_per_shader_stage: (),
-//             max_storage_buffers_per_shader_stage: (),
-//             max_storage_textures_per_shader_stage: (),
-//             max_uniform_buffers_per_shader_stage: (),
-//             max_uniform_buffer_binding_size: (),
-//             max_storage_buffer_binding_size: (),
-//             max_vertex_buffers: (),
-//             max_buffer_size: (),
-//             max_vertex_attributes: (),
-//             max_vertex_buffer_array_stride: (),
-//             min_uniform_buffer_offset_alignment: (),
-//             min_storage_buffer_offset_alignment: (),
-//             max_inter_stage_shader_components: (),
-//             max_color_attachments: (),
-//             max_color_attachment_bytes_per_sample: (),
-//             max_compute_workgroup_storage_size: (),
-//             max_compute_invocations_per_workgroup: (),
-//             max_compute_workgroup_size_x: (),
-//             max_compute_workgroup_size_y: (),
-//             max_compute_workgroup_size_z: (),
-//             max_compute_workgroups_per_dimension: (),
-//             min_subgroup_size: (),
-//             max_subgroup_size: (),
-//             max_push_constant_size: (),
-//             max_non_sampler_bindings: (),
-//         }
-//     }
-// }
+impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
+    fn to_core(self, _table: &ResourceTable) -> wgpu_types::Limits {
+        // this is a temporary solution while limit keys are strings
+        fn limits_record_to_core_limits(
+            record: &webgpu::RecordOptionGpuSize64,
+        ) -> wgpu_types::Limits {
+            let mut limits = wgpu_types::Limits::defaults();
+
+            for (key, value) in record {
+                // make sure keys are not case sensitive and support kebab-case
+                let key = key.to_owned().replace("-", "").to_lowercase();
+                match key.as_str() {
+                    "maxtexturedimension1d" => {
+                        if let Some(value) = value {
+                            limits.max_texture_dimension_1d = *value as u32;
+                        }
+                    }
+                    "maxtexturedimension2d" => {
+                        if let Some(value) = value {
+                            limits.max_texture_dimension_2d = *value as u32;
+                        }
+                    }
+                    "maxtexturedimension3d" => {
+                        if let Some(value) = value {
+                            limits.max_texture_dimension_3d = *value as u32;
+                        }
+                    }
+                    "maxtexturearraylayers" => {
+                        if let Some(value) = value {
+                            limits.max_texture_array_layers = *value as u32;
+                        }
+                    }
+                    "maxbindgroups" => {
+                        if let Some(value) = value {
+                            limits.max_bind_groups = *value as u32;
+                        }
+                    }
+                    "maxbindgroupsplusvertexbuffers" => {
+                        if let Some(_value) = value {
+                            // TODO: wgpu doesn't support `max-bind-groups-plus-vertex-buffers` yet
+                            // limits.max_bind_groups_plus_vertex_buffers = *value as u32;
+                        }
+                    }
+                    "maxbindingsperbindgroup" => {
+                        if let Some(value) = value {
+                            limits.max_bindings_per_bind_group = *value as u32;
+                        }
+                    }
+                    "maxdynamicuniformbuffersperpipelinelayout" => {
+                        if let Some(value) = value {
+                            limits.max_dynamic_uniform_buffers_per_pipeline_layout = *value as u32;
+                        }
+                    }
+                    "maxdynamicstoragebuffersperpipelinelayout" => {
+                        if let Some(value) = value {
+                            limits.max_dynamic_storage_buffers_per_pipeline_layout = *value as u32;
+                        }
+                    }
+                    "maxsampledtexturespershaderstage" => {
+                        if let Some(value) = value {
+                            limits.max_sampled_textures_per_shader_stage = *value as u32;
+                        }
+                    }
+                    "maxsamplerspershaderstage" => {
+                        if let Some(value) = value {
+                            limits.max_samplers_per_shader_stage = *value as u32;
+                        }
+                    }
+                    "maxstoragebufferspershaderstage" => {
+                        if let Some(value) = value {
+                            limits.max_storage_buffers_per_shader_stage = *value as u32;
+                        }
+                    }
+                    "maxstoragetexturespershaderstage" => {
+                        if let Some(value) = value {
+                            limits.max_storage_textures_per_shader_stage = *value as u32;
+                        }
+                    }
+                    "maxuniformbufferspershaderstage" => {
+                        if let Some(value) = value {
+                            limits.max_uniform_buffers_per_shader_stage = *value as u32;
+                        }
+                    }
+                    "maxuniformbufferbindingsize" => {
+                        if let Some(value) = value {
+                            limits.max_uniform_buffer_binding_size = *value as u32;
+                        }
+                    }
+                    "maxstoragebufferbindingsize" => {
+                        if let Some(value) = value {
+                            limits.max_storage_buffer_binding_size = *value as u32;
+                        }
+                    }
+                    "minuniformbufferoffsetalignment" => {
+                        if let Some(value) = value {
+                            limits.min_uniform_buffer_offset_alignment = *value as u32;
+                        }
+                    }
+                    "minstoragebufferoffsetalignment" => {
+                        if let Some(value) = value {
+                            limits.min_storage_buffer_offset_alignment = *value as u32;
+                        }
+                    }
+                    "maxvertexbuffers" => {
+                        if let Some(value) = value {
+                            limits.max_vertex_buffers = *value as u32;
+                        }
+                    }
+                    "maxbuffersize" => {
+                        if let Some(value) = value {
+                            limits.max_buffer_size = *value;
+                        }
+                    }
+                    "maxvertexattributes" => {
+                        if let Some(value) = value {
+                            limits.max_vertex_attributes = *value as u32;
+                        }
+                    }
+                    "maxvertexbufferarraystride" => {
+                        if let Some(value) = value {
+                            limits.max_vertex_buffer_array_stride = *value as u32;
+                        }
+                    }
+                    "maxinterstageshadervariables" => {
+                        if let Some(_value) = value {
+                            // TODO: no `max_inter_stage_shader_variables` in wgpu. Is this the same as `max_inter_stage_shader_components`?
+                            // limits.max_inter_stage_shader_variables = *value as u32;
+                        }
+                    }
+                    "maxcolorattachments" => {
+                        if let Some(value) = value {
+                            limits.max_color_attachments = *value as u32;
+                        }
+                    }
+                    "maxcolorattachmentbytespersample" => {
+                        if let Some(value) = value {
+                            limits.max_color_attachment_bytes_per_sample = *value as u32;
+                        }
+                    }
+                    "maxcomputeworkgroupstoragesize" => {
+                        if let Some(value) = value {
+                            limits.max_compute_workgroup_storage_size = *value as u32;
+                        }
+                    }
+                    "maxcomputeinvocationsperworkgroup" => {
+                        if let Some(value) = value {
+                            limits.max_compute_invocations_per_workgroup = *value as u32;
+                        }
+                    }
+                    "maxcomputeworkgroupsizex" => {
+                        if let Some(value) = value {
+                            limits.max_compute_workgroup_size_x = *value as u32;
+                        }
+                    }
+                    "maxcomputeworkgroupsizey" => {
+                        if let Some(value) = value {
+                            limits.max_compute_workgroup_size_y = *value as u32;
+                        }
+                    }
+                    "maxcomputeworkgroupsizez" => {
+                        if let Some(value) = value {
+                            limits.max_compute_workgroup_size_z = *value as u32;
+                        }
+                    }
+                    "maxcomputeworkgroupsperdimension" => {
+                        if let Some(value) = value {
+                            limits.max_compute_workgroups_per_dimension = *value as u32;
+                        }
+                    }
+                    key => panic!("Unknown limit key: {}", key),
+                }
+            }
+
+            limits
+        }
+
+        let limits = limits_record_to_core_limits(&self);
+        limits
+    }
+}
 
 impl ToCore<wgpu_types::TexelCopyTextureInfo<wgpu_core::id::TextureId>>
     for webgpu::GpuTexelCopyTextureInfo
