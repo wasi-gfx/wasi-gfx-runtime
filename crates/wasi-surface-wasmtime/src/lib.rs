@@ -245,7 +245,13 @@ fn unwrap_unless_inactive<T>(res: Result<Option<T>, TrySendError<T>>) {
             return;
         }
     }
-    res.unwrap();
+    //res.unwrap_or_else(|e| {
+    //    // Log the error if it's not an inactive error
+    //    if !matches!(e, TrySendError::Inactive(_)) {
+    //        println!("Failed to send event: {e}");
+    //    }
+    //});
+    //res.unwrap();
 }
 
 fn unwrap_unless_inactive_or_full<T>(res: Result<Option<T>, TrySendError<T>>) {
@@ -254,7 +260,7 @@ fn unwrap_unless_inactive_or_full<T>(res: Result<Option<T>, TrySendError<T>>) {
             return;
         }
     }
-    res.unwrap();
+    //res.unwrap_or_else(|e| println!("Failed to send event: {e}"));
 }
 
 // wasmtime
