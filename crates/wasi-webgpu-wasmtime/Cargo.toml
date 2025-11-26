@@ -16,16 +16,16 @@ futures.workspace = true
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 workspace = true
-features = ["wgsl", "raw-window-handle", "vulkan"]
+features = ["wgsl", "raw-window-handle", "vulkan", "noop"]
 
 [target.'cfg(target_os = "windows")'.dependencies.wgpu-core]
 workspace = true
-features = ["wgsl", "raw-window-handle", "dx12"]
+features = ["wgsl", "raw-window-handle", "dx12", "noop"]
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies.wgpu-core]
 workspace = true
-features = ["wgsl", "raw-window-handle", "metal"]
+features = ["wgsl", "raw-window-handle", "metal", "noop"]
 
 [target.'cfg(all(not(target_os = "linux"), not(target_os = "android"), not(target_os = "windows"), not(target_os = "macos"), not(target_os = "ios")))'.dependencies.wgpu-core]
 workspace = true
-features = ["wgsl", "raw-window-handle", "gles"]
+features = ["wgsl", "raw-window-handle", "gles", "noop"]
