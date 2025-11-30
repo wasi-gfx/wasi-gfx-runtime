@@ -78,8 +78,8 @@ struct UiThreadSpawner(wasi_surface_wasmtime::WasiWinitEventLoopProxy);
 impl wasi_webgpu_wasmtime::MainThreadSpawner for UiThreadSpawner {
     async fn spawn<F, T>(&self, f: F) -> T
     where
-        F: FnOnce() -> T + Send + Sync + 'static,
-        T: Send + Sync + 'static,
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
     {
         self.0.spawn(f).await
     }
