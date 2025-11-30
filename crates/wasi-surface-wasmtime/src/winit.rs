@@ -230,12 +230,12 @@ impl WasiWinitEventLoopProxy {
 
     pub async fn spawn<F, T>(&self, f: F) -> T
     where
-        F: FnOnce() -> T + Send + Sync + 'static,
-        T: Send + Sync + 'static,
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
     {
         let boxed = Box::new(|| {
             let res = f();
-            Box::new(res) as Box<dyn Any + Send + Sync>
+            Box::new(res) as Box<dyn Any + Send>
         });
         let (sender, receiver) = oneshot::channel();
         self.proxy
@@ -248,8 +248,8 @@ impl WasiWinitEventLoopProxy {
 enum MainThreadAction {
     CreateWindow(SurfaceDesc, oneshot::Sender<Surface>),
     Spawn(
-        Box<dyn FnOnce() -> Box<dyn Any + Send + Sync> + Send + Sync>,
-        oneshot::Sender<Box<dyn Any + Send + Sync>>,
+        Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>,
+        oneshot::Sender<Box<dyn Any + Send>>,
     ),
 }
 

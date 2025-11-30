@@ -135,8 +135,8 @@ impl<T: WasiWebGpuView> WasiWebGpuView for WasiWebGpuImpl<T> {
 pub trait MainThreadSpawner: Send + Sync + 'static {
     fn spawn<F, T>(&self, f: F) -> impl Future<Output = T>
     where
-        F: FnOnce() -> T + Send + Sync + 'static,
-        T: Send + Sync + 'static;
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static;
 }
 
 struct WebGpuSurface<GI, CS, I>
