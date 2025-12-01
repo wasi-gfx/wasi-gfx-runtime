@@ -47,7 +47,7 @@ impl DrawApi for FBDeviceArc {
         self.0.lock().unwrap().present()
     }
 
-    fn display_api_ready(&mut self, display_api: &Box<dyn DisplayApi + Send + Sync>) {
+    fn display_api_ready(&mut self, display_api: &Arc<dyn DisplayApi + Send + Sync>) {
         self.0.lock().unwrap().display_api_ready(display_api)
     }
 }
@@ -75,7 +75,7 @@ impl DrawApi for FBDevice {
         Ok(())
     }
 
-    fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
+    fn display_api_ready(&mut self, display: &Arc<dyn DisplayApi + Send + Sync>) {
         let context = softbuffer::Context::new(display.display_handle().unwrap()).unwrap();
         let surface = softbuffer::Surface::new(&context, display.window_handle().unwrap()).unwrap();
 

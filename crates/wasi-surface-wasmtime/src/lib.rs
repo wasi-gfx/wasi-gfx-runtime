@@ -324,7 +324,7 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
         let surface = self.table().get(&surface).unwrap().clone();
         let graphics_context = self.table().get_mut(&context).unwrap();
 
-        graphics_context.connect_display_api(Box::new(surface));
+        graphics_context.connect_display_api(Arc::new(surface));
     }
 
     fn height(&mut self, surface: Resource<SurfaceArc>) -> u32 {

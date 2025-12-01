@@ -143,7 +143,7 @@ struct WebGpuSurface<GI, CS, I>
 where
     I: AsRef<wgpu_core::global::Global>,
     GI: Fn() -> I,
-    CS: Fn(&(dyn DisplayApi + Send + Sync)) -> SurfaceId,
+    CS: Fn(&Arc<dyn DisplayApi + Send + Sync>) -> SurfaceId,
 {
     get_instance: GI,
     create_surface: CS,
@@ -157,7 +157,7 @@ impl<GI, CS, I> DrawApi for WebGpuSurface<GI, CS, I>
 where
     I: AsRef<wgpu_core::global::Global>,
     GI: Fn() -> I,
-    CS: Fn(&(dyn DisplayApi + Send + Sync)) -> SurfaceId,
+    CS: Fn(&Arc<dyn DisplayApi + Send + Sync>) -> SurfaceId,
 {
     fn get_current_buffer(&mut self) -> wasmtime::Result<AbstractBuffer> {
         let texture: wgpu_core::id::TextureId = (self.get_instance)()
@@ -179,8 +179,8 @@ where
         Ok(())
     }
 
-    fn display_api_ready(&mut self, display: &Box<dyn DisplayApi + Send + Sync>) {
-        let surface_id = (self.create_surface)(display.as_ref());
+    fn display_api_ready(&mut self, display: &Arc<dyn DisplayApi + Send + Sync>) {
+        let surface_id = (self.create_surface)(display);
         // TODO: fix this once user can pass in configuration options. For now just taking from `gpu.get-preferred-canvas-format()`.
         #[cfg(target_os = "android")]
         let swapchain_format = wgpu_types::TextureFormat::Rgba8Unorm;

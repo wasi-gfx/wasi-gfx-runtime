@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, sync::Arc};
 
 use crate::wasi::graphics_context::graphics_context;
 use raw_window_handle::{
@@ -19,7 +19,7 @@ wasmtime::component::bindgen!({
 
 pub struct Context {
     draw_api: Option<Box<dyn DrawApi + Send + Sync>>,
-    display_api: Option<Box<dyn DisplayApi + Send + Sync>>,
+    display_api: Option<Arc<dyn DisplayApi + Send + Sync>>,
 }
 
 impl Context {
@@ -30,7 +30,7 @@ impl Context {
         }
     }
 
-    pub fn connect_display_api(&mut self, display_api: Box<dyn DisplayApi + Send + Sync>) {
+    pub fn connect_display_api(&mut self, display_api: Arc<dyn DisplayApi + Send + Sync>) {
         if let Some(draw_api) = &mut self.draw_api {
             draw_api.display_api_ready(&display_api)
         }
@@ -67,7 +67,7 @@ impl HasWindowHandle for Context {
 pub trait DrawApi {
     fn get_current_buffer(&mut self) -> wasmtime::Result<AbstractBuffer>;
     fn present(&mut self) -> wasmtime::Result<()>;
-    fn display_api_ready(&mut self, display_api: &Box<dyn DisplayApi + Send + Sync>);
+    fn display_api_ready(&mut self, display_api: &Arc<dyn DisplayApi + Send + Sync>);
 }
 
 pub trait DisplayApi: HasDisplayHandle + HasWindowHandle {
