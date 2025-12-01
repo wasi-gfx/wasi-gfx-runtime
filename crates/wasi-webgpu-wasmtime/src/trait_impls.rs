@@ -1,7 +1,6 @@
 use core::slice;
 use std::{
     borrow::Cow,
-    mem,
     num::NonZeroU64,
     sync::{Arc, Weak},
 };
@@ -293,36 +292,20 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
             },
             create_surface: {
                 let instance = Weak::clone(&instance);
-                move |display: &(dyn DisplayApi + Send + Sync)| {
+                move |display: &Arc<dyn DisplayApi + Send + Sync>| {
                     let instance = instance.upgrade().unwrap();
-
-                    // TODO: make spawn behave similar to `std::thread::scope` so that we don't have to unsafely transmute display to `&'static`.
-                    // Something like the following:
-                    // ```rust
-                    // let surface_id = std::thread::scope(|s| {
-                    //     s.spawn(move || unsafe {
-                    //         instance
-                    //             .instance_create_surface(
-                    //                 display.display_handle().unwrap().as_raw(),
-                    //                 display.window_handle().unwrap().as_raw(),
-                    //                 None,
-                    //             )
-                    //             .unwrap()
-                    //     }).join().unwrap()
-                    // });
-                    // surface_id
-                    // ```
-
-                    let display: &'static (dyn DisplayApi + Send + Sync) =
-                        unsafe { mem::transmute(display) };
-                    block_on(surface_creator.spawn(move || unsafe {
-                        instance
-                            .instance_create_surface(
-                                display.display_handle().unwrap().as_raw(),
-                                display.window_handle().unwrap().as_raw(),
-                                None,
-                            )
-                            .unwrap()
+                    let display = Arc::downgrade(display);
+                    block_on(surface_creator.spawn(move || {
+                        let display = display.upgrade().expect("display dropped");
+                        unsafe {
+                            instance
+                                .instance_create_surface(
+                                    display.display_handle().unwrap().as_raw(),
+                                    display.window_handle().unwrap().as_raw(),
+                                    None,
+                                )
+                                .unwrap()
+                        }
                     }))
                 }
             },
