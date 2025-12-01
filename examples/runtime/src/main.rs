@@ -38,18 +38,13 @@ wasmtime::component::bindgen!({
 });
 
 struct HostState {
-    pub table: ResourceTable,
-    pub instance: Arc<wgpu_core::global::Global>,
-    pub main_thread_proxy: wasi_surface_wasmtime::WasiWinitEventLoopProxy,
-}
-impl wasmtime::component::HasData for HostState {
-    type Data<'a> = &'a mut HostState;
+    instance: Arc<wgpu_core::global::Global>,
+    main_thread_proxy: Arc<wasi_surface_wasmtime::WasiWinitEventLoopProxy>,
 }
 
 impl HostState {
     fn new(main_thread_proxy: wasi_surface_wasmtime::WasiWinitEventLoopProxy) -> Self {
         Self {
-            table: ResourceTable::new(),
             instance: Arc::new(wgpu_core::global::Global::new(
                 "webgpu",
                 &wgpu_types::InstanceDescriptor {
@@ -59,21 +54,38 @@ impl HostState {
                     memory_budget_thresholds: Default::default(),
                 },
             )),
-            main_thread_proxy,
+            main_thread_proxy: Arc::new(main_thread_proxy),
+        }
+    }
+    pub fn add_workload(&self) -> WorkloadState {
+        WorkloadState {
+            table: ResourceTable::new(),
+            instance: Arc::clone(&self.instance),
+            main_thread_proxy: Arc::clone(&self.main_thread_proxy),
         }
     }
 }
 
-impl IoView for HostState {
+struct WorkloadState {
+    table: ResourceTable,
+    instance: Arc<wgpu_core::global::Global>,
+    main_thread_proxy: Arc<wasi_surface_wasmtime::WasiWinitEventLoopProxy>,
+}
+
+impl wasmtime::component::HasData for WorkloadState {
+    type Data<'a> = &'a mut WorkloadState;
+}
+
+impl IoView for WorkloadState {
     fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
     }
 }
 
-impl WasiGraphicsContextView for HostState {}
-impl WasiFrameBufferView for HostState {}
+impl WasiGraphicsContextView for WorkloadState {}
+impl WasiFrameBufferView for WorkloadState {}
 
-struct UiThreadSpawner(wasi_surface_wasmtime::WasiWinitEventLoopProxy);
+struct UiThreadSpawner(Arc<wasi_surface_wasmtime::WasiWinitEventLoopProxy>);
 
 impl wasi_webgpu_wasmtime::MainThreadSpawner for UiThreadSpawner {
     async fn spawn<F, T>(&self, f: F) -> T
@@ -85,23 +97,23 @@ impl wasi_webgpu_wasmtime::MainThreadSpawner for UiThreadSpawner {
     }
 }
 
-impl WasiWebGpuView for HostState {
+impl WasiWebGpuView for WorkloadState {
     fn instance(&self) -> Arc<wgpu_core::global::Global> {
         Arc::clone(&self.instance)
     }
 
     fn ui_thread_spawner(&self) -> Box<impl wasi_webgpu_wasmtime::MainThreadSpawner + 'static> {
-        Box::new(UiThreadSpawner(self.main_thread_proxy.clone()))
+        Box::new(UiThreadSpawner(Arc::clone(&self.main_thread_proxy)))
     }
 }
 
-impl WasiSurfaceView for HostState {
+impl WasiSurfaceView for WorkloadState {
     fn create_canvas(&self, desc: SurfaceDesc) -> Surface {
         block_on(self.main_thread_proxy.create_window(desc))
     }
 }
 
-impl ExampleImports for HostState {
+impl ExampleImports for WorkloadState {
     fn print(&mut self, s: String) {
         println!("{s}");
     }
@@ -115,23 +127,25 @@ async fn main() -> anyhow::Result<()> {
 
     let args = RuntimeArgs::parse();
 
+    let (main_thread_loop, main_thread_proxy) =
+        wasi_surface_wasmtime::create_wasi_winit_event_loop();
+    let host_state = HostState::new(main_thread_proxy);
+
     let mut config = Config::default();
     config.wasm_component_model(true);
     config.async_support(true);
     let engine = Engine::new(&config)?;
-    let mut linker: Linker<HostState> = Linker::new(&engine);
+    let mut linker: Linker<WorkloadState> = Linker::new(&engine);
 
     wasi_webgpu_wasmtime::add_to_linker(&mut linker)?;
     wasi_frame_buffer_wasmtime::add_to_linker(&mut linker)?;
     wasi_graphics_context_wasmtime::add_to_linker(&mut linker)?;
     wasi_surface_wasmtime::add_to_linker(&mut linker)?;
-    Example::add_to_linker_imports::<_, HostState>(&mut linker, |x| x)?;
+    Example::add_to_linker_imports::<_, WorkloadState>(&mut linker, |x| x)?;
 
-    let (main_thread_loop, main_thread_proxy) =
-        wasi_surface_wasmtime::create_wasi_winit_event_loop();
-    let host_state = HostState::new(main_thread_proxy);
+    let workload_state = host_state.add_workload();
 
-    let mut store = Store::new(&engine, host_state);
+    let mut store = Store::new(&engine, workload_state);
 
     let wasm_path = format!("./target/example-{}.wasm", args.example);
 
