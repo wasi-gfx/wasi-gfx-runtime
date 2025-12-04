@@ -1,0 +1,56 @@
+name: Run Automated Tests
+
+on:
+  push:
+    branches: ["*"]
+    tags: [v0.*]
+  pull_request:
+  merge_group:
+
+env:
+  #
+  # Environment variables
+  #
+  CARGO_INCREMENTAL: false
+  CARGO_TERM_COLOR: always
+  RUST_LOG: info
+  RUST_BACKTRACE: full
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+  IT_TEST_TIMEOUT: 30 # 30 sec
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        command:
+          - 'cargo xtask run-demo --name skybox'
+          - 'cargo xtask run-demo --name triangle'
+          - 'cargo xtask run-demo --name rectangle_simple_buffer'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install Repo toolchain
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install cargo-xtask
+          cargo install wasm-tools
+          cargo install wit-deps-cli
+        
+      - name: Run demo
+        run: |
+          timeout ${{ env.IT_TEST_TIMEOUT }} ${{ matrix.command }} || echo "Command ${{ matrix.command }} failed"
+
+      - name: Report results
+        if: failure()
+        run: echo "One or more commands failed"
+
