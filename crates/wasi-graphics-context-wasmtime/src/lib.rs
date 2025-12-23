@@ -12,8 +12,8 @@ wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
     with: {
-        "wasi:graphics-context/graphics-context@0.0.1/context": Context,
-        "wasi:graphics-context/graphics-context@0.0.1/abstract-buffer": AbstractBuffer,
+        "wasi:graphics-context/graphics-context@0.0.1.context": Context,
+        "wasi:graphics-context/graphics-context@0.0.1.abstract-buffer": AbstractBuffer,
     },
 });
 

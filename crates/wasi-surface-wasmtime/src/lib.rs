@@ -31,7 +31,7 @@ wasmtime::component::bindgen!({
     with: {
         "wasi:io": wasmtime_wasi_io::bindings::wasi::io,
         "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
-        "wasi:surface/surface/surface": SurfaceArc,
+        "wasi:surface/surface.surface": SurfaceArc,
     },
 });
 
