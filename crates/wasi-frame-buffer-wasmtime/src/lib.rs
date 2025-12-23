@@ -13,8 +13,8 @@ wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
     with: {
-        "wasi:frame-buffer/frame-buffer/device": FBDeviceArc,
-        "wasi:frame-buffer/frame-buffer/buffer": FBBuffer,
+        "wasi:frame-buffer/frame-buffer.device": FBDeviceArc,
+        "wasi:frame-buffer/frame-buffer.buffer": FBBuffer,
         "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
     },
 });
