@@ -614,7 +614,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn set_label(&mut self, _device: Resource<webgpu::GpuDevice>, _label: String) -> () {
+    fn set_label(&mut self, _device: Resource<webgpu::GpuDevice>, _label: String) {
         todo!()
     }
 
@@ -629,15 +629,16 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         &mut self,
         _device: Resource<webgpu::GpuDevice>,
         _filter: webgpu::GpuErrorFilter,
-    ) -> () {
-        todo!()
+    ) {
+        // TODO: Implement real error scopes
     }
 
     fn pop_error_scope(
         &mut self,
         _device: Resource<webgpu::GpuDevice>,
     ) -> Result<Option<Resource<webgpu::GpuError>>, webgpu::PopErrorScopeError> {
-        todo!()
+        // TODO: Implement real error scopes
+        Ok(None)
     }
 
     fn onuncapturederror_subscribe(
