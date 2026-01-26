@@ -1,3 +1,7 @@
+// TODO: Remove clippy allows, and either fix the code, or add comments explaining why it's okay to leave it.
+
+#![allow(clippy::new_without_default)]
+
 use std::mem;
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -188,7 +192,7 @@ impl<T: WasiFrameBufferView> frame_buffer::HostBuffer for WasiFrameBufferImpl<T>
             .unwrap()
             .as_mut()
             .unwrap()
-            .copy_from_slice(&val);
+            .copy_from_slice(val);
     }
 
     fn drop(&mut self, frame_buffer: Resource<FBBuffer>) -> wasmtime::Result<()> {

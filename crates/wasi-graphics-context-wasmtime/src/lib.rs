@@ -1,3 +1,7 @@
+// TODO: Remove clippy allows, and either fix the code, or add comments explaining why it's okay to leave it.
+
+#![allow(clippy::new_without_default)]
+
 use std::{any::Any, sync::Arc};
 
 use crate::wasi::graphics_context::graphics_context;
@@ -39,7 +43,7 @@ impl Context {
 
     pub fn connect_draw_api(&mut self, mut draw_api: Box<dyn DrawApi + Send + Sync>) {
         if let Some(display_api) = &self.display_api {
-            draw_api.display_api_ready(&*display_api)
+            draw_api.display_api_ready(display_api)
         }
         self.draw_api = Some(draw_api);
     }

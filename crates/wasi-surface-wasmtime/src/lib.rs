@@ -240,10 +240,8 @@ impl DisplayApi for SurfaceArc {
 }
 
 fn unwrap_unless_inactive<T>(res: Result<Option<T>, TrySendError<T>>) {
-    if let Err(e) = &res {
-        if let TrySendError::Inactive(_) = e {
-            return;
-        }
+    if let Err(TrySendError::Inactive(_)) = &res {
+        return;
     }
     res.unwrap();
 }
