@@ -3,6 +3,10 @@
 // - Implement all todos.
 // - Remove all unwraps.
 // - Implement all the drop handlers.
+// - Remove clippy allows, and either fix the code, or add comments explaining why it's okay to leave it.
+
+#![allow(clippy::unwrap_or_default)]
+#![allow(clippy::new_without_default)]
 
 use std::{future::Future, sync::Arc};
 
@@ -35,8 +39,6 @@ pub mod reexports {
 pub(crate) type Backend = wgpu_core::api::Gl;
 
 // needed for wasmtime::component::bindgen! as it only looks in the current crate.
-pub(crate) use wgpu_core;
-pub(crate) use wgpu_types;
 
 wasmtime::component::bindgen!({
     path: "../../wit/",
@@ -110,7 +112,7 @@ impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for &mut T {
     }
 
     fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
-        T::ui_thread_spawner(&self)
+        T::ui_thread_spawner(self)
     }
 }
 impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for Box<T> {
@@ -119,7 +121,7 @@ impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for Box<T> {
     }
 
     fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
-        T::ui_thread_spawner(&self)
+        T::ui_thread_spawner(self)
     }
 }
 impl<T: WasiWebGpuView> WasiWebGpuView for WasiWebGpuImpl<T> {

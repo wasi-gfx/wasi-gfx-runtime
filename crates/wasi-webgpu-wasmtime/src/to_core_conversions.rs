@@ -85,7 +85,7 @@ impl<'a> ToCore<wgpu_core::binding_model::BindingResource<'a>> for webgpu::GpuBi
     }
 }
 
-impl<'a> ToCore<wgpu_core::binding_model::BufferBinding> for webgpu::GpuBufferBinding {
+impl ToCore<wgpu_core::binding_model::BufferBinding> for webgpu::GpuBufferBinding {
     fn to_core(self, table: &ResourceTable) -> wgpu_core::binding_model::BufferBinding {
         let buffer = table.get(&self.buffer).unwrap();
         // https://www.w3.org/TR/webgpu/#dictdef-gpubufferbinding
@@ -212,7 +212,7 @@ impl ToCore<wgpu_types::DepthStencilState> for webgpu::GpuDepthStencilState {
         // https://www.w3.org/TR/webgpu/#depth-stencil-state
         wgpu_types::DepthStencilState {
             format: self.format.into(),
-            depth_write_enabled: self.depth_write_enabled.expect("TODO: handle null").into(),
+            depth_write_enabled: self.depth_write_enabled.expect("TODO: handle null"),
             depth_compare: self.depth_compare.expect("TODO: handle null").into(),
             stencil: wgpu_types::StencilState {
                 front: self
@@ -512,7 +512,7 @@ impl<'a> ToCore<wgpu_core::binding_model::BindGroupLayoutDescriptor<'a>>
 impl ToCore<wgpu_types::BindGroupLayoutEntry> for webgpu::GpuBindGroupLayoutEntry {
     fn to_core(self, table: &ResourceTable) -> wgpu_types::BindGroupLayoutEntry {
         wgpu_types::BindGroupLayoutEntry {
-            binding: self.binding.into(),
+            binding: self.binding,
             visibility: wgpu_types::ShaderStages::from_bits(self.visibility).unwrap(),
             ty: match (
                 self.buffer,
@@ -713,7 +713,7 @@ impl<'a> ToCore<wgpu_types::DeviceDescriptor<wgpu_core::Label<'a>>>
     }
 }
 
-impl<'a> ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
+impl ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::Features {
         let features_webgpu = self
             .into_iter()
@@ -943,8 +943,7 @@ impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
             limits
         }
 
-        let limits = limits_record_to_core_limits(&self);
-        limits
+        limits_record_to_core_limits(self)
     }
 }
 

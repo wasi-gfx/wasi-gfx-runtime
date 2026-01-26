@@ -208,8 +208,10 @@ impl WasiWinitEventLoop {
             }
         }
 
-        let mut app = App::default();
-        app.arc_proxies = Arc::clone(&proxies);
+        let mut app = App {
+            arc_proxies: Arc::clone(&proxies),
+            ..Default::default()
+        };
         self.event_loop.run_app(&mut app).unwrap();
     }
 }
