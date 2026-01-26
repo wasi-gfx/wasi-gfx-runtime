@@ -1567,9 +1567,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuUncapturedErrorEvent for WasiWebGpuImpl<T
         todo!()
     }
 
-    fn drop(&mut self, error: Resource<webgpu::GpuUncapturedErrorEvent>) -> wasmtime::Result<()> {
-        self.table().delete(error).unwrap();
-        Ok(())
+    fn drop(&mut self, _error: Resource<webgpu::GpuUncapturedErrorEvent>) -> wasmtime::Result<()> {
+        todo!()
     }
 }
 // impl<T: WasiWebGpuView> webgpu::HostGpuInternalError for WasiWebGpuImpl<T> {
@@ -1623,9 +1622,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuError for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn drop(&mut self, error: Resource<webgpu::GpuError>) -> wasmtime::Result<()> {
-        self.table().delete(error).unwrap();
-        Ok(())
+    fn drop(&mut self, _error: Resource<webgpu::GpuError>) -> wasmtime::Result<()> {
+        todo!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuDeviceLostInfo for WasiWebGpuImpl<T> {
@@ -1640,9 +1638,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDeviceLostInfo for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn drop(&mut self, info: Resource<webgpu::GpuDeviceLostInfo>) -> wasmtime::Result<()> {
-        self.table().delete(info).unwrap();
-        Ok(())
+    fn drop(&mut self, _info: Resource<webgpu::GpuDeviceLostInfo>) -> wasmtime::Result<()> {
+        todo!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuCanvasContext for WasiWebGpuImpl<T> {
@@ -1685,9 +1682,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderBundle for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn drop(&mut self, bundle: Resource<webgpu::GpuRenderBundle>) -> wasmtime::Result<()> {
-        self.table().delete(bundle).unwrap();
-        Ok(())
+    fn drop(&mut self, _bundle: Resource<webgpu::GpuRenderBundle>) -> wasmtime::Result<()> {
+        todo!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuComputePassEncoder for WasiWebGpuImpl<T> {
@@ -1882,9 +1878,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCompilationMessage for WasiWebGpuImpl<T> 
         todo!()
     }
 
-    fn drop(&mut self, cm: Resource<webgpu::GpuCompilationMessage>) -> wasmtime::Result<()> {
-        self.table().delete(cm).unwrap();
-        Ok(())
+    fn drop(&mut self, _cm: Resource<webgpu::GpuCompilationMessage>) -> wasmtime::Result<()> {
+        todo!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuCompilationInfo for WasiWebGpuImpl<T> {
@@ -1895,9 +1890,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCompilationInfo for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn drop(&mut self, info: Resource<webgpu::GpuCompilationInfo>) -> wasmtime::Result<()> {
-        self.table().delete(info).unwrap();
-        Ok(())
+    fn drop(&mut self, _info: Resource<webgpu::GpuCompilationInfo>) -> wasmtime::Result<()> {
+        todo!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuQuerySet for WasiWebGpuImpl<T> {
@@ -1922,9 +1916,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuQuerySet for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn drop(&mut self, query_set: Resource<webgpu::GpuQuerySet>) -> wasmtime::Result<()> {
-        self.table().delete(query_set).unwrap();
-        Ok(())
+    fn drop(&mut self, _query_set: Resource<webgpu::GpuQuerySet>) -> wasmtime::Result<()> {
+        todo!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuImpl<T> {
@@ -2441,9 +2434,8 @@ impl<T: WasiWebGpuView> webgpu::HostWgslLanguageFeatures for WasiWebGpuImpl<T> {
         todo!()
     }
 
-    fn drop(&mut self, features: Resource<webgpu::WgslLanguageFeatures>) -> wasmtime::Result<()> {
-        self.table().delete(features).unwrap();
-        Ok(())
+    fn drop(&mut self, _features: Resource<webgpu::WgslLanguageFeatures>) -> wasmtime::Result<()> {
+        todo!()
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
