@@ -19,7 +19,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       
       - name: Check
-        run: cargo fmt --check
+        run: cargo check
 
   fmt:
     name: Check formatting
