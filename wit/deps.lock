@@ -1,12 +1,12 @@
 [frame-buffer]
 url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-subdir = "frame-buffer"
+prefix = "wasi-gfx-0.0.1/frame-buffer"
 sha256 = "c77cda1e98f2a4c343ec5cd42bf9940674e009d977dc6e3cab99152cc0a49ed3"
 sha512 = "b6db27fe297c01ec67a713e42e398b2823d566d488dbc8f5f2b81368d8f2c9f7ad83d98f820253002933d6eb9de6c751cf9606fef67cc4ad522ef6a665deb780"
 
 [graphics-context]
 url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-subdir = "graphics-context"
+prefix = "wasi-gfx-0.0.1/graphics-context"
 sha256 = "b138ab44463c5bb074207687c88d59dfca9c6bc7a5dad482dba626094cccbc3f"
 sha512 = "b9cef19d2cf0a0f3d0a58c94cf4483d051acfb5622e379bf0abcc6aa34c14d92210c56554387b932f08aba3c9c1e9e9cadb554e9dd0cf464b20c7d31c806515e"
 
@@ -16,14 +16,14 @@ sha512 = "49184a1b0945a889abd52d25271172ed3dc2db6968fcdddb1bab7ee0081f4a3eeee097
 
 [surface]
 url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-subdir = "surface"
+prefix = "wasi-gfx-0.0.1/surface"
 sha256 = "34c55612f86285fd8e90665e79c3d9de79a2a27f0153d565ca4a18680d986557"
 sha512 = "3950cddf68d1a68f25e19edbb53249422ced5bb386d43c3336696cd8837c95cf9435858e32a867fbd07ee4299ab3c01245e644d20bff9cb77c7faa34e2f9687d"
 deps = ["io"]
 
 [webgpu]
 url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-subdir = "webgpu"
+prefix = "wasi-gfx-0.0.1/webgpu"
 sha256 = "1986249a458706635317a72eedda4f3f469919a9d1802893b701aea47d9cee54"
 sha512 = "63488865481f18d7b0258cc9ac97bfca92c3944fcd40d34ec723d2691a673db0140a905a62d995bfbb0fb61ba5785fbd07dc97317e5f90dfcfa292440a7ead48"
 deps = ["io"]
