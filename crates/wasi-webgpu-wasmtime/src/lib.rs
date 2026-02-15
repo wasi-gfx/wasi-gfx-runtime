@@ -29,6 +29,14 @@ pub mod reexports {
     pub use wgpu_types;
 }
 
+// https://searchfox.org/mozilla-central/source/dom/webgpu/Instance.h#68
+#[cfg(target_os = "android")]
+const PREFERRED_CANVAS_FORMAT: wasi::webgpu::webgpu::GpuTextureFormat =
+    wasi::webgpu::webgpu::GpuTextureFormat::Rgba8unorm;
+#[cfg(not(target_os = "android"))]
+const PREFERRED_CANVAS_FORMAT: wasi::webgpu::webgpu::GpuTextureFormat =
+    wasi::webgpu::webgpu::GpuTextureFormat::Bgra8unorm;
+
 #[cfg(all(
     not(target_os = "linux"),
     not(target_os = "android"),
@@ -184,10 +192,7 @@ where
     fn display_api_ready(&mut self, display: &Arc<dyn DisplayApi + Send + Sync>) {
         let surface_id = (self.create_surface)(display);
         // TODO: fix this once user can pass in configuration options. For now just taking from `gpu.get-preferred-canvas-format()`.
-        #[cfg(target_os = "android")]
-        let swapchain_format = wgpu_types::TextureFormat::Rgba8Unorm;
-        #[cfg(not(target_os = "android"))]
-        let swapchain_format = wgpu_types::TextureFormat::Bgra8Unorm;
+        let swapchain_format = PREFERRED_CANVAS_FORMAT.into();
 
         // https://www.w3.org/TR/webgpu/#dictdef-gpucanvasconfiguration
         let config = wgpu_types::SurfaceConfiguration {
