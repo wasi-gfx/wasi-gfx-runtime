@@ -16,6 +16,7 @@ use crate::{
     wasi::{io::poll, webgpu::webgpu},
     wrapper_types::{Buffer, ComputePassEncoder, Device, RenderBundleEncoder, RenderPassEncoder},
     AbstractBuffer, MainThreadSpawner, WasiWebGpuImpl, WasiWebGpuView, WebGpuSurface,
+    PREFERRED_CANVAS_FORMAT,
 };
 
 impl<T: WasiWebGpuView> webgpu::Host for WasiWebGpuImpl<T> {
@@ -2375,11 +2376,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
         &mut self,
         _gpu: Resource<webgpu::Gpu>,
     ) -> webgpu::GpuTextureFormat {
-        // https://searchfox.org/mozilla-central/source/dom/webgpu/Instance.h#68
-        #[cfg(target_os = "android")]
-        return webgpu::GpuTextureFormat::Rgba8unorm;
-        #[cfg(not(target_os = "android"))]
-        return webgpu::GpuTextureFormat::Bgra8unorm;
+        PREFERRED_CANVAS_FORMAT
     }
 
     fn wgsl_language_features(
