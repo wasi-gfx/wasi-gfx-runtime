@@ -59,11 +59,11 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu.gpu-adapter": wgpu_core::id::AdapterId,
         "wasi:webgpu/webgpu.gpu-device": wrapper_types::Device,
         "wasi:webgpu/webgpu.gpu-queue": wgpu_core::id::QueueId,
-        "wasi:webgpu/webgpu.gpu-command-encoder": wgpu_core::id::CommandEncoderId,
+        "wasi:webgpu/webgpu.gpu-command-encoder": wrapper_types::CommandEncoder,
         "wasi:webgpu/webgpu.gpu-render-pass-encoder": wrapper_types::RenderPassEncoder,
         "wasi:webgpu/webgpu.gpu-compute-pass-encoder": wrapper_types::ComputePassEncoder,
         "wasi:webgpu/webgpu.gpu-shader-module": wgpu_core::id::ShaderModuleId,
-        "wasi:webgpu/webgpu.gpu-render-pipeline": wgpu_core::id::RenderPipelineId,
+        "wasi:webgpu/webgpu.gpu-render-pipeline": wrapper_types::RenderPipeline,
         "wasi:webgpu/webgpu.gpu-render-bundle-encoder": wrapper_types::RenderBundleEncoder,
         "wasi:webgpu/webgpu.gpu-render-bundle": wgpu_core::id::RenderBundleId,
         "wasi:webgpu/webgpu.gpu-command-buffer": wgpu_core::id::CommandBufferId,
@@ -73,8 +73,8 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu.gpu-bind-group-layout": wgpu_core::id::BindGroupLayoutId,
         "wasi:webgpu/webgpu.gpu-sampler": wgpu_core::id::SamplerId,
         "wasi:webgpu/webgpu.gpu-supported-features": wgpu_types::Features,
-        "wasi:webgpu/webgpu.gpu-texture": wgpu_core::id::TextureId,
-        "wasi:webgpu/webgpu.gpu-compute-pipeline": wgpu_core::id::ComputePipelineId,
+        "wasi:webgpu/webgpu.gpu-texture": wrapper_types::Texture,
+        "wasi:webgpu/webgpu.gpu-compute-pipeline": wrapper_types::ComputePipeline,
         "wasi:webgpu/webgpu.gpu-bind-group": wgpu_core::id::BindGroupId,
         "wasi:webgpu/webgpu.gpu-texture-view": wgpu_core::id::TextureViewId,
         "wasi:webgpu/webgpu.gpu-adapter-info": wgpu_types::AdapterInfo,
@@ -82,6 +82,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu.gpu-supported-limits": wgpu_types::Limits,
         "wasi:webgpu/webgpu.record-gpu-pipeline-constant-value": wrapper_types::RecordGpuPipelineConstantValue,
         "wasi:webgpu/webgpu.record-option-gpu-size64": wrapper_types::RecordOptionGpuSize64,
+        "wasi:webgpu/webgpu.gpu-error": wrapper_types::GpuError,
         "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
     },
 });
@@ -158,6 +159,7 @@ where
     get_instance: GI,
     create_surface: CS,
     device_id: wgpu_core::id::DeviceId,
+    error_handler: Arc<wrapper_types::ErrorHandler>,
     // Might be needed one day for surface configuration.
     _adapter_id: wgpu_core::id::AdapterId,
     surface_id: Option<wgpu_core::id::SurfaceId>,
@@ -170,12 +172,16 @@ where
     CS: Fn(&Arc<dyn DisplayApi + Send + Sync>) -> SurfaceId,
 {
     fn get_current_buffer(&mut self) -> wasmtime::Result<AbstractBuffer> {
-        let texture: wgpu_core::id::TextureId = (self.get_instance)()
+        let texture_id: wgpu_core::id::TextureId = (self.get_instance)()
             .as_ref()
             .surface_get_current_texture(self.surface_id.unwrap(), None)
             .unwrap()
             .texture
             .unwrap();
+        let texture = wrapper_types::Texture {
+            texture_id,
+            error_handler: Arc::clone(&self.error_handler),
+        };
         let buff = Box::new(texture);
         let buff: AbstractBuffer = buff.into();
         Ok(buff)
