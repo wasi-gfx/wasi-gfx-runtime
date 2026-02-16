@@ -954,9 +954,10 @@ impl ToCore<wgpu_types::TexelCopyTextureInfo<wgpu_core::id::TextureId>>
         self,
         table: &ResourceTable,
     ) -> wgpu_types::TexelCopyTextureInfo<wgpu_core::id::TextureId> {
+        let texture = table.get(&self.texture).unwrap();
         // https://www.w3.org/TR/webgpu/#gputexelcopytextureinfo
         wgpu_types::TexelCopyTextureInfo {
-            texture: self.texture.to_core(table),
+            texture: texture.texture_id,
             mip_level: self.mip_level.unwrap_or(0),
             origin: self.origin.map(|o| o.to_core(table)).unwrap_or_default(),
             aspect: self

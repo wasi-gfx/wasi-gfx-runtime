@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/shared",
     "crates/wasi-frame-buffer-wasmtime",
     "crates/wasi-surface-wasmtime",
     "crates/wasi-graphics-context-wasmtime",

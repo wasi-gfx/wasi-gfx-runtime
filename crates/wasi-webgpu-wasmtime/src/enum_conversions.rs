@@ -550,3 +550,14 @@ impl From<webgpu::GpuTextureAspect> for wgpu_types::TextureAspect {
         }
     }
 }
+
+impl From<wgpu_types::error::ErrorType> for webgpu::GpuErrorKind {
+    fn from(value: wgpu_types::error::ErrorType) -> Self {
+        match value {
+            wgpu_types::error::ErrorType::Internal => webgpu::GpuErrorKind::InternalError,
+            wgpu_types::error::ErrorType::OutOfMemory => webgpu::GpuErrorKind::OutOfMemoryError,
+            wgpu_types::error::ErrorType::Validation => webgpu::GpuErrorKind::ValidationError,
+            wgpu_types::error::ErrorType::DeviceLost => todo!(),
+        }
+    }
+}

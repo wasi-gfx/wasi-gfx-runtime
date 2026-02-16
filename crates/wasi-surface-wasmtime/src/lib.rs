@@ -5,8 +5,8 @@ use std::{
 use wasi_graphics_context_wasmtime::DisplayApi;
 
 use crate::wasi::surface::surface::{self, Context as GraphicsContext, Pollable};
-use async_broadcast::{Receiver, TrySendError};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use shared::Listener;
 use wasmtime::component::{HasData, Resource};
 use wasmtime_wasi_io::IoView;
 
@@ -155,25 +155,25 @@ pub struct SurfaceProxy {
 
 impl SurfaceProxy {
     pub fn pointer_up(&self, event: PointerEvent) {
-        unwrap_unless_inactive(self.pointer_up_sender.try_broadcast(event));
+        shared::unwrap_unless_inactive(self.pointer_up_sender.try_broadcast(event));
     }
     pub fn pointer_down(&self, event: PointerEvent) {
-        unwrap_unless_inactive(self.pointer_down_sender.try_broadcast(event));
+        shared::unwrap_unless_inactive(self.pointer_down_sender.try_broadcast(event));
     }
     pub fn pointer_move(&self, event: PointerEvent) {
-        unwrap_unless_inactive_or_full(self.pointer_move_sender.try_broadcast(event));
+        shared::unwrap_unless_inactive_or_full(self.pointer_move_sender.try_broadcast(event));
     }
     pub fn key_up(&self, event: KeyEvent) {
-        unwrap_unless_inactive(self.key_up_sender.try_broadcast(event));
+        shared::unwrap_unless_inactive(self.key_up_sender.try_broadcast(event));
     }
     pub fn key_down(&self, event: KeyEvent) {
-        unwrap_unless_inactive(self.key_down_sender.try_broadcast(event));
+        shared::unwrap_unless_inactive(self.key_down_sender.try_broadcast(event));
     }
     pub fn canvas_resize(&self, event: ResizeEvent) {
-        unwrap_unless_inactive(self.canvas_resize_sender.try_broadcast(event));
+        shared::unwrap_unless_inactive(self.canvas_resize_sender.try_broadcast(event));
     }
     pub fn animation_frame(&self) {
-        unwrap_unless_inactive_or_full(self.frame_sender.try_broadcast(()));
+        shared::unwrap_unless_inactive_or_full(self.frame_sender.try_broadcast(()));
     }
 }
 
@@ -237,22 +237,6 @@ impl DisplayApi for SurfaceArc {
     fn request_set_size(&self, width: Option<u32>, height: Option<u32>) {
         self.0.request_set_size(width, height);
     }
-}
-
-fn unwrap_unless_inactive<T>(res: Result<Option<T>, TrySendError<T>>) {
-    if let Err(TrySendError::Inactive(_)) = &res {
-        return;
-    }
-    res.unwrap();
-}
-
-fn unwrap_unless_inactive_or_full<T>(res: Result<Option<T>, TrySendError<T>>) {
-    if let Err(e) = &res {
-        if matches!(e, TrySendError::Inactive(_) | TrySendError::Full(_)) {
-            return;
-        }
-    }
-    res.unwrap();
 }
 
 // wasmtime
@@ -471,37 +455,5 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
     fn drop(&mut self, surface: Resource<SurfaceArc>) -> wasmtime::Result<()> {
         self.table().delete(surface).unwrap();
         Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct Listener<T, F>
-where
-    T: Debug + Clone + Send + Sync + 'static,
-    F: Fn(T) + Send + Sync + 'static,
-{
-    receiver: Receiver<T>,
-    on_data: F,
-}
-
-impl<T, F> Listener<T, F>
-where
-    T: Debug + Clone + Send + Sync + 'static,
-    F: Fn(T) + Send + Sync + 'static,
-{
-    pub fn new(receiver: Receiver<T>, on_data: F) -> Self {
-        Self { receiver, on_data }
-    }
-}
-
-#[async_trait::async_trait] // TODO: remove async_trait crate once wasmtime drops it
-impl<T, F> wasmtime_wasi_io::poll::Pollable for Listener<T, F>
-where
-    T: Debug + Clone + Send + Sync + 'static,
-    F: Fn(T) + Send + Sync + 'static,
-{
-    async fn ready(&mut self) {
-        let event = self.receiver.recv().await.unwrap();
-        (self.on_data)(event);
     }
 }

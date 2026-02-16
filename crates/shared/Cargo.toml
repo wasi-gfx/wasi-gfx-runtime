@@ -1,0 +1,9 @@
+[package]
+name = "shared"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasmtime-wasi-io.workspace = true
+async-broadcast.workspace = true
+async-trait.workspace = true
