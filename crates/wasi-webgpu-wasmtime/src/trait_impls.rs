@@ -514,7 +514,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
                 address_modes: [wgpu_types::AddressMode::ClampToEdge; 3],
                 mag_filter: wgpu_types::FilterMode::Nearest,
                 min_filter: wgpu_types::FilterMode::Nearest,
-                mipmap_filter: wgpu_types::FilterMode::Nearest,
+                mipmap_filter: wgpu_types::MipmapFilterMode::Nearest,
                 lod_min_clamp: 0.0,
                 lod_max_clamp: 32.0,
                 compare: None,
@@ -645,7 +645,6 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         let render_bundle_encoder = wgpu_core::command::RenderBundleEncoder::new(
             &descriptor.to_core(self.table()),
             device_id,
-            None,
         )
         .unwrap();
         self.table()
@@ -1082,6 +1081,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
             occlusion_query_set: descriptor
                 .occlusion_query_set
                 .map(|oqs| oqs.to_core(self.table())),
+            // multiview_mask is not present in WebGPU
+            multiview_mask: None,
             // TODO: self.max_draw_count not used
         };
         let (render_pass, err) = self
@@ -1110,6 +1111,9 @@ impl<T: WasiWebGpuView> webgpu::HostGpuCommandEncoder for WasiWebGpuImpl<T> {
                 .unwrap_or(wgpu_types::CommandBufferDescriptor::default()),
             None,
         );
+        // dropping the label.
+        // TODO: reconsider when implementing real labels.
+        let err = err.map(|(_label, err)| err);
         error_handler.handle_possible_error(err);
         self.table().push(command_buffer).unwrap()
     }

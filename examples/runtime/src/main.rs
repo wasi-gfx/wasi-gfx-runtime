@@ -53,6 +53,7 @@ impl HostState {
                     backend_options: Default::default(),
                     memory_budget_thresholds: Default::default(),
                 },
+                None,
             )),
             main_thread_proxy: Arc::new(main_thread_proxy),
         }
