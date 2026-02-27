@@ -166,7 +166,8 @@ impl<'a> ToCore<wgpu_core::binding_model::PipelineLayoutDescriptor<'a>>
                 })
                 .collect::<Vec<_>>()
                 .into(),
-            push_constant_ranges: vec![].into(),
+            // immediate_size is not present in WebGPU
+            immediate_size: 0,
         }
     }
 }
@@ -189,8 +190,8 @@ impl<'a> ToCore<wgpu_core::pipeline::RenderPipelineDescriptor<'a>>
                 .map(|ms| ms.to_core(table))
                 .unwrap_or_default(),
             fragment: self.fragment.map(|f| f.to_core(table)),
-            // multiview and cache are not present in WebGPU
-            multiview: None,
+            // multiview_mask and cache are not present in WebGPU
+            multiview_mask: None,
             cache: None,
         }
     }
@@ -466,7 +467,7 @@ impl<'a> ToCore<wgpu_core::resource::SamplerDescriptor<'a>> for webgpu::GpuSampl
             mipmap_filter: self
                 .mipmap_filter
                 .map(|mf| mf.into())
-                .unwrap_or(wgpu_types::FilterMode::Nearest),
+                .unwrap_or(wgpu_types::MipmapFilterMode::Nearest),
             lod_min_clamp: self.lod_min_clamp.unwrap_or(0.0),
             lod_max_clamp: self.lod_max_clamp.unwrap_or(32.0),
             compare: self.compare.map(|compare| compare.into()),
@@ -600,13 +601,13 @@ impl ToCore<wgpu_types::BindingType> for webgpu::GpuStorageTextureBindingLayout 
 //     }
 // }
 
-impl ToCore<wgpu_core::command::RenderPassDepthStencilAttachment>
+impl ToCore<wgpu_core::command::RenderPassDepthStencilAttachment<wgpu_core::id::TextureViewId>>
     for webgpu::GpuRenderPassDepthStencilAttachment
 {
     fn to_core(
         self,
         table: &ResourceTable,
-    ) -> wgpu_core::command::RenderPassDepthStencilAttachment {
+    ) -> wgpu_core::command::RenderPassDepthStencilAttachment<wgpu_core::id::TextureViewId> {
         fn pass_channel_from_options<V>(
             load_op: Option<webgpu::GpuLoadOp>,
             store_op: Option<webgpu::GpuStoreOp>,

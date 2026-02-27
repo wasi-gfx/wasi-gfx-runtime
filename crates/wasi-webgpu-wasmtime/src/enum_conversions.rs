@@ -303,6 +303,25 @@ impl From<webgpu::GpuMipmapFilterMode> for wgpu_types::FilterMode {
     }
 }
 
+// TODO: change to GpuMipmapFilterMode once in wasi:webgpu
+impl From<webgpu::GpuFilterMode> for wgpu_types::MipmapFilterMode {
+    fn from(value: webgpu::GpuFilterMode) -> Self {
+        match value {
+            webgpu::GpuFilterMode::Nearest => wgpu_types::MipmapFilterMode::Nearest,
+            webgpu::GpuFilterMode::Linear => wgpu_types::MipmapFilterMode::Linear,
+        }
+    }
+}
+
+impl From<webgpu::GpuMipmapFilterMode> for wgpu_types::MipmapFilterMode {
+    fn from(value: webgpu::GpuMipmapFilterMode) -> Self {
+        match value {
+            webgpu::GpuMipmapFilterMode::Nearest => wgpu_types::MipmapFilterMode::Nearest,
+            webgpu::GpuMipmapFilterMode::Linear => wgpu_types::MipmapFilterMode::Linear,
+        }
+    }
+}
+
 impl From<webgpu::GpuCompareFunction> for wgpu_types::CompareFunction {
     fn from(value: webgpu::GpuCompareFunction) -> Self {
         match value {
