@@ -332,8 +332,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
     //     todo!()
     // }
 
-    fn adapter_info(&mut self, _device: Resource<Device>) -> Resource<webgpu::GpuAdapterInfo> {
-        todo!()
+    fn adapter_info(&mut self, device: Resource<Device>) -> Resource<webgpu::GpuAdapterInfo> {
+        let adapter_id = self.table().get(&device).unwrap().adapter;
+        let info = self.instance().adapter_get_info(adapter_id);
+        let info = self.table().push(info).unwrap();
+        info
     }
 
     fn create_command_encoder(
@@ -2513,29 +2516,37 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
     }
 }
 impl<T: WasiWebGpuView> webgpu::HostGpuAdapterInfo for WasiWebGpuImpl<T> {
-    // TODO: take ideas from https://bugzilla.mozilla.org/show_bug.cgi?id=1831994
-    fn vendor(&mut self, _self_: Resource<webgpu::GpuAdapterInfo>) -> String {
-        todo!()
+    // TODO: more real values here
+    // take ideas from https://bugzilla.mozilla.org/show_bug.cgi?id=1831994
+    // keep an eye on https://github.com/gfx-rs/wgpu/issues/8649
+    fn vendor(&mut self, adapter_info: Resource<webgpu::GpuAdapterInfo>) -> String {
+        let adapter_info = self.table().get(&adapter_info).unwrap();
+        adapter_info.vendor.to_string()
     }
 
-    fn architecture(&mut self, _self_: Resource<webgpu::GpuAdapterInfo>) -> String {
-        todo!()
+    fn architecture(&mut self, _adapter_info: Resource<webgpu::GpuAdapterInfo>) -> String {
+        // TODO: implement real architecture
+        String::new()
     }
 
-    fn device(&mut self, _self_: Resource<webgpu::GpuAdapterInfo>) -> String {
-        todo!()
+    fn device(&mut self, adapter_info: Resource<webgpu::GpuAdapterInfo>) -> String {
+        let adapter_info = self.table().get(&adapter_info).unwrap();
+        adapter_info.device.to_string()
     }
 
-    fn description(&mut self, _self_: Resource<webgpu::GpuAdapterInfo>) -> String {
-        todo!()
+    fn description(&mut self, _adapter_info: Resource<webgpu::GpuAdapterInfo>) -> String {
+        // TODO: implement real description
+        String::new()
     }
 
-    fn subgroup_min_size(&mut self, _self_: Resource<webgpu::GpuAdapterInfo>) -> u32 {
-        todo!()
+    fn subgroup_min_size(&mut self, adapter_info: Resource<webgpu::GpuAdapterInfo>) -> u32 {
+        let adapter_info = self.table().get(&adapter_info).unwrap();
+        adapter_info.subgroup_min_size
     }
 
-    fn subgroup_max_size(&mut self, _self_: Resource<webgpu::GpuAdapterInfo>) -> u32 {
-        todo!()
+    fn subgroup_max_size(&mut self, adapter_info: Resource<webgpu::GpuAdapterInfo>) -> u32 {
+        let adapter_info = self.table().get(&adapter_info).unwrap();
+        adapter_info.subgroup_max_size
     }
 
     fn drop(&mut self, info: Resource<webgpu::GpuAdapterInfo>) -> wasmtime::Result<()> {
