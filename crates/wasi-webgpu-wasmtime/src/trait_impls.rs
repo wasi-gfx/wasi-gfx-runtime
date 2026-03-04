@@ -916,7 +916,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
     ) -> Result<Resource<webgpu::GpuDevice>, webgpu::RequestDeviceError> {
         let adapter_id = *self.table().get(&adapter).unwrap();
 
-        let (device_id, queue_id) = self
+        let device_queue_result = self
             .instance()
             .adapter_request_device(
                 adapter_id,
@@ -925,20 +925,55 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
                     .unwrap_or(wgpu_types::DeviceDescriptor::default()),
                 None,
                 None,
-            )
-            .unwrap();
+            );
 
-        let device = self
-            .table()
-            .push(Device {
-                device: device_id,
-                queue: queue_id,
-                adapter: adapter_id,
-                error_handler: Arc::new(ErrorHandler::default()),
-            })
-            .unwrap();
+        match device_queue_result {
+            Ok((device_id, queue_id)) => {
+                let device = self
+                    .table()
+                    .push(Device {
+                        device: device_id,
+                        queue: queue_id,
+                        adapter: adapter_id,
+                        error_handler: Arc::new(ErrorHandler::default()),
+                    })
+                    .unwrap();
+                Ok(device)
+            }
 
-        Ok(device)
+            Err(err) => {
+                let message = err.to_string();
+                // https://www.w3.org/TR/webgpu/#dom-gpuadapter-requestdevice
+                match err {
+                    wgpu_core::instance::RequestDeviceError::LimitsExceeded(_) => {
+                        // From the spec:
+                        // > 1. If any of the following requirements are unmet:
+                        // >  - The set of values in descriptor.requiredFeatures must be a subset of those in adapter.[[features]].
+                        // > Then issue the following steps on contentTimeline and return:
+                        // >  1. Reject promise with a TypeError.
+                        Err(webgpu::RequestDeviceError {
+                            kind: webgpu::RequestDeviceErrorKind::TypeError,
+                            message,
+                        })
+                    },
+                    wgpu_core::instance::RequestDeviceError::UnsupportedFeature(_) => {
+                        // From the spec:
+                        // > 2. All of the requirements in the following steps must be met.
+                        // >  2. For each [key, value] in descriptor.requiredLimits for which value is not undefined:
+                        // >   1. key must be the name of a member of supported limits.
+                        // >   2. value must be no better than adapter.[[limits]][key].
+                        // >   3. If key’s class is alignment, value must be a power of 2 less than 232.
+                        // > 3. If any are unmet, issue the following steps on contentTimeline and return:
+                        // >  1. Reject promise with an OperationError.
+                        Err(webgpu::RequestDeviceError {
+                            kind: webgpu::RequestDeviceErrorKind::OperationError,
+                            message,
+                        })
+                    },
+                    err => todo!("unhandled request device error: {:#?}", err),
+                }
+            }
+        }
     }
 
     fn features(
