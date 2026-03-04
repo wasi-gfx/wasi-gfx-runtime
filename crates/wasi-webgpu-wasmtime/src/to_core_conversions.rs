@@ -92,7 +92,7 @@ impl ToCore<wgpu_core::binding_model::BufferBinding> for webgpu::GpuBufferBindin
         wgpu_core::binding_model::BufferBinding {
             buffer: buffer.buffer_id,
             offset: self.offset.unwrap_or(0),
-            size: self.size.map(|s| s.try_into().unwrap()),
+            size: self.size,
         }
     }
 }
