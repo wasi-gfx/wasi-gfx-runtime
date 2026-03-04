@@ -916,16 +916,14 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
     ) -> Result<Resource<webgpu::GpuDevice>, webgpu::RequestDeviceError> {
         let adapter_id = *self.table().get(&adapter).unwrap();
 
-        let device_queue_result = self
-            .instance()
-            .adapter_request_device(
-                adapter_id,
-                &descriptor
-                    .map(|d| d.to_core(self.table()))
-                    .unwrap_or(wgpu_types::DeviceDescriptor::default()),
-                None,
-                None,
-            );
+        let device_queue_result = self.instance().adapter_request_device(
+            adapter_id,
+            &descriptor
+                .map(|d| d.to_core(self.table()))
+                .unwrap_or(wgpu_types::DeviceDescriptor::default()),
+            None,
+            None,
+        );
 
         match device_queue_result {
             Ok((device_id, queue_id)) => {
@@ -955,7 +953,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
                             kind: webgpu::RequestDeviceErrorKind::TypeError,
                             message,
                         })
-                    },
+                    }
                     wgpu_core::instance::RequestDeviceError::UnsupportedFeature(_) => {
                         // From the spec:
                         // > 2. All of the requirements in the following steps must be met.
@@ -969,7 +967,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
                             kind: webgpu::RequestDeviceErrorKind::OperationError,
                             message,
                         })
-                    },
+                    }
                     err => todo!("unhandled request device error: {:#?}", err),
                 }
             }
