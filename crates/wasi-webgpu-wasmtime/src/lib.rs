@@ -220,3 +220,16 @@ where
         self.surface_id = Some(surface_id);
     }
 }
+
+impl<GI, CS, I> Drop for WebGpuSurface<GI, CS, I>
+where
+    I: AsRef<wgpu_core::global::Global>,
+    GI: Fn() -> I,
+    CS: Fn(&Arc<dyn DisplayApi + Send + Sync>) -> SurfaceId,
+{
+    fn drop(&mut self) {
+        if let Some(surface_id) = self.surface_id {
+            (self.get_instance)().as_ref().surface_drop(surface_id);
+        }
+    }
+}
