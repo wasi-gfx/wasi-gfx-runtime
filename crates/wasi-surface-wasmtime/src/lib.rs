@@ -28,6 +28,9 @@ wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
     require_store_data_send: true,
+    imports: {
+        default: trappable,
+    },
     with: {
         "wasi:io": wasmtime_wasi_io::bindings::wasi::io,
         "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
@@ -292,31 +295,32 @@ impl<T: WasiSurfaceView> WasiSurfaceView for WasiSurfaceImpl<T> {
 impl<T: WasiSurfaceView> surface::Host for WasiSurfaceImpl<T> {}
 
 impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
-    fn new(&mut self, desc: SurfaceDesc) -> Resource<SurfaceArc> {
+    fn new(&mut self, desc: SurfaceDesc) -> wasmtime::Result<Resource<SurfaceArc>> {
         let surface = self.create_canvas(desc);
         let surface = SurfaceArc(Arc::new(surface));
-        self.table().push(surface).unwrap()
+        Ok(self.table().push(surface)?)
     }
 
     fn connect_graphics_context(
         &mut self,
         surface: Resource<SurfaceArc>,
         context: Resource<GraphicsContext>,
-    ) {
-        let surface = self.table().get(&surface).unwrap().clone();
-        let graphics_context = self.table().get_mut(&context).unwrap();
+    ) -> wasmtime::Result<()> {
+        let surface = self.table().get(&surface)?.clone();
+        let graphics_context = self.table().get_mut(&context)?;
 
         graphics_context.connect_display_api(Arc::new(surface));
+        Ok(())
     }
 
-    fn height(&mut self, surface: Resource<SurfaceArc>) -> u32 {
-        let surface = self.table().get(&surface).unwrap();
-        surface.height()
+    fn height(&mut self, surface: Resource<SurfaceArc>) -> wasmtime::Result<u32> {
+        let surface = self.table().get(&surface)?;
+        Ok(surface.height())
     }
 
-    fn width(&mut self, surface: Resource<SurfaceArc>) -> u32 {
-        let surface = self.table().get(&surface).unwrap();
-        surface.width()
+    fn width(&mut self, surface: Resource<SurfaceArc>) -> wasmtime::Result<u32> {
+        let surface = self.table().get(&surface)?;
+        Ok(surface.width())
     }
 
     fn request_set_size(
@@ -324,136 +328,152 @@ impl<T: WasiSurfaceView> surface::HostSurface for WasiSurfaceImpl<T> {
         surface: Resource<SurfaceArc>,
         width: Option<u32>,
         height: Option<u32>,
-    ) {
-        let surface = self.table().get(&surface).unwrap();
+    ) -> wasmtime::Result<()> {
+        let surface = self.table().get(&surface)?;
         surface.request_set_size(width, height);
+        Ok(())
     }
 
-    fn subscribe_resize(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_resize(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        let canvas = Arc::clone(&self.table().get(&surface)?.0);
         let receiver = canvas.canvas_resize_sender.new_receiver();
-        let listener = self
-            .table()
-            .push(Listener::new(receiver, move |data| {
-                canvas.canvas_resize_data.lock().unwrap().replace(data);
-            }))
-            .unwrap();
-        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
+        let listener = self.table().push(Listener::new(receiver, move |data| {
+            canvas.canvas_resize_data.lock().unwrap().replace(data);
+        }))?;
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener)
     }
 
-    fn get_resize(&mut self, surface: Resource<SurfaceArc>) -> Option<ResizeEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.canvas_resize_data.lock().unwrap().take()
+    fn get_resize(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Option<ResizeEvent>> {
+        let canvas = &self.table().get(&surface)?.0;
+        Ok(canvas.canvas_resize_data.lock().unwrap().take())
     }
 
-    fn subscribe_frame(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_frame(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        let canvas = Arc::clone(&self.table().get(&surface)?.0);
         let receiver = canvas.frame_sender.new_receiver();
-        let listener = self
-            .table()
-            .push(Listener::new(receiver, move |_d| {
-                canvas
-                    .frame_data
-                    .lock()
-                    .unwrap()
-                    .replace(FrameEvent { nothing: false });
-            }))
-            .unwrap();
-        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
+        let listener = self.table().push(Listener::new(receiver, move |_d| {
+            canvas
+                .frame_data
+                .lock()
+                .unwrap()
+                .replace(FrameEvent { nothing: false });
+        }))?;
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener)
     }
 
-    fn get_frame(&mut self, surface: Resource<SurfaceArc>) -> Option<FrameEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.frame_data.lock().unwrap().take()
+    fn get_frame(&mut self, surface: Resource<SurfaceArc>) -> wasmtime::Result<Option<FrameEvent>> {
+        let canvas = &self.table().get(&surface)?.0;
+        Ok(canvas.frame_data.lock().unwrap().take())
     }
 
-    fn subscribe_pointer_up(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_pointer_up(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        let canvas = Arc::clone(&self.table().get(&surface)?.0);
         let receiver = canvas.pointer_up_sender.new_receiver();
-        let listener = self
-            .table()
-            .push(Listener::new(receiver, move |data| {
-                canvas.pointer_up_data.lock().unwrap().replace(data);
-            }))
-            .unwrap();
-        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
+        let listener = self.table().push(Listener::new(receiver, move |data| {
+            canvas.pointer_up_data.lock().unwrap().replace(data);
+        }))?;
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener)
     }
 
-    fn get_pointer_up(&mut self, surface: Resource<SurfaceArc>) -> Option<PointerEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.pointer_up_data.lock().unwrap().take()
+    fn get_pointer_up(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Option<PointerEvent>> {
+        let canvas = &self.table().get(&surface)?.0;
+        Ok(canvas.pointer_up_data.lock().unwrap().take())
     }
 
-    fn subscribe_pointer_down(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_pointer_down(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        let canvas = Arc::clone(&self.table().get(&surface)?.0);
         let receiver = canvas.pointer_down_sender.new_receiver();
-        let listener = self
-            .table()
-            .push(Listener::new(receiver, move |data| {
-                canvas.pointer_down_data.lock().unwrap().replace(data);
-            }))
-            .unwrap();
-        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
+        let listener = self.table().push(Listener::new(receiver, move |data| {
+            canvas.pointer_down_data.lock().unwrap().replace(data);
+        }))?;
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener)
     }
 
-    fn get_pointer_down(&mut self, surface: Resource<SurfaceArc>) -> Option<PointerEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.pointer_down_data.lock().unwrap().take()
+    fn get_pointer_down(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Option<PointerEvent>> {
+        let canvas = &self.table().get(&surface)?.0;
+        Ok(canvas.pointer_down_data.lock().unwrap().take())
     }
 
-    fn subscribe_pointer_move(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_pointer_move(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        let canvas = Arc::clone(&self.table().get(&surface)?.0);
         let receiver = canvas.pointer_move_sender.new_receiver();
-        let listener = self
-            .table()
-            .push(Listener::new(receiver, move |data| {
-                canvas.pointer_move_data.lock().unwrap().replace(data);
-            }))
-            .unwrap();
-        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
+        let listener = self.table().push(Listener::new(receiver, move |data| {
+            canvas.pointer_move_data.lock().unwrap().replace(data);
+        }))?;
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener)
     }
 
-    fn get_pointer_move(&mut self, surface: Resource<SurfaceArc>) -> Option<PointerEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.pointer_move_data.lock().unwrap().take()
+    fn get_pointer_move(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Option<PointerEvent>> {
+        let canvas = &self.table().get(&surface)?.0;
+        Ok(canvas.pointer_move_data.lock().unwrap().take())
     }
 
-    fn subscribe_key_up(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_key_up(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        let canvas = Arc::clone(&self.table().get(&surface)?.0);
         let receiver = canvas.key_up_sender.new_receiver();
-        let listener = self
-            .table()
-            .push(Listener::new(receiver, move |data| {
-                canvas.key_up_data.lock().unwrap().replace(data);
-            }))
-            .unwrap();
-        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
+        let listener = self.table().push(Listener::new(receiver, move |data| {
+            canvas.key_up_data.lock().unwrap().replace(data);
+        }))?;
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener)
     }
 
-    fn get_key_up(&mut self, surface: Resource<SurfaceArc>) -> Option<KeyEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.key_up_data.lock().unwrap().take()
+    fn get_key_up(&mut self, surface: Resource<SurfaceArc>) -> wasmtime::Result<Option<KeyEvent>> {
+        let canvas = &self.table().get(&surface)?.0;
+        Ok(canvas.key_up_data.lock().unwrap().take())
     }
 
-    fn subscribe_key_down(&mut self, surface: Resource<SurfaceArc>) -> Resource<Pollable> {
-        let canvas = Arc::clone(&self.table().get(&surface).unwrap().0);
+    fn subscribe_key_down(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Resource<Pollable>> {
+        let canvas = Arc::clone(&self.table().get(&surface)?.0);
         let receiver = canvas.key_down_sender.new_receiver();
-        let listener = self
-            .table()
-            .push(Listener::new(receiver, move |data| {
-                canvas.key_down_data.lock().unwrap().replace(data);
-            }))
-            .unwrap();
-        wasmtime_wasi_io::poll::subscribe(self.table(), listener).unwrap()
+        let listener = self.table().push(Listener::new(receiver, move |data| {
+            canvas.key_down_data.lock().unwrap().replace(data);
+        }))?;
+        wasmtime_wasi_io::poll::subscribe(self.table(), listener)
     }
 
-    fn get_key_down(&mut self, surface: Resource<SurfaceArc>) -> Option<KeyEvent> {
-        let canvas = &self.table().get(&surface).unwrap().0;
-        canvas.key_down_data.lock().unwrap().take()
+    fn get_key_down(
+        &mut self,
+        surface: Resource<SurfaceArc>,
+    ) -> wasmtime::Result<Option<KeyEvent>> {
+        let canvas = &self.table().get(&surface)?.0;
+        Ok(canvas.key_down_data.lock().unwrap().take())
     }
 
     fn drop(&mut self, surface: Resource<SurfaceArc>) -> wasmtime::Result<()> {
-        self.table().delete(surface).unwrap();
+        self.table().delete(surface)?;
         Ok(())
     }
 }

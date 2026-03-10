@@ -52,7 +52,8 @@ wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
     imports: {
-        "wasi:webgpu/webgpu.[method]gpu-buffer.map-async": async
+        "wasi:webgpu/webgpu.[method]gpu-buffer.map-async": async | trappable,
+        default: trappable,
     },
     with: {
         "wasi:io": wasmtime_wasi_io::bindings::wasi::io,
