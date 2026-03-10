@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use anyhow::Context;
 use clap::Parser;
 use futures::executor::block_on;
 use wasi_frame_buffer_wasmtime::WasiFrameBufferView;
@@ -9,6 +8,7 @@ use wasi_surface_wasmtime::{Surface, SurfaceDesc, WasiSurfaceView};
 use wasi_webgpu_wasmtime::WasiWebGpuView;
 use wasmtime::{
     component::{Component, Linker},
+    error::Context,
     Config, Engine, Store,
 };
 
@@ -134,7 +134,6 @@ async fn main() -> anyhow::Result<()> {
 
     let mut config = Config::default();
     config.wasm_component_model(true);
-    config.async_support(true);
     let engine = Engine::new(&config)?;
     let mut linker: Linker<WorkloadState> = Linker::new(&engine);
 
