@@ -16,6 +16,9 @@ use wasi_graphics_context_wasmtime::{AbstractBuffer, Context, DisplayApi, DrawAp
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
+    imports: {
+        default: trappable,
+    },
     with: {
         "wasi:frame-buffer/frame-buffer.device": FBDeviceArc,
         "wasi:frame-buffer/frame-buffer.buffer": FBBuffer,
@@ -149,18 +152,21 @@ impl<T: WasiFrameBufferView> WasiFrameBufferView for WasiFrameBufferImpl<T> {}
 impl<T: WasiFrameBufferView> frame_buffer::Host for WasiFrameBufferImpl<T> {}
 
 impl<T: WasiFrameBufferView> frame_buffer::HostDevice for WasiFrameBufferImpl<T> {
-    fn new(&mut self) -> Resource<crate::wasi::frame_buffer::frame_buffer::Device> {
-        self.table().push(FBDeviceArc::new()).unwrap()
+    fn new(
+        &mut self,
+    ) -> wasmtime::Result<Resource<crate::wasi::frame_buffer::frame_buffer::Device>> {
+        Ok(self.table().push(FBDeviceArc::new())?)
     }
 
     fn connect_graphics_context(
         &mut self,
         surface: Resource<FBDeviceArc>,
         graphics_context: Resource<Context>,
-    ) {
-        let surface = FBDeviceArc(Arc::clone(&self.table().get(&surface).unwrap().0));
-        let graphics_context = self.table().get_mut(&graphics_context).unwrap();
+    ) -> wasmtime::Result<()> {
+        let surface = FBDeviceArc(Arc::clone(&self.table().get(&surface)?.0));
+        let graphics_context = self.table().get_mut(&graphics_context)?;
         graphics_context.connect_draw_api(Box::new(surface));
+        Ok(())
     }
 
     fn drop(&mut self, _rep: Resource<FBDeviceArc>) -> wasmtime::Result<()> {
@@ -169,23 +175,26 @@ impl<T: WasiFrameBufferView> frame_buffer::HostDevice for WasiFrameBufferImpl<T>
 }
 
 impl<T: WasiFrameBufferView> frame_buffer::HostBuffer for WasiFrameBufferImpl<T> {
-    fn from_graphics_buffer(&mut self, buffer: Resource<AbstractBuffer>) -> Resource<FBBuffer> {
-        let host_buffer: AbstractBuffer = self.table().delete(buffer).unwrap();
+    fn from_graphics_buffer(
+        &mut self,
+        buffer: Resource<AbstractBuffer>,
+    ) -> wasmtime::Result<Resource<FBBuffer>> {
+        let host_buffer: AbstractBuffer = self.table().delete(buffer)?;
         let host_buffer: FBBuffer = host_buffer.inner_type();
-        self.table().push(host_buffer).unwrap()
+        Ok(self.table().push(host_buffer)?)
     }
 
-    fn get(&mut self, buffer: Resource<FBBuffer>) -> Vec<u8> {
-        let buffer = self.table().get(&buffer).unwrap();
+    fn get(&mut self, buffer: Resource<FBBuffer>) -> wasmtime::Result<Vec<u8>> {
+        let buffer = self.table().get(&buffer)?;
         let buffer = buffer.buffer.lock().unwrap();
         let buffer = buffer.as_ref().unwrap();
-        let buffer = bytemuck::try_cast_slice(buffer).unwrap();
-        buffer.to_vec()
+        let buffer = bytemuck::try_cast_slice(buffer)?;
+        Ok(buffer.to_vec())
     }
 
-    fn set(&mut self, buffer: Resource<FBBuffer>, val: Vec<u8>) {
-        let buffer = self.table().get_mut(&buffer).unwrap();
-        let val = bytemuck::try_cast_slice(&val).unwrap();
+    fn set(&mut self, buffer: Resource<FBBuffer>, val: Vec<u8>) -> wasmtime::Result<()> {
+        let buffer = self.table().get_mut(&buffer)?;
+        let val = bytemuck::try_cast_slice(&val)?;
         buffer
             .buffer
             .lock()
@@ -193,10 +202,11 @@ impl<T: WasiFrameBufferView> frame_buffer::HostBuffer for WasiFrameBufferImpl<T>
             .as_mut()
             .unwrap()
             .copy_from_slice(val);
+        Ok(())
     }
 
     fn drop(&mut self, frame_buffer: Resource<FBBuffer>) -> wasmtime::Result<()> {
-        let frame_buffer = self.table().delete(frame_buffer).unwrap();
+        let frame_buffer = self.table().delete(frame_buffer)?;
         frame_buffer.buffer.lock().unwrap().take();
         Ok(())
     }

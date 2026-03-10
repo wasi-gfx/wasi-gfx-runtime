@@ -15,6 +15,9 @@ use wasmtime_wasi_io::IoView;
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
+    imports: {
+        default: trappable,
+    },
     with: {
         "wasi:graphics-context/graphics-context@0.0.1.context": Context,
         "wasi:graphics-context/graphics-context@0.0.1.abstract-buffer": AbstractBuffer,
@@ -135,30 +138,33 @@ impl<T: WasiGraphicsContextView> WasiGraphicsContextView for WasiGraphicsContext
 impl<T: WasiGraphicsContextView> graphics_context::Host for WasiGraphicsContextImpl<T> {}
 
 impl<T: WasiGraphicsContextView> graphics_context::HostContext for WasiGraphicsContextImpl<T> {
-    fn new(&mut self) -> Resource<Context> {
-        self.table().push(Context::new()).unwrap()
+    fn new(&mut self) -> wasmtime::Result<Resource<Context>> {
+        Ok(self.table().push(Context::new())?)
     }
 
-    fn get_current_buffer(&mut self, context: Resource<Context>) -> Resource<AbstractBuffer> {
-        let context_kind = self.table().get_mut(&context).unwrap();
+    fn get_current_buffer(
+        &mut self,
+        context: Resource<Context>,
+    ) -> wasmtime::Result<Resource<AbstractBuffer>> {
+        let context_kind = self.table().get_mut(&context)?;
         let next_frame = context_kind
             .draw_api
             .as_mut()
             .expect("draw_api not set")
-            .get_current_buffer()
-            .unwrap();
-        let next_frame = self.table().push(next_frame).unwrap();
-        next_frame
+            .get_current_buffer()?;
+        let next_frame = self.table().push(next_frame)?;
+        Ok(next_frame)
     }
 
-    fn present(&mut self, context: Resource<Context>) {
-        let context = self.table().get_mut(&context).unwrap();
+    fn present(&mut self, context: Resource<Context>) -> wasmtime::Result<()> {
+        let context = self.table().get_mut(&context)?;
         // context.display_api.as_mut().unwrap().present().unwrap();
-        context.draw_api.as_mut().unwrap().present().unwrap();
+        context.draw_api.as_mut().unwrap().present()?;
+        Ok(())
     }
 
     fn drop(&mut self, graphics_context: Resource<Context>) -> wasmtime::Result<()> {
-        self.table().delete(graphics_context).unwrap();
+        self.table().delete(graphics_context)?;
         Ok(())
     }
 }
