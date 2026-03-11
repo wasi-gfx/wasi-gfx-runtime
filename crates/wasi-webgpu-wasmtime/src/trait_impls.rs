@@ -2790,18 +2790,20 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
         query: String,
     ) -> wasmtime::Result<bool> {
         let features = self.table().get(&features)?;
+        // TODO: disable the ones not present in the wgpu yet.
         Ok(match query.as_str() {
+            // "core-features-and-limits" => {
+            //     features.contains(wgpu_types::Features::CORE_FEATURES_AND_LIMITS)
+            // }
             "depth-clip-control" => features.contains(wgpu_types::Features::DEPTH_CLIP_CONTROL),
-            "timestamp-query" => features.contains(wgpu_types::Features::TIMESTAMP_QUERY),
-            "indirect-first-instance" => {
-                features.contains(wgpu_types::Features::INDIRECT_FIRST_INSTANCE)
-            }
-            "shader-f16" => features.contains(wgpu_types::Features::SHADER_F16),
             "depth32float-stencil8" => {
                 features.contains(wgpu_types::Features::DEPTH32FLOAT_STENCIL8)
             }
             "texture-compression-bc" => {
                 features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_BC)
+            }
+            "texture-compression-bc-sliced-3d" => {
+                features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_BC_SLICED_3D)
             }
             "texture-compression-etc2" => {
                 features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_ETC2)
@@ -2809,12 +2811,40 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
             "texture-compression-astc" => {
                 features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_ASTC)
             }
+            "texture-compression-astc-sliced-3d" => {
+                features.contains(wgpu_types::Features::TEXTURE_COMPRESSION_ASTC_SLICED_3D)
+            }
+            "timestamp-query" => features.contains(wgpu_types::Features::TIMESTAMP_QUERY),
+            "indirect-first-instance" => {
+                features.contains(wgpu_types::Features::INDIRECT_FIRST_INSTANCE)
+            }
+            "shader-f16" => features.contains(wgpu_types::Features::SHADER_F16),
             "rg11b10ufloat-renderable" => {
                 features.contains(wgpu_types::Features::RG11B10UFLOAT_RENDERABLE)
             }
             "bgra8unorm-storage" => features.contains(wgpu_types::Features::BGRA8UNORM_STORAGE),
             "float32-filterable" => features.contains(wgpu_types::Features::FLOAT32_FILTERABLE),
-            _ => todo!(),
+            // "float32-blendable" => {
+            //     features.contains(wgpu_types::Features::FLOAT32_BLENDABLE)
+            // }
+            "clip-distances" => features.contains(wgpu_types::Features::CLIP_DISTANCES),
+            "dual-source-blending" => features.contains(wgpu_types::Features::DUAL_SOURCE_BLENDING),
+            // "subgroups" => {
+            //     features.contains(wgpu_types::Features::SUBGROUPS)
+            // }
+            // "texture-formats-tier1" => {
+            //     features.contains(wgpu_types::Features::TEXTURE_FORMATS_TIER1)
+            // }
+            // "texture-formats-tier2" => {
+            //     features.contains(wgpu_types::Features::TEXTURE_FORMATS_TIER2)
+            // }
+            // "primitive-index" => {
+            //     features.contains(wgpu_types::Features::PRIMITIVE_INDEX)
+            // }
+            // "texture-component-swizzle" => {
+            //     features.contains(wgpu_types::Features::TEXTURE_COMPONENT_SWIZZLE)
+            // }
+            _ => false,
         })
     }
 
