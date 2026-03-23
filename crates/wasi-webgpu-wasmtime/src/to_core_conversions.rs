@@ -160,9 +160,8 @@ impl<'a> ToCore<wgpu_core::binding_model::PipelineLayoutDescriptor<'a>>
                 .bind_group_layouts
                 .into_iter()
                 .map(|bind_group_layout| {
-                    *table
-                        .get(&bind_group_layout.expect("TODO: handle null"))
-                        .unwrap()
+                    bind_group_layout
+                        .map(|bind_group_layout| *table.get(&bind_group_layout).unwrap())
                 })
                 .collect::<Vec<_>>()
                 .into(),
@@ -213,8 +212,8 @@ impl ToCore<wgpu_types::DepthStencilState> for webgpu::GpuDepthStencilState {
         // https://www.w3.org/TR/webgpu/#depth-stencil-state
         wgpu_types::DepthStencilState {
             format: self.format.into(),
-            depth_write_enabled: self.depth_write_enabled.expect("TODO: handle null"),
-            depth_compare: self.depth_compare.expect("TODO: handle null").into(),
+            depth_write_enabled: self.depth_write_enabled,
+            depth_compare: self.depth_compare.map(|dc| dc.into()),
             stencil: wgpu_types::StencilState {
                 front: self
                     .stencil_front
@@ -853,12 +852,12 @@ impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
                     }
                     "maxuniformbufferbindingsize" => {
                         if let Some(value) = value {
-                            limits.max_uniform_buffer_binding_size = *value as u32;
+                            limits.max_uniform_buffer_binding_size = *value;
                         }
                     }
                     "maxstoragebufferbindingsize" => {
                         if let Some(value) = value {
-                            limits.max_storage_buffer_binding_size = *value as u32;
+                            limits.max_storage_buffer_binding_size = *value;
                         }
                     }
                     "minuniformbufferoffsetalignment" => {
