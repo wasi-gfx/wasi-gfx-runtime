@@ -330,7 +330,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
                         unsafe {
                             instance
                                 .instance_create_surface(
-                                    display.display_handle().unwrap().as_raw(),
+                                    Some(display.display_handle().unwrap().as_raw()),
                                     display.window_handle().unwrap().as_raw(),
                                     None,
                                 )
@@ -896,7 +896,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuTextureView for WasiWebGpuImpl<T> {
 
     fn drop(&mut self, view: Resource<wgpu_core::id::TextureViewId>) -> wasmtime::Result<()> {
         let view_id = self.table().delete(view)?;
-        self.instance().texture_view_drop(view_id)?;
+        self.instance().texture_view_drop(view_id);
         Ok(())
     }
 }
