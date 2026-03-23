@@ -62,13 +62,18 @@ pub struct Buffer {
     pub(crate) map_state: webgpu::GpuBufferMapState,
 }
 
+// references to queue and adapter are also saved in device.
+pub type Queue = Arc<wgpu_core::id::QueueId>;
+pub type Adapter = Arc<wgpu_core::id::AdapterId>;
+
 // queue needed for Device.queue
 // adapter needed for surface_get_capabilities in connect_graphics_context
+// keeping queue and adapter as Arc for reference counting while dropping.
 #[derive(Clone)]
 pub struct Device {
     pub(crate) device: wgpu_core::id::DeviceId,
-    pub(crate) queue: wgpu_core::id::QueueId,
-    pub(crate) adapter: wgpu_core::id::AdapterId,
+    pub(crate) queue: Arc<wgpu_core::id::QueueId>,
+    pub(crate) adapter: Arc<wgpu_core::id::AdapterId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
