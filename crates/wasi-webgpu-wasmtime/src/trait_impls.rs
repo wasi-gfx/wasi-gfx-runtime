@@ -156,10 +156,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuTextureUsage for WasiWebGpuImpl<T> {
     fn render_attachment(&mut self) -> wasmtime::Result<webgpu::GpuFlagsConstant> {
         Ok(wgpu_types::TextureUsages::RENDER_ATTACHMENT.bits())
     }
-    fn drop(
-        &mut self,
-        _rep: wasmtime::component::Resource<webgpu::GpuTextureUsage>,
-    ) -> wasmtime::Result<()> {
+    fn drop(&mut self, _rep: Resource<webgpu::GpuTextureUsage>) -> wasmtime::Result<()> {
         unreachable!()
     }
 }
@@ -273,10 +270,7 @@ impl<T: WasiWebGpuView> webgpu::HostRecordOptionGpuSize64 for WasiWebGpuImpl<T> 
         let record = self.table().get(&record)?;
         Ok(record.iter().map(|(k, v)| (k.clone(), *v)).collect())
     }
-    fn drop(
-        &mut self,
-        record: wasmtime::component::Resource<webgpu::RecordOptionGpuSize64>,
-    ) -> wasmtime::Result<()> {
+    fn drop(&mut self, record: Resource<webgpu::RecordOptionGpuSize64>) -> wasmtime::Result<()> {
         self.table().delete(record)?;
         Ok(())
     }
@@ -308,7 +302,6 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         let device = self.table().get(&device)?;
         let device_id = device.device;
         let error_handler = Arc::clone(&device.error_handler);
-        let _adapter_id = device.adapter;
 
         let instance = Arc::downgrade(&self.instance());
         let surface_creator = self.ui_thread_spawner();
@@ -341,7 +334,6 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
             },
             device_id,
             error_handler,
-            _adapter_id,
             surface_id: None,
         };
 
@@ -361,7 +353,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         &mut self,
         device: Resource<Device>,
     ) -> wasmtime::Result<Resource<webgpu::GpuAdapterInfo>> {
-        let adapter_id = self.table().get(&device)?.adapter;
+        let adapter_id = *self.table().get(&device)?.adapter;
         let info = self.instance().adapter_get_info(adapter_id);
         let info = self.table().push(info)?;
         Ok(info)
@@ -440,11 +432,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
         Ok(render_pipeline)
     }
 
-    fn queue(
-        &mut self,
-        device: Resource<Device>,
-    ) -> wasmtime::Result<Resource<wgpu_core::id::QueueId>> {
-        let queue = self.table().get(&device)?.queue;
+    fn queue(&mut self, device: Resource<Device>) -> wasmtime::Result<Resource<webgpu::GpuQueue>> {
+        let queue = Arc::clone(&self.table().get(&device)?.queue);
         Ok(self.table().push(queue)?)
     }
 
@@ -764,6 +753,12 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
     fn drop(&mut self, device: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
         let device = self.table().delete(device)?;
         self.instance().device_drop(device.device);
+        if let Some(adapter_id) = Arc::into_inner(device.adapter) {
+            self.instance().adapter_drop(adapter_id);
+        }
+        if let Some(queue_id) = Arc::into_inner(device.queue) {
+            self.instance().queue_drop(queue_id);
+        }
         Ok(())
     }
 }
@@ -987,13 +982,13 @@ impl<T: WasiWebGpuView> webgpu::HostGpuRenderPipeline for WasiWebGpuImpl<T> {
 impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
     fn request_device(
         &mut self,
-        adapter: Resource<wgpu_core::id::AdapterId>,
+        adapter: Resource<webgpu::GpuAdapter>,
         descriptor: Option<webgpu::GpuDeviceDescriptor>,
     ) -> wasmtime::Result<Result<Resource<webgpu::GpuDevice>, webgpu::RequestDeviceError>> {
-        let adapter_id = *self.table().get(&adapter)?;
+        let adapter = Arc::clone(self.table().get(&adapter)?);
 
         let device_queue_result = self.instance().adapter_request_device(
-            adapter_id,
+            *adapter,
             &descriptor
                 .map(|d| d.to_core(self.table()))
                 .unwrap_or(wgpu_types::DeviceDescriptor::default()),
@@ -1005,8 +1000,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
             Ok((device_id, queue_id)) => {
                 let device = self.table().push(Device {
                     device: device_id,
-                    queue: queue_id,
-                    adapter: adapter_id,
+                    queue: Arc::new(queue_id),
+                    adapter,
                     error_handler: Arc::new(ErrorHandler::default()),
                 })?;
                 Ok(device)
@@ -1049,41 +1044,43 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
 
     fn features(
         &mut self,
-        adapter: wasmtime::component::Resource<wgpu_core::id::AdapterId>,
-    ) -> wasmtime::Result<wasmtime::component::Resource<webgpu::GpuSupportedFeatures>> {
-        let adapter = *self.table().get(&adapter)?;
+        adapter: Resource<webgpu::GpuAdapter>,
+    ) -> wasmtime::Result<Resource<webgpu::GpuSupportedFeatures>> {
+        let adapter = *(*self.table().get(&adapter)?);
         let features = self.instance().adapter_features(adapter);
         Ok(self.table().push(features)?)
     }
 
     fn limits(
         &mut self,
-        adapter: Resource<wgpu_core::id::AdapterId>,
+        adapter: Resource<webgpu::GpuAdapter>,
     ) -> wasmtime::Result<Resource<webgpu::GpuSupportedLimits>> {
-        let adapter = *self.table().get(&adapter)?;
+        let adapter = *(*self.table().get(&adapter)?);
         let limits = self.instance().adapter_limits(adapter);
         Ok(self.table().push(limits)?)
     }
 
     fn is_fallback_adapter(
         &mut self,
-        _self_: wasmtime::component::Resource<wgpu_core::id::AdapterId>,
+        _self_: Resource<webgpu::GpuAdapter>,
     ) -> wasmtime::Result<bool> {
         todo!()
     }
 
     fn info(
         &mut self,
-        adapter: Resource<wgpu_core::id::AdapterId>,
+        adapter: Resource<webgpu::GpuAdapter>,
     ) -> wasmtime::Result<Resource<webgpu::GpuAdapterInfo>> {
-        let adapter_id = *self.table().get(&adapter)?;
+        let adapter_id = *(*self.table().get(&adapter)?);
         let info = self.instance().adapter_get_info(adapter_id);
         Ok(self.table().push(info)?)
     }
 
     fn drop(&mut self, adapter: Resource<webgpu::GpuAdapter>) -> wasmtime::Result<()> {
         let adapter_id = self.table().delete(adapter)?;
-        self.instance().adapter_drop(adapter_id);
+        if let Some(adapter_id) = Arc::into_inner(adapter_id) {
+            self.instance().adapter_drop(adapter_id);
+        }
         Ok(())
     }
 }
@@ -1091,14 +1088,14 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
 impl<T: WasiWebGpuView> webgpu::HostGpuQueue for WasiWebGpuImpl<T> {
     fn submit(
         &mut self,
-        queue: Resource<wgpu_core::id::QueueId>,
+        queue: Resource<webgpu::GpuQueue>,
         val: Vec<Resource<webgpu::GpuCommandBuffer>>,
     ) -> wasmtime::Result<()> {
         let command_buffers = val
             .into_iter()
             .map(|buffer| *self.table().get(&buffer).unwrap())
             .collect::<Vec<_>>();
-        let queue = self.table().get(&queue).copied()?;
+        let queue = *(*self.table().get(&queue)?);
         self.instance()
             .queue_submit(queue, &command_buffers)
             .unwrap();
@@ -1107,21 +1104,21 @@ impl<T: WasiWebGpuView> webgpu::HostGpuQueue for WasiWebGpuImpl<T> {
 
     fn on_submitted_work_done(
         &mut self,
-        _self_: Resource<wgpu_core::id::QueueId>,
+        _self_: Resource<webgpu::GpuQueue>,
     ) -> wasmtime::Result<()> {
         todo!()
     }
 
     fn write_buffer_with_copy(
         &mut self,
-        queue: Resource<wgpu_core::id::QueueId>,
+        queue: Resource<webgpu::GpuQueue>,
         buffer: Resource<webgpu::GpuBuffer>,
         buffer_offset: webgpu::GpuSize64,
         data: Vec<u8>,
         data_offset: Option<webgpu::GpuSize64>,
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<(), webgpu::WriteBufferError>> {
-        let queue = *self.table().get(&queue)?;
+        let queue = *(*self.table().get(&queue)?);
         let buffer_id = self.table().get(&buffer)?.buffer_id;
         let mut data = &data[..];
         if let Some(data_offset) = data_offset {
@@ -1139,13 +1136,13 @@ impl<T: WasiWebGpuView> webgpu::HostGpuQueue for WasiWebGpuImpl<T> {
 
     fn write_texture_with_copy(
         &mut self,
-        queue: Resource<wgpu_core::id::QueueId>,
+        queue: Resource<webgpu::GpuQueue>,
         destination: webgpu::GpuTexelCopyTextureInfo,
         data: Vec<u8>,
         data_layout: webgpu::GpuTexelCopyBufferLayout,
         size: webgpu::GpuExtent3D,
     ) -> wasmtime::Result<()> {
-        let queue = *self.table().get(&queue)?;
+        let queue = *(*self.table().get(&queue)?);
         self.instance().queue_write_texture(
             queue,
             &destination.to_core(self.table()),
@@ -1156,21 +1153,23 @@ impl<T: WasiWebGpuView> webgpu::HostGpuQueue for WasiWebGpuImpl<T> {
         Ok(())
     }
 
-    fn label(&mut self, _self_: Resource<wgpu_core::id::QueueId>) -> wasmtime::Result<String> {
+    fn label(&mut self, _self_: Resource<webgpu::GpuQueue>) -> wasmtime::Result<String> {
         todo!()
     }
 
     fn set_label(
         &mut self,
-        _self_: Resource<wgpu_core::id::QueueId>,
+        _self_: Resource<webgpu::GpuQueue>,
         _label: String,
     ) -> wasmtime::Result<()> {
         todo!()
     }
 
-    fn drop(&mut self, queue: Resource<wgpu_core::id::QueueId>) -> wasmtime::Result<()> {
+    fn drop(&mut self, queue: Resource<webgpu::GpuQueue>) -> wasmtime::Result<()> {
         let queue_id = self.table().delete(queue)?;
-        self.instance().queue_drop(queue_id);
+        if let Some(queue_id) = Arc::into_inner(queue_id) {
+            self.instance().queue_drop(queue_id);
+        }
         Ok(())
     }
 }
@@ -2680,7 +2679,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
         &mut self,
         _self_: Resource<webgpu::Gpu>,
         options: Option<webgpu::GpuRequestAdapterOptions>,
-    ) -> wasmtime::Result<Option<Resource<wgpu_core::id::AdapterId>>> {
+    ) -> wasmtime::Result<Option<Resource<webgpu::GpuAdapter>>> {
         let adapter = self.instance().request_adapter(
             &options
                 .map(|o| o.to_core(self.table()))
@@ -2691,7 +2690,10 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
         if let Err(wgpu_types::RequestAdapterError::NotFound { .. }) = &adapter {
             return Ok(None);
         }
-        Ok(adapter.ok().map(|a| self.table().push(a).unwrap()))
+        let adapter = adapter
+            .ok()
+            .map(|a| self.table().push(Arc::new(a)).unwrap());
+        Ok(adapter)
     }
 
     fn get_preferred_canvas_format(

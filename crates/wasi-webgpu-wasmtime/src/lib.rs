@@ -57,9 +57,9 @@ wasmtime::component::bindgen!({
     },
     with: {
         "wasi:io": wasmtime_wasi_io::bindings::wasi::io,
-        "wasi:webgpu/webgpu.gpu-adapter": wgpu_core::id::AdapterId,
+        "wasi:webgpu/webgpu.gpu-adapter": wrapper_types::Adapter,
         "wasi:webgpu/webgpu.gpu-device": wrapper_types::Device,
-        "wasi:webgpu/webgpu.gpu-queue": wgpu_core::id::QueueId,
+        "wasi:webgpu/webgpu.gpu-queue": wrapper_types::Queue,
         "wasi:webgpu/webgpu.gpu-command-encoder": wrapper_types::CommandEncoder,
         "wasi:webgpu/webgpu.gpu-render-pass-encoder": wrapper_types::RenderPassEncoder,
         "wasi:webgpu/webgpu.gpu-compute-pass-encoder": wrapper_types::ComputePassEncoder,
@@ -161,8 +161,6 @@ where
     create_surface: CS,
     device_id: wgpu_core::id::DeviceId,
     error_handler: Arc<wrapper_types::ErrorHandler>,
-    // Might be needed one day for surface configuration.
-    _adapter_id: wgpu_core::id::AdapterId,
     surface_id: Option<wgpu_core::id::SurfaceId>,
 }
 
