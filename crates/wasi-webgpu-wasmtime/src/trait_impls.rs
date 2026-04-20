@@ -2826,14 +2826,14 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
             }
             "bgra8unorm-storage" => features.contains(wgpu_types::Features::BGRA8UNORM_STORAGE),
             "float32-filterable" => features.contains(wgpu_types::Features::FLOAT32_FILTERABLE),
-            // "float32-blendable" => {
-            //     features.contains(wgpu_types::Features::FLOAT32_BLENDABLE)
-            // }
+            "float32-blendable" => {
+                features.contains(wgpu_types::Features::FLOAT32_BLENDABLE)
+            }
             "clip-distances" => features.contains(wgpu_types::Features::CLIP_DISTANCES),
             "dual-source-blending" => features.contains(wgpu_types::Features::DUAL_SOURCE_BLENDING),
-            // "subgroups" => {
-            //     features.contains(wgpu_types::Features::SUBGROUPS)
-            // }
+            "subgroups" => {
+                features.contains(wgpu_types::Features::SUBGROUPS)
+            }
             // "texture-formats-tier1" => {
             //     features.contains(wgpu_types::Features::TEXTURE_FORMATS_TIER1)
             // }
