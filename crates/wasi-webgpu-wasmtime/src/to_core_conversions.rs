@@ -715,54 +715,69 @@ impl<'a> ToCore<wgpu_types::DeviceDescriptor<wgpu_core::Label<'a>>>
 
 impl ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::Features {
-        let features_webgpu = self
-            .into_iter()
-            .map(|feature| match feature {
-                webgpu::GpuFeatureName::DepthClipControl => {
-                    wgpu_types::FeaturesWebGPU::DEPTH_CLIP_CONTROL
+        let (features_webgpu, features_wgpu) = self.into_iter().fold(
+            (wgpu_types::FeaturesWebGPU::empty(), wgpu_types::FeaturesWGPU::empty()),
+            |(mut webgpu, mut wgpu_native), feature| {
+                match feature {
+                    webgpu::GpuFeatureName::DepthClipControl => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::DEPTH_CLIP_CONTROL;
+                    }
+                    webgpu::GpuFeatureName::Depth32floatStencil8 => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::DEPTH32FLOAT_STENCIL8;
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionBc => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC;
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionBcSliced3d => {
+                        // Not yet in FeaturesWebGPU — skip
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionEtc2 => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ETC2;
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionAstc => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ASTC;
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionAstcSliced3d => {
+                        // Not yet in FeaturesWebGPU — skip
+                    }
+                    webgpu::GpuFeatureName::TimestampQuery => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::TIMESTAMP_QUERY;
+                    }
+                    webgpu::GpuFeatureName::IndirectFirstInstance => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::INDIRECT_FIRST_INSTANCE;
+                    }
+                    webgpu::GpuFeatureName::ShaderF16 => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::SHADER_F16;
+                    }
+                    webgpu::GpuFeatureName::Rg11b10ufloatRenderable => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::RG11B10UFLOAT_RENDERABLE;
+                    }
+                    webgpu::GpuFeatureName::Bgra8unormStorage => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::BGRA8UNORM_STORAGE;
+                    }
+                    webgpu::GpuFeatureName::Float32Filterable => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::FLOAT32_FILTERABLE;
+                    }
+                    webgpu::GpuFeatureName::Float32Blendable => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::FLOAT32_BLENDABLE;
+                    }
+                    webgpu::GpuFeatureName::ClipDistances => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::CLIP_DISTANCES;
+                    }
+                    webgpu::GpuFeatureName::DualSourceBlending => {
+                        webgpu |= wgpu_types::FeaturesWebGPU::DUAL_SOURCE_BLENDING;
+                    }
+                    webgpu::GpuFeatureName::Subgroups => {
+                        // Subgroups is a native wgpu feature, not a WebGPU feature
+                        wgpu_native |= wgpu_types::FeaturesWGPU::SUBGROUP;
+                    }
                 }
-                webgpu::GpuFeatureName::Depth32floatStencil8 => {
-                    wgpu_types::FeaturesWebGPU::DEPTH32FLOAT_STENCIL8
-                }
-                webgpu::GpuFeatureName::TextureCompressionBc => {
-                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC
-                }
-                webgpu::GpuFeatureName::TextureCompressionBcSliced3d => todo!(), // wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC_SLICED_3D,
-                webgpu::GpuFeatureName::TextureCompressionEtc2 => {
-                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ETC2
-                }
-                webgpu::GpuFeatureName::TextureCompressionAstc => {
-                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ASTC
-                }
-                webgpu::GpuFeatureName::TextureCompressionAstcSliced3d => todo!(),
-                webgpu::GpuFeatureName::TimestampQuery => {
-                    wgpu_types::FeaturesWebGPU::TIMESTAMP_QUERY
-                }
-                webgpu::GpuFeatureName::IndirectFirstInstance => {
-                    wgpu_types::FeaturesWebGPU::INDIRECT_FIRST_INSTANCE
-                }
-                webgpu::GpuFeatureName::ShaderF16 => wgpu_types::FeaturesWebGPU::SHADER_F16,
-                webgpu::GpuFeatureName::Rg11b10ufloatRenderable => {
-                    wgpu_types::FeaturesWebGPU::RG11B10UFLOAT_RENDERABLE
-                }
-                webgpu::GpuFeatureName::Bgra8unormStorage => {
-                    wgpu_types::FeaturesWebGPU::BGRA8UNORM_STORAGE
-                }
-                webgpu::GpuFeatureName::Float32Filterable => {
-                    wgpu_types::FeaturesWebGPU::FLOAT32_FILTERABLE
-                }
-                webgpu::GpuFeatureName::Float32Blendable => todo!(),
-                webgpu::GpuFeatureName::ClipDistances => todo!(), // wgpu_types::FeaturesWebGPU::CLIP_DISTANCES,
-                webgpu::GpuFeatureName::DualSourceBlending => {
-                    wgpu_types::FeaturesWebGPU::DUAL_SOURCE_BLENDING
-                }
-                webgpu::GpuFeatureName::Subgroups => todo!(),
-            })
-            .collect();
+                (webgpu, wgpu_native)
+            },
+        );
         wgpu_types::Features {
             features_webgpu,
-            // Don't enable any native features
-            features_wgpu: wgpu_types::FeaturesWGPU::default(),
+            features_wgpu,
         }
     }
 }

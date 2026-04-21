@@ -628,6 +628,9 @@ impl<T: WasiWebGpuView> webgpu::HostGpuDevice for WasiWebGpuImpl<T> {
             None,
         );
 
+        if let Some(ref e) = err {
+            eprintln!("[wasi-webgpu] create_compute_pipeline error: {e}");
+        }
         error_handler.handle_possible_error(err);
 
         Ok(self.table().push(ComputePipeline {
@@ -987,11 +990,12 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
     ) -> wasmtime::Result<Result<Resource<webgpu::GpuDevice>, webgpu::RequestDeviceError>> {
         let adapter = Arc::clone(self.table().get(&adapter)?);
 
+        let device_descriptor = descriptor
+            .map(|d| d.to_core(self.table()))
+            .unwrap_or(wgpu_types::DeviceDescriptor::default());
         let device_queue_result = self.instance().adapter_request_device(
             *adapter,
-            &descriptor
-                .map(|d| d.to_core(self.table()))
-                .unwrap_or(wgpu_types::DeviceDescriptor::default()),
+            &device_descriptor,
             None,
             None,
         );
@@ -1096,9 +1100,9 @@ impl<T: WasiWebGpuView> webgpu::HostGpuQueue for WasiWebGpuImpl<T> {
             .map(|buffer| *self.table().get(&buffer).unwrap())
             .collect::<Vec<_>>();
         let queue = *(*self.table().get(&queue)?);
-        self.instance()
-            .queue_submit(queue, &command_buffers)
-            .unwrap();
+        if let Err(e) = self.instance().queue_submit(queue, &command_buffers) {
+            eprintln!("[wasi-webgpu] queue_submit error: {e:?}");
+        }
         Ok(())
     }
 
@@ -2832,7 +2836,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
             "clip-distances" => features.contains(wgpu_types::Features::CLIP_DISTANCES),
             "dual-source-blending" => features.contains(wgpu_types::Features::DUAL_SOURCE_BLENDING),
             "subgroups" => {
-                features.contains(wgpu_types::Features::SUBGROUPS)
+                // Naga doesn't implement WGSL `enable subgroups` yet (wgpu#5555)
+                false
             }
             // "texture-formats-tier1" => {
             //     features.contains(wgpu_types::Features::TEXTURE_FORMATS_TIER1)
@@ -2900,7 +2905,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedLimits for WasiWebGpuImpl<T> {
         &mut self,
         _limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        // Not in wgpu Limits; return WebGPU spec default
+        Ok(24)
     }
 
     fn max_bindings_per_bind_group(
@@ -3035,7 +3041,8 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedLimits for WasiWebGpuImpl<T> {
         &mut self,
         _limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        // Not in wgpu Limits; return WebGPU spec default
+        Ok(16)
     }
 
     fn max_color_attachments(
