@@ -1062,9 +1062,19 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
 
     fn is_fallback_adapter(
         &mut self,
-        _self_: Resource<webgpu::GpuAdapter>,
+        adapter: Resource<webgpu::GpuAdapter>,
     ) -> wasmtime::Result<bool> {
-        todo!()
+        let adapter = *(*self.table().get(&adapter)?);
+        let device_type = self.instance().adapter_get_info(adapter).device_type;
+        // wgpu in browser treats only cpu as fallback
+        let is_fallback = match device_type {
+            wgpu_types::DeviceType::IntegratedGpu
+            | wgpu_types::DeviceType::DiscreteGpu
+            | wgpu_types::DeviceType::VirtualGpu
+            | wgpu_types::DeviceType::Other => false,
+            wgpu_types::DeviceType::Cpu => true,
+        };
+        Ok(is_fallback)
     }
 
     fn info(
