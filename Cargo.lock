@@ -3606,6 +3606,7 @@ dependencies = [
  "async-broadcast",
  "callback-future",
  "futures",
+ "log",
  "raw-window-handle",
  "shared",
  "wasi-graphics-context-wasmtime",

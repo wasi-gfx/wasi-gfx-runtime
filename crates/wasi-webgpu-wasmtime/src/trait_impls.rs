@@ -2794,9 +2794,11 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
         let features = self.table().get(&features)?;
         // TODO: disable the ones not present in the wgpu yet.
         Ok(match query.as_str() {
-            // "core-features-and-limits" => {
-            //     features.contains(wgpu_types::Features::CORE_FEATURES_AND_LIMITS)
-            // }
+            "core-features-and-limits" => {
+                // TODO: enable once wgpu does
+                // features.contains(wgpu_types::Features::CORE_FEATURES_AND_LIMITS)
+                false
+            }
             "depth-clip-control" => features.contains(wgpu_types::Features::DEPTH_CLIP_CONTROL),
             "depth32float-stencil8" => {
                 features.contains(wgpu_types::Features::DEPTH32FLOAT_STENCIL8)
@@ -2829,20 +2831,31 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
             "float32-blendable" => features.contains(wgpu_types::Features::FLOAT32_BLENDABLE),
             "clip-distances" => features.contains(wgpu_types::Features::CLIP_DISTANCES),
             "dual-source-blending" => features.contains(wgpu_types::Features::DUAL_SOURCE_BLENDING),
-            // "subgroups" => {
-            //     features.contains(wgpu_types::Features::SUBGROUPS)
-            // }
-            // "texture-formats-tier1" => {
-            //     features.contains(wgpu_types::Features::TEXTURE_FORMATS_TIER1)
-            // }
-            // "texture-formats-tier2" => {
-            //     features.contains(wgpu_types::Features::TEXTURE_FORMATS_TIER2)
-            // }
+            "subgroups" => {
+                // TODO: enable once wgpu does
+                // features.contains(wgpu_types::Features::SUBGROUPS)
+                false
+            }
+            "texture-formats-tier1" => {
+                // TODO: enable once wgpu does
+                // features.contains(wgpu_types::Features::TEXTURE_FORMATS_TIER1)
+                false
+            }
+            "texture-formats-tier2" => {
+                // TODO: enable once wgpu does
+                // features.contains(wgpu_types::Features::TEXTURE_FORMATS_TIER2)
+                false
+            }
             "primitive-index" => features.contains(wgpu_types::Features::PRIMITIVE_INDEX),
-            // "texture-component-swizzle" => {
-            //     features.contains(wgpu_types::Features::TEXTURE_COMPONENT_SWIZZLE)
-            // }
-            _ => false,
+            "texture-component-swizzle" => {
+                // TODO: enable once wgpu does
+                // features.contains(wgpu_types::Features::TEXTURE_COMPONENT_SWIZZLE)
+                false
+            }
+            name => {
+                log::warn!("unknown feature name: {}", name);
+                false
+            }
         })
     }
 

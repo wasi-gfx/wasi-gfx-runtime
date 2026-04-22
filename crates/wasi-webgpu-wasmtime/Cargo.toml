@@ -15,6 +15,7 @@ callback-future.workspace = true
 futures.workspace = true
 shared = { path = "../shared" }
 async-broadcast.workspace = true
+log.workspace = true
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 workspace = true
