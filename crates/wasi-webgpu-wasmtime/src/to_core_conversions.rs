@@ -727,7 +727,9 @@ impl ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
                 webgpu::GpuFeatureName::TextureCompressionBc => {
                     wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC
                 }
-                webgpu::GpuFeatureName::TextureCompressionBcSliced3d => todo!(), // wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC_SLICED_3D,
+                webgpu::GpuFeatureName::TextureCompressionBcSliced3d => {
+                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC_SLICED_3D
+                }
                 webgpu::GpuFeatureName::TextureCompressionEtc2 => {
                     wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ETC2
                 }
@@ -751,18 +753,24 @@ impl ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
                 webgpu::GpuFeatureName::Float32Filterable => {
                     wgpu_types::FeaturesWebGPU::FLOAT32_FILTERABLE
                 }
-                webgpu::GpuFeatureName::Float32Blendable => todo!(),
-                webgpu::GpuFeatureName::ClipDistances => todo!(), // wgpu_types::FeaturesWebGPU::CLIP_DISTANCES,
+                webgpu::GpuFeatureName::Float32Blendable => {
+                    wgpu_types::FeaturesWebGPU::FLOAT32_BLENDABLE
+                }
+                webgpu::GpuFeatureName::ClipDistances => wgpu_types::FeaturesWebGPU::CLIP_DISTANCES,
                 webgpu::GpuFeatureName::DualSourceBlending => {
                     wgpu_types::FeaturesWebGPU::DUAL_SOURCE_BLENDING
                 }
-                webgpu::GpuFeatureName::Subgroups => todo!(),
+                webgpu::GpuFeatureName::Subgroups => {
+                    todo!()
+                    // TODO: enable once wgpu does
+                    // wgpu_types::FeaturesWebGPU::SUBGROUPS
+                }
             })
             .collect();
         wgpu_types::Features {
             features_webgpu,
             // Don't enable any native features
-            features_wgpu: wgpu_types::FeaturesWGPU::default(),
+            features_wgpu: wgpu_types::FeaturesWGPU::empty(),
         }
     }
 }
