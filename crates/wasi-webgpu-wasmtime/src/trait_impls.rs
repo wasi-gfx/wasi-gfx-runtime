@@ -1067,6 +1067,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuAdapter for WasiWebGpuImpl<T> {
         let adapter = *(*self.table().get(&adapter)?);
         let device_type = self.instance().adapter_get_info(adapter).device_type;
         // wgpu in browser treats only cpu as fallback
+        // https://github.com/gfx-rs/wgpu/blob/0d32f7e75604feeff976445576c234da377fa3df/wgpu/src/backend/webgpu.rs#L889-L893
         let is_fallback = match device_type {
             wgpu_types::DeviceType::IntegratedGpu
             | wgpu_types::DeviceType::DiscreteGpu
