@@ -271,7 +271,7 @@ impl ToCore<wgpu_types::PrimitiveState> for webgpu::GpuPrimitiveState {
                 .front_face
                 .map(|x| x.into())
                 .unwrap_or(wgpu_types::FrontFace::Ccw),
-            cull_mode: self.cull_mode.map(|cm| cm.into()),
+            cull_mode: self.cull_mode.and_then(|cm| cm.into()),
             unclipped_depth: self.unclipped_depth.unwrap_or(false),
             // polygon_mode and conservative are not present in WebGPU
             polygon_mode: wgpu_types::PolygonMode::Fill,

@@ -414,12 +414,12 @@ impl From<webgpu::GpuColor> for wgpu_types::Color {
     }
 }
 
-impl From<webgpu::GpuCullMode> for wgpu_types::Face {
+impl From<webgpu::GpuCullMode> for Option<wgpu_types::Face> {
     fn from(value: webgpu::GpuCullMode) -> Self {
         match value {
-            webgpu::GpuCullMode::None => todo!(),
-            webgpu::GpuCullMode::Front => wgpu_types::Face::Front,
-            webgpu::GpuCullMode::Back => wgpu_types::Face::Back,
+            webgpu::GpuCullMode::None => None,
+            webgpu::GpuCullMode::Front => Some(wgpu_types::Face::Front),
+            webgpu::GpuCullMode::Back => Some(wgpu_types::Face::Back),
         }
     }
 }
