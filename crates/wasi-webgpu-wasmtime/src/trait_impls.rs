@@ -2826,9 +2826,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
             }
             "bgra8unorm-storage" => features.contains(wgpu_types::Features::BGRA8UNORM_STORAGE),
             "float32-filterable" => features.contains(wgpu_types::Features::FLOAT32_FILTERABLE),
-            // "float32-blendable" => {
-            //     features.contains(wgpu_types::Features::FLOAT32_BLENDABLE)
-            // }
+            "float32-blendable" => features.contains(wgpu_types::Features::FLOAT32_BLENDABLE),
             "clip-distances" => features.contains(wgpu_types::Features::CLIP_DISTANCES),
             "dual-source-blending" => features.contains(wgpu_types::Features::DUAL_SOURCE_BLENDING),
             // "subgroups" => {
@@ -2840,9 +2838,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedFeatures for WasiWebGpuImpl<T> {
             // "texture-formats-tier2" => {
             //     features.contains(wgpu_types::Features::TEXTURE_FORMATS_TIER2)
             // }
-            // "primitive-index" => {
-            //     features.contains(wgpu_types::Features::PRIMITIVE_INDEX)
-            // }
+            "primitive-index" => features.contains(wgpu_types::Features::PRIMITIVE_INDEX),
             // "texture-component-swizzle" => {
             //     features.contains(wgpu_types::Features::TEXTURE_COMPONENT_SWIZZLE)
             // }
@@ -2972,7 +2968,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedLimits for WasiWebGpuImpl<T> {
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u64> {
         let limits = self.table().get(&limits)?;
-        Ok(limits.max_uniform_buffer_binding_size as u64)
+        Ok(limits.max_uniform_buffer_binding_size)
     }
 
     fn max_storage_buffer_binding_size(
@@ -2980,7 +2976,7 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedLimits for WasiWebGpuImpl<T> {
         limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u64> {
         let limits = self.table().get(&limits)?;
-        Ok(limits.max_storage_buffer_binding_size as u64)
+        Ok(limits.max_storage_buffer_binding_size)
     }
 
     fn min_uniform_buffer_offset_alignment(
@@ -3033,9 +3029,10 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedLimits for WasiWebGpuImpl<T> {
 
     fn max_inter_stage_shader_variables(
         &mut self,
-        _limits: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        let limits = self.table().get(&limits)?;
+        Ok(limits.max_inter_stage_shader_variables)
     }
 
     fn max_color_attachments(
