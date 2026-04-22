@@ -10,6 +10,7 @@ use futures::executor::block_on;
 use shared::Listener;
 use wasi_graphics_context_wasmtime::{Context, DisplayApi};
 use wasmtime::component::Resource;
+use wasmtime::error::bail;
 use wasmtime_wasi_io::IoView;
 
 use crate::{
