@@ -2909,7 +2909,10 @@ impl<T: WasiWebGpuView> webgpu::HostGpuSupportedLimits for WasiWebGpuImpl<T> {
         &mut self,
         _limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        todo!()
+        // Not present in wgpu yet so rely on spec default
+        // https://www.w3.org/TR/webgpu/#dom-supported-limits-maxbindgroupsplusvertexbuffers
+        // TODO: take value from wgpu once implemented there
+        Ok(24)
     }
 
     fn max_bindings_per_bind_group(
