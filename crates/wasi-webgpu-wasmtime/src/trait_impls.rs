@@ -2697,13 +2697,21 @@ impl<T: WasiWebGpuView> webgpu::HostGpu for WasiWebGpuImpl<T> {
             wgpu_types::Backends::all(),
             None,
         );
-        if let Err(wgpu_types::RequestAdapterError::NotFound { .. }) = &adapter {
-            return Ok(None);
+        match adapter {
+            Ok(adapter) => {
+                let adapter = Arc::new(adapter);
+                let adapter = self.table().push(adapter).unwrap();
+                Ok(Some(adapter))
+            }
+            Err(wgpu_types::RequestAdapterError::NotFound { .. }) => {
+                log::warn!("GPU adapter not found");
+                Ok(None)
+            }
+            Err(e) => {
+                log::warn!("Failed to get gpu adapter: {e:?}");
+                bail!("Error when trying to get GPU adapter");
+            }
         }
-        let adapter = adapter
-            .ok()
-            .map(|a| self.table().push(Arc::new(a)).unwrap());
-        Ok(adapter)
     }
 
     fn get_preferred_canvas_format(
