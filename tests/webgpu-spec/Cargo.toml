@@ -1,0 +1,25 @@
+[package]
+name = "cts"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[test]]
+name = "host"
+harness = false
+path = "host/host.rs"
+
+[dependencies]
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+wasmtime-wasi-io.workspace = true
+wasmtime-wasi-http.workspace = true
+futures = { workspace = true, features = ["executor"] }
+serde.workspace = true
+serde_json.workspace = true
+indicatif.workspace = true
+colored.workspace = true
+wasi-graphics-context-wasmtime = { path = "../../crates/wasi-graphics-context-wasmtime" }
+wasi-surface-wasmtime = { path = "../../crates/wasi-surface-wasmtime", features = ["winit"]}
+wasi-frame-buffer-wasmtime = { path = "../../crates/wasi-frame-buffer-wasmtime" }
+wasi-webgpu-wasmtime = { path = "../../crates/wasi-webgpu-wasmtime" }
