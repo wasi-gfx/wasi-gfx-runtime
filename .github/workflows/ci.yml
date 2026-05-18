@@ -79,7 +79,7 @@ jobs:
       - name: Install Mesa software rasterizer (lavapipe) and Xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools xvfb
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools xvfb libxkbcommon-x11-0
 
       - name: Run CTS
         run: xvfb-run -a cargo test -p cts
