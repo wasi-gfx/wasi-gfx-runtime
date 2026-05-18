@@ -1,0 +1,3 @@
+[submodule "tests/webgpu-spec/js-guest/cts"]
+	path = tests/webgpu-spec/js-guest/cts
+	url = https://github.com/gpuweb/cts.git

@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>graphtime results</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --fg: #222;
+    --muted: #666;
+    --border: #ddd;
+    --pass: #2e7d32;
+    --fail: #ef6c00;
+    --guest-trap: #f9a825;
+    --runtime-trap: #c62828;
+    --skip: #607d8b;
+    --hover: #f0f0f0;
+  }
+  body { font: 14px system-ui, sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 0; }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: white; position: sticky; top: 0; z-index: 2; }
+  header h1 { margin: 0 0 8px; font-size: 18px; }
+  header .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header input[type=text] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; min-width: 280px; font: inherit; }
+  header label.status-toggle { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: white; color: white; }
+  header label.status-toggle input[type=checkbox] { accent-color: white; }
+  header label.status-toggle:has(input:disabled) { cursor: wait; opacity: 0.6; }
+  header label.status-toggle.pass { background: var(--pass); border-color: var(--pass); }
+  header label.status-toggle.failed { background: var(--fail); border-color: var(--fail); }
+  header label.status-toggle.guest-trap { background: var(--guest-trap); border-color: var(--guest-trap); color: #222; }
+  header label.status-toggle.runtime-trap { background: var(--runtime-trap); border-color: var(--runtime-trap); }
+  header label.status-toggle.skip { background: var(--skip); border-color: var(--skip); }
+  main { display: grid; grid-template-columns: 320px 1fr; gap: 0; align-items: start; }
+  aside { padding: 16px 20px; border-right: 1px solid var(--border); background: white; }
+  aside h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; }
+  aside .totals { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin-bottom: 24px; }
+  aside .totals .total-label { color: var(--muted); }
+  aside .totals .total-value { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  section.tests { padding: 16px 20px; }
+  details.test { background: white; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 8px; }
+  details.test > summary { padding: 8px 12px; cursor: pointer; display: flex; gap: 12px; align-items: center; list-style: none; }
+  details.test > summary::-webkit-details-marker { display: none; }
+  details.test > summary::before { content: "▶"; font-size: 10px; color: var(--muted); transition: transform 0.1s; }
+  details[open].test > summary::before { transform: rotate(90deg); }
+  details.test > summary .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase; color: white; min-width: 96px; text-align: center; }
+  details.test > summary .badge.pass { background: var(--pass); }
+  details.test > summary .badge.failed { background: var(--fail); }
+  details.test > summary .badge.guest-trap { background: var(--guest-trap); color: #222; }
+  details.test > summary .badge.runtime-trap { background: var(--runtime-trap); }
+  details.test > summary .badge.skip { background: var(--skip); }
+  details.test > summary .name { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-word; flex: 1; }
+  details.test > summary .duration { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+  details.test .body { padding: 0 12px 12px 36px; }
+  details.test .body .log { margin-bottom: 8px; padding: 8px; background: #f7f7f7; border-radius: 3px; font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+  details.test .body .log .stack { color: var(--muted); margin-top: 4px; }
+  details.test .body .log.guest-trap { background: #fff8e1; color: #5d4037; }
+  details.test .body .log.runtime-trap { background: #ffebee; color: var(--runtime-trap); }
+  details.test .body .log.skip { background: #eceff1; color: var(--skip); }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+  .file-prompt { padding: 40px; text-align: center; }
+  .file-prompt input { font: inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>graphtime results</h1>
+  <div class="controls">
+    <input type="text" id="search" placeholder="filter test names..." />
+    <select id="sort" title="Sort tests">
+      <option value="default">Sort: default</option>
+      <option value="slow">Slowest first</option>
+      <option value="fast">Fastest first</option>
+    </select>
+    <label class="status-toggle pass"><input type="checkbox" data-status="pass" checked /> pass</label>
+    <label class="status-toggle failed"><input type="checkbox" data-status="failed" checked /> failed</label>
+    <label class="status-toggle guest-trap"><input type="checkbox" data-status="guest-trap" checked /> guest-trap</label>
+    <label class="status-toggle runtime-trap"><input type="checkbox" data-status="runtime-trap" checked /> runtime-trap</label>
+    <label class="status-toggle skip"><input type="checkbox" data-status="skip" checked /> skip</label>
+  </div>
+</header>
+<main>
+  <aside>
+    <h2>Totals</h2>
+    <div class="totals" id="totals">
+      <div class="total-label">Passed</div><div class="total-value" id="t-pass">–</div>
+      <div class="total-label">Failed</div><div class="total-value" id="t-failed">–</div>
+      <div class="total-label">Guest trap</div><div class="total-value" id="t-guest-trap">–</div>
+      <div class="total-label">Runtime trap</div><div class="total-value" id="t-runtime-trap">–</div>
+      <div class="total-label">Skipped</div><div class="total-value" id="t-skip">–</div>
+      <div class="total-label">Total</div><div class="total-value" id="t-total">–</div>
+    </div>
+  </aside>
+  <section class="tests" id="tests">
+    <div class="file-prompt" id="empty">Load a <code>results.json</code> file to begin. Default location: same directory as this file.</div>
+  </section>
+</main>
+<script>
+  const STATUS_MAP = {
+    Pass: "pass",
+    Fail: "failed",
+    Skip: "skip",
+    GuestTrap: "guest-trap",
+    RuntimeTrap: "runtime-trap",
+  };
+
+  const state = {
+    results: [],
+    filter: document.getElementById("search").value,
+    statuses: new Set(
+      [...document.querySelectorAll(".status-toggle input")]
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.status)
+    ),
+    sort: document.getElementById("sort").value,
+  };
+
+  function durationToMs(d) {
+    if (typeof d === "number") return d;
+    if (d && typeof d === "object") {
+      if (typeof d.secs === "number" || typeof d.nanos === "number") {
+        return (d.secs || 0) * 1000 + (d.nanos || 0) / 1e6;
+      }
+    }
+    return null;
+  }
+
+  function normalizeRecord(raw) {
+    return {
+      name: raw.name,
+      durationMs: durationToMs(raw.duration),
+      status: STATUS_MAP[raw.status] ?? "failed",
+      logs: Array.isArray(raw.logs) ? raw.logs : [],
+    };
+  }
+
+  function loadJson(json) {
+    const raw = Array.isArray(json) ? json : (json.results || []);
+    state.results = raw.map(normalizeRecord);
+    render();
+  }
+
+  function render() {
+    renderTotals();
+    renderTests();
+  }
+
+  function renderTotals() {
+    const counts = { pass: 0, failed: 0, "guest-trap": 0, "runtime-trap": 0, skip: 0 };
+    for (const r of state.results) counts[r.status] = (counts[r.status] || 0) + 1;
+    document.getElementById("t-pass").textContent = counts.pass;
+    document.getElementById("t-failed").textContent = counts.failed;
+    document.getElementById("t-guest-trap").textContent = counts["guest-trap"];
+    document.getElementById("t-runtime-trap").textContent = counts["runtime-trap"];
+    document.getElementById("t-skip").textContent = counts.skip;
+    document.getElementById("t-total").textContent = state.results.length;
+  }
+
+  function renderTests() {
+    const container = document.getElementById("tests");
+    container.innerHTML = "";
+    const filterText = state.filter.toLowerCase();
+    const filtered = state.results.filter(r => {
+      if (!state.statuses.has(r.status)) return false;
+      if (filterText && !r.name.toLowerCase().includes(filterText)) return false;
+      return true;
+    });
+    if (state.sort !== "default") {
+      const dur = r => (typeof r.durationMs === "number" ? r.durationMs : -Infinity);
+      const dir = state.sort === "slow" ? -1 : 1;
+      filtered.sort((a, b) => dir * (dur(a) - dur(b)));
+    }
+    if (filtered.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = state.results.length === 0
+        ? "Load a results.json file to begin."
+        : "No tests match the current filter.";
+      container.appendChild(empty);
+      return;
+    }
+    for (const r of filtered) {
+      container.appendChild(renderTestNode(r));
+    }
+  }
+
+  const msFmt = new Intl.NumberFormat(undefined, { style: "unit", unit: "millisecond", maximumFractionDigits: 0 });
+  const sFmt = new Intl.NumberFormat(undefined, { style: "unit", unit: "second", maximumFractionDigits: 2 });
+  const durFmt = typeof Intl.DurationFormat === "function" ? new Intl.DurationFormat(undefined, { style: "narrow" }) : null;
+
+  function fmtDuration(ms) {
+    if (typeof ms !== "number" || !isFinite(ms)) return "";
+    if (ms < 1000) return msFmt.format(ms);
+    if (ms < 60000 || !durFmt) return sFmt.format(ms / 1000);
+    return durFmt.format({ minutes: Math.floor(ms / 60000), seconds: Math.floor((ms % 60000) / 1000) });
+  }
+
+  function renderTestNode(r) {
+    const det = document.createElement("details");
+    det.className = "test";
+    const sum = document.createElement("summary");
+    const badge = document.createElement("span");
+    badge.className = "badge " + r.status;
+    badge.textContent = r.status;
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = r.name;
+    sum.appendChild(badge);
+    sum.appendChild(name);
+    if (typeof r.durationMs === "number") {
+      const dur = document.createElement("span");
+      dur.className = "duration";
+      dur.textContent = fmtDuration(r.durationMs);
+      dur.title = r.durationMs.toFixed(3) + " ms";
+      sum.appendChild(dur);
+    }
+    det.appendChild(sum);
+
+    const body = document.createElement("div");
+    body.className = "body";
+
+    if (r.logs.length === 0) {
+      const empty = document.createElement("div");
+      empty.style.color = "var(--muted)";
+      empty.style.fontSize = "12px";
+      empty.textContent = "(no logs)";
+      body.appendChild(empty);
+    } else {
+      for (const log of r.logs) {
+        const div = document.createElement("div");
+        div.className = "log " + r.status;
+        const msg = document.createElement("div");
+        msg.textContent = log.message || "";
+        div.appendChild(msg);
+        if (log.stack) {
+          const st = document.createElement("div");
+          st.className = "stack";
+          st.textContent = log.stack;
+          div.appendChild(st);
+        }
+        body.appendChild(div);
+      }
+    }
+
+    det.appendChild(body);
+    return det;
+  }
+
+  document.getElementById("search").addEventListener("input", (e) => {
+    state.filter = e.target.value;
+    renderTests();
+  });
+
+  document.getElementById("sort").addEventListener("change", (e) => {
+    state.sort = e.target.value;
+    renderTests();
+  });
+
+  for (const cb of document.querySelectorAll(".status-toggle input")) {
+    cb.addEventListener("change", (e) => {
+      const s = e.target.dataset.status;
+      if (e.target.checked) state.statuses.add(s);
+      else state.statuses.delete(s);
+      e.target.disabled = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          renderTests();
+          requestAnimationFrame(() => {
+            e.target.disabled = false;
+          });
+        });
+      });
+    });
+  }
+
+  fetch("detailed.json").then(r => r.ok ? r.json() : Promise.reject()).then(loadJson).catch(() => {});
+</script>
+</body>
+</html>
