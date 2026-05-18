@@ -1,17 +1,21 @@
 use colored::Colorize;
+use core::time::Duration;
 use futures::executor::block_on;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
-use serde::{Serialize, Deserialize};
-use core::time::Duration;
-use std::{collections::HashSet, fs, sync::{Arc, Mutex}};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashSet,
+    fs,
+    sync::{Arc, Mutex},
+};
 use wasi_frame_buffer_wasmtime::WasiFrameBufferView;
 use wasi_graphics_context_wasmtime::WasiGraphicsContextView;
 use wasi_surface_wasmtime::{Surface, SurfaceDesc, WasiSurfaceView};
 use wasi_webgpu_wasmtime::WasiWebGpuView;
 use wasmtime::{
-    Config, Engine, Store,
     component::{Component, Linker},
     error::Context,
+    Config, Engine, Store,
 };
 
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
@@ -171,24 +175,26 @@ fn main() {
     let (_main_thread_loop, main_thread_proxy) =
         wasi_surface_wasmtime::create_wasi_winit_event_loop();
 
-    let component =
-        Component::from_file(&engine, TEST_BINARY).context("Test component file not found").unwrap();
+    let component = Component::from_file(&engine, TEST_BINARY)
+        .context("Test component file not found")
+        .unwrap();
 
     // std::thread::spawn(move || {
-        let records = block_on(run_all_tests(
-            &engine,
-            &linker,
-            &component,
-            main_thread_proxy,
-        ));
-        std::fs::write(
-            DETAILED_RESULTS,
-            serde_json::to_vec_pretty(&records).unwrap(),
-        ).unwrap();
+    let records = block_on(run_all_tests(
+        &engine,
+        &linker,
+        &component,
+        main_thread_proxy,
+    ));
+    std::fs::write(
+        DETAILED_RESULTS,
+        serde_json::to_vec_pretty(&records).unwrap(),
+    )
+    .unwrap();
 
-        check_results_against_historical(&records);
+    check_results_against_historical(&records);
 
-        print_serve_command();
+    print_serve_command();
 
     //     std::process::exit(1);
     // });
@@ -197,20 +203,25 @@ fn main() {
 }
 
 fn new_wgpu_instance() -> Arc<wasi_webgpu_wasmtime::reexports::wgpu_core::global::Global> {
-    Arc::new(wasi_webgpu_wasmtime::reexports::wgpu_core::global::Global::new(
-        "webgpu",
-        wasi_webgpu_wasmtime::reexports::wgpu_types::InstanceDescriptor {
-            backends: wasi_webgpu_wasmtime::reexports::wgpu_types::Backends::all(),
-            flags: wasi_webgpu_wasmtime::reexports::wgpu_types::InstanceFlags::from_build_config(),
-            backend_options: wasi_webgpu_wasmtime::reexports::wgpu_types::BackendOptions::default(),
-            memory_budget_thresholds: wasi_webgpu_wasmtime::reexports::wgpu_types::MemoryBudgetThresholds {
-                for_resource_creation: Some(90),
-                for_device_loss: Some(90),
+    Arc::new(
+        wasi_webgpu_wasmtime::reexports::wgpu_core::global::Global::new(
+            "webgpu",
+            wasi_webgpu_wasmtime::reexports::wgpu_types::InstanceDescriptor {
+                backends: wasi_webgpu_wasmtime::reexports::wgpu_types::Backends::all(),
+                flags:
+                    wasi_webgpu_wasmtime::reexports::wgpu_types::InstanceFlags::from_build_config(),
+                backend_options:
+                    wasi_webgpu_wasmtime::reexports::wgpu_types::BackendOptions::default(),
+                memory_budget_thresholds:
+                    wasi_webgpu_wasmtime::reexports::wgpu_types::MemoryBudgetThresholds {
+                        for_resource_creation: Some(90),
+                        for_device_loss: Some(90),
+                    },
+                display: None,
             },
-            display: None,
-        },
-        None,
-    ))
+            None,
+        ),
+    )
 }
 
 async fn run_all_tests(
@@ -227,7 +238,11 @@ async fn run_all_tests(
         let imports = Imports::instantiate_async(&mut store, component, linker)
             .await
             .unwrap();
-        imports.wasi_gfx_webgpu_cts_cts_tests().call_list_specs(&mut store).await.unwrap()
+        imports
+            .wasi_gfx_webgpu_cts_cts_tests()
+            .call_list_specs(&mut store)
+            .await
+            .unwrap()
     };
 
     let total_tests = tests.len();
@@ -277,7 +292,6 @@ async fn run_all_tests(
         "shader_execution_expression_call_builtin_fwidthFine",
         "shader_execution_expression_call_builtin_refract",
         "shader_execution_expression_call_builtin_distance",
-
         // segfaults
         "shader_execution_limits",
     ];
@@ -296,15 +310,21 @@ async fn run_all_tests(
         );
         let test_start_time = std::time::Instant::now();
 
-        let guest = Imports::instantiate_async(&mut store, component, linker).await.unwrap();
+        let guest = Imports::instantiate_async(&mut store, component, linker)
+            .await
+            .unwrap();
         let spec_name_cloned = spec_name.clone();
 
         *last_panic_message.lock().unwrap() = None;
         let join_result = std::thread::spawn(move || {
             block_on(async {
-                guest.wasi_gfx_webgpu_cts_cts_tests().call_run_spec_tests(&mut store, &spec_name_cloned).await
+                guest
+                    .wasi_gfx_webgpu_cts_cts_tests()
+                    .call_run_spec_tests(&mut store, &spec_name_cloned)
+                    .await
             })
-        }).join();
+        })
+        .join();
 
         let duration = test_start_time.elapsed();
 
@@ -316,7 +336,7 @@ async fn run_all_tests(
                     None => LogItem {
                         message: String::from("Panic message not saved"),
                         stack: None,
-                    }
+                    },
                 };
                 records.push(SpecResult {
                     name: spec_name.clone(),
@@ -328,7 +348,7 @@ async fn run_all_tests(
                 continue;
             }
         };
-        
+
         let guest_result: Result<_, String> = match wasmtime_result {
             Ok(res) => res,
             Err(err) => {
@@ -407,26 +427,41 @@ async fn run_all_tests(
 }
 
 fn check_results_against_historical(records: &Vec<SpecResult>) {
-    let new_high_level_results = records.iter().fold(HighLevelResults::default(), |mut acc, record| {
-        match record.status {
-            SpecResultStatus::Pass => acc.passing.push(record.name.clone()),
-            SpecResultStatus::Skip => acc.skipped.push(record.name.clone()),
-            SpecResultStatus::Fail | SpecResultStatus::RuntimeTrap | SpecResultStatus::GuestTrap => {
-                acc.failing.push(record.name.clone())
-            },
-        }
-        acc
-    });
+    let new_high_level_results =
+        records
+            .iter()
+            .fold(HighLevelResults::default(), |mut acc, record| {
+                match record.status {
+                    SpecResultStatus::Pass => acc.passing.push(record.name.clone()),
+                    SpecResultStatus::Skip => acc.skipped.push(record.name.clone()),
+                    SpecResultStatus::Fail
+                    | SpecResultStatus::RuntimeTrap
+                    | SpecResultStatus::GuestTrap => acc.failing.push(record.name.clone()),
+                }
+                acc
+            });
 
     let historical = fs::read_to_string(HISTORICAL_RESULTS).unwrap();
     let historical: HighLevelResults = serde_json::from_str(&historical).unwrap();
 
     let historical_passing_hash: HashSet<String> = HashSet::from_iter(historical.passing);
-    let newly_passing: Vec<&String> = new_high_level_results.passing.iter().filter(|r| !historical_passing_hash.contains(r.as_str())).collect();
+    let newly_passing: Vec<&String> = new_high_level_results
+        .passing
+        .iter()
+        .filter(|r| !historical_passing_hash.contains(r.as_str()))
+        .collect();
     let historical_skipped_hash: HashSet<String> = HashSet::from_iter(historical.skipped);
-    let newly_skipped: Vec<&String> = new_high_level_results.skipped.iter().filter(|r| !historical_skipped_hash.contains(r.as_str())).collect();
+    let newly_skipped: Vec<&String> = new_high_level_results
+        .skipped
+        .iter()
+        .filter(|r| !historical_skipped_hash.contains(r.as_str()))
+        .collect();
     let historical_failing_hash: HashSet<String> = HashSet::from_iter(historical.failing);
-    let newly_failing: Vec<&String> = new_high_level_results.failing.iter().filter(|r| !historical_failing_hash.contains(r.as_str())).collect();
+    let newly_failing: Vec<&String> = new_high_level_results
+        .failing
+        .iter()
+        .filter(|r| !historical_failing_hash.contains(r.as_str()))
+        .collect();
 
     if newly_passing.is_empty() && newly_skipped.is_empty() && newly_failing.is_empty() {
         println!("{}", "No changes since last run.".dimmed());
@@ -443,10 +478,18 @@ fn check_results_against_historical(records: &Vec<SpecResult>) {
     }
 
     if !newly_failing.is_empty() || !newly_skipped.is_empty() {
-        panic!("Regression: {} newly failing, {} newly skipped", newly_failing.len(), newly_skipped.len());
+        panic!(
+            "Regression: {} newly failing, {} newly skipped",
+            newly_failing.len(),
+            newly_skipped.len()
+        );
     }
 
-    fs::write(HISTORICAL_RESULTS, serde_json::to_string_pretty(&new_high_level_results).unwrap()).unwrap();
+    fs::write(
+        HISTORICAL_RESULTS,
+        serde_json::to_string_pretty(&new_high_level_results).unwrap(),
+    )
+    .unwrap();
 }
 
 fn create_js_guest() {
@@ -472,7 +515,9 @@ fn create_js_guest() {
 }
 
 fn print_serve_command() {
-    println!("To view the detailed results of the tests run, serve the tests/webgpu-spec/results dir");
+    println!(
+        "To view the detailed results of the tests run, serve the tests/webgpu-spec/results dir"
+    );
     println!("E.g.");
     println!("");
     println!("    {}", "python -m webbrowser 'http://localhost:8000' && python -m http.server -d tests/webgpu-spec/results".bright_cyan().bold());
