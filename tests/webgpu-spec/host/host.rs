@@ -279,30 +279,8 @@ async fn run_all_tests(
         });
     }));
 
-    // TODO: find a way to remove these
-    let skip_list: Vec<&str> = vec![
-        // super slow
-        "shader_execution_expression_binary_f16_matrix_matrix_multiplication",
-        "shader_execution_expression_binary_f32_matrix_vector_multiplication",
-        "shader_execution_expression_binary_f32_matrix_matrix_multiplication",
-        "shader_execution_expression_call_builtin_mix",
-        "shader_execution_expression_call_builtin_fwidth",
-        "shader_execution_expression_call_builtin_fwidthCoarse",
-        "shader_execution_expression_call_builtin_faceForward",
-        "shader_execution_expression_call_builtin_fwidthFine",
-        "shader_execution_expression_call_builtin_refract",
-        "shader_execution_expression_call_builtin_distance",
-        // segfaults
-        "shader_execution_limits",
-    ];
-
     for spec_name in tests.into_iter() {
         bar.set_message(spec_name.clone());
-
-        if skip_list.iter().any(|s| s == &spec_name) {
-            bar.inc(1);
-            continue;
-        }
 
         let mut store = Store::new(
             engine,
