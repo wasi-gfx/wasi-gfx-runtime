@@ -15,9 +15,9 @@ members = [
 
 [workspace.dependencies]
 clap = { version = "4.3", features = ["derive"] }
-wasmtime = "45"
-wasmtime-wasi = "45"
-wasmtime-wasi-io = "45"
+wasmtime = "46"
+wasmtime-wasi = "46"
+wasmtime-wasi-io = "46"
 anyhow = "1.0"
 winit = { version = "0.30", features = [ "android-native-activity" ] }
 wgpu-core = "29"
