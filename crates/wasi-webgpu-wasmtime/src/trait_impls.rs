@@ -9,11 +9,11 @@ use wasmtime::{
 
 use crate::{
     to_core_conversions::ToCore,
-    wasi::webgpu::webgpu,
-    wrapper_types::{
+    types::{
         Buffer, CommandEncoder, ComputePassEncoder, ComputePipeline, Device, ErrorHandler,
         RenderBundleEncoder, RenderBundleEncoderInner, RenderPassEncoder, RenderPipeline, Texture,
     },
+    wasi::webgpu::webgpu,
     WasiWebGpuCtx, WasiWebGpuCtxView, PREFERRED_CANVAS_FORMAT,
 };
 
