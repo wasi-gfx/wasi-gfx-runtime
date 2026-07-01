@@ -1,9 +1,5 @@
 package wasi-gfx:surface@0.1.0;
 
-world imports {
-  import surface;
-}
-
 interface surface {
   record create-desc {
     height: option<u32>,
@@ -12,12 +8,9 @@ interface surface {
 
   resource surface {
     constructor(desc: create-desc);
-
     height: func() -> u32;
     width: func() -> u32;
-
     request-set-size: func(height: option<u32>, width: option<u32>);
-
     on-resize: func() -> stream<resize-event>;
     on-frame: func() -> stream<frame-event>;
     on-pointer-up: func() -> stream<pointer-event>;
@@ -43,17 +36,8 @@ interface surface {
     y: f64,
   }
 
-  record key-event {
-    key: option<key>,
-    text: option<string>,
-    alt-key: bool,
-    ctrl-key: bool,
-    meta-key: bool,
-    shift-key: bool,
-  }
-
-  // corresponds with https://w3c.github.io/uievents-code/#code-value-tables
-  // `Unidentified` is not included, use `option<key>` instead.
+  /// corresponds with https://w3c.github.io/uievents-code/#code-value-tables
+  /// `Unidentified` is not included, use `option<key>` instead.
   enum key {
     backquote,
     backslash,
@@ -227,4 +211,63 @@ interface surface {
     hiragana,
     katakana,
   }
+
+  record key-event {
+    key: option<key>,
+    text: option<string>,
+    alt-key: bool,
+    ctrl-key: bool,
+    meta-key: bool,
+    shift-key: bool,
+  }
+}
+
+interface surface-frame-buffer {
+  use wasi-gfx:frame-buffer/frame-buffer@0.1.0.{buffer};
+  use surface.{surface};
+
+  resource context {
+    constructor(surface: borrow<surface>);
+    get-current-buffer: func() -> buffer;
+    /// TODO: consider if needed
+    present: func();
+  }
+}
+
+interface surface-webgpu {
+  use wasi:webgpu/webgpu@0.2.0-rc.2.{gpu-device, gpu-texture, gpu-texture-format, gpu-texture-usage, predefined-color-space, gpu-canvas-tone-mapping, gpu-canvas-alpha-mode};
+  use surface.{surface};
+
+  record context-configuration {
+    device: borrow<gpu-device>,
+    format: gpu-texture-format,
+    usage: option<gpu-texture-usage>,
+    view-formats: option<list<gpu-texture-format>>,
+    color-space: option<predefined-color-space>,
+    tone-mapping: option<gpu-canvas-tone-mapping>,
+    alpha-mode: option<gpu-canvas-alpha-mode>,
+  }
+
+  resource context {
+    constructor(surface: borrow<surface>);
+    configure: func(configuration: context-configuration);
+    unconfigure: func();
+    get-current-texture: func() -> gpu-texture;
+    /// TODO: consider if needed
+    present: func();
+  }
+}
+
+world frame-buffer-imports {
+  import wasi-gfx:frame-buffer/frame-buffer@0.1.0;
+  import surface;
+  import surface-frame-buffer;
+}
+world webgpu-imports {
+  import wasi:webgpu/webgpu@0.2.0-rc.2;
+  import surface;
+  import surface-webgpu;
+}
+world imports {
+  import surface;
 }

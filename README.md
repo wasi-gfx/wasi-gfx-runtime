@@ -10,14 +10,14 @@ Install the following:
 ```shell
 rustup target add wasm32-unknown-unknown
 cargo install wasm-tools
-cargo install wit-deps-cli
+cargo install wkg
 ```
 
 ### Setup
 
 Fetch the WIT dependencies:
 ```shell
-wit-deps
+wkg wit fetch
 ```
 
 ### Running examples
