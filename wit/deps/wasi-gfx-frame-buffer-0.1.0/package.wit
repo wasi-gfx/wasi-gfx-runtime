@@ -1,13 +1,13 @@
 package wasi-gfx:frame-buffer@0.1.0;
 
-world imports {
-  import frame-buffer;
-}
-
 interface frame-buffer {
   resource buffer {
-    // TODO: This should be replaced with something that doesn't require a copy.
+    /// TODO: This should be replaced with something that doesn't require a copy.
     get-with-copy: func() -> list<u8>;
     set-with-copy: func(val: list<u8>);
   }
+}
+
+world imports {
+  import frame-buffer;
 }

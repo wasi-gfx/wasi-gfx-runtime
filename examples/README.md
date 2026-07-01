@@ -11,15 +11,15 @@ Install wasm-tools
 cargo install wasm-tools
 ```
 
-Install wit-deps
+Install wkg
 ```shell
-cargo install wit-deps-cli
+cargo install wkg
 ```
 
 
 #### Install wit dependencies
 ```shell
-wit-deps
+wkg wit fetch
 ```
 
 
