@@ -3,12 +3,12 @@ package example:example;
 /// wit for the examples in this repo
 world example {
     include wasi:webgpu/imports@0.0.1;
-    include wasi:surface/imports@0.0.1;
-    include wasi:graphics-context/imports@0.0.1;
-    include wasi:frame-buffer/imports@0.0.1;
+    include wasi-gfx:surface/webgpu-imports@0.1.0;
+    include wasi-gfx:frame-buffer/imports@0.1.0;
+    include wasi-gfx:surface/frame-buffer-imports@0.1.0;
 
     /// main entrypoint
-    export start: func();
+    export start: async func();
 
     /// print to stdout
     import print: func(s: string);

@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use futures::executor::block_on;
-use wasi_frame_buffer_wasmtime::WasiFrameBufferView;
-use wasi_graphics_context_wasmtime::WasiGraphicsContextView;
-use wasi_surface_wasmtime::{Surface, SurfaceDesc, WasiSurfaceView};
-use wasi_webgpu_wasmtime::WasiWebGpuView;
+use wasi_frame_buffer_wasmtime::{FrameBufferCtx, FrameBufferCtxView};
+use wasi_surface_wasmtime::{
+    winit::WasiWinitEventLoopProxy, SurfaceCtxView, SurfaceFrameBufferCtx,
+    SurfaceFrameBufferCtxView, SurfaceWebgpuCtx, SurfaceWebgpuCtxView,
+};
+use wasi_webgpu_wasmtime::{WasiWebGpuCtx, WasiWebGpuCtxView};
 use wasmtime::{
     component::{Component, Linker},
     error::Context,
@@ -13,7 +14,6 @@ use wasmtime::{
 };
 
 use wasmtime_wasi::ResourceTable;
-use wasmtime_wasi_io::IoView;
 
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
@@ -29,21 +29,15 @@ wasmtime::component::bindgen!({
         "start": async,
     },
     require_store_data_send: true,
-    with: {
-        "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
-        "wasi:surface/surface": wasi_surface_wasmtime::wasi::surface::surface,
-        "wasi:frame-buffer/frame-buffer": wasi_frame_buffer_wasmtime::wasi::frame_buffer::frame_buffer,
-        "wasi:webgpu/webgpu": wasi_webgpu_wasmtime::wasi::webgpu::webgpu,
-    },
 });
 
 struct HostState {
     instance: Arc<wgpu_core::global::Global>,
-    main_thread_proxy: Arc<wasi_surface_wasmtime::WasiWinitEventLoopProxy>,
+    main_thread_proxy: Arc<wasi_surface_wasmtime::winit::WasiWinitEventLoopProxy>,
 }
 
 impl HostState {
-    fn new(main_thread_proxy: wasi_surface_wasmtime::WasiWinitEventLoopProxy) -> Self {
+    fn new(main_thread_proxy: wasi_surface_wasmtime::winit::WasiWinitEventLoopProxy) -> Self {
         Self {
             instance: Arc::new(wgpu_core::global::Global::new(
                 "webgpu",
@@ -71,47 +65,57 @@ impl HostState {
 struct WorkloadState {
     table: ResourceTable,
     instance: Arc<wgpu_core::global::Global>,
-    main_thread_proxy: Arc<wasi_surface_wasmtime::WasiWinitEventLoopProxy>,
+    main_thread_proxy: Arc<WasiWinitEventLoopProxy>,
 }
 
 impl wasmtime::component::HasData for WorkloadState {
     type Data<'a> = &'a mut WorkloadState;
 }
 
-impl IoView for WorkloadState {
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
+impl WasiWebGpuCtxView for WorkloadState {
+    fn webgpu_ctx(&mut self) -> WasiWebGpuCtx<'_> {
+        WasiWebGpuCtx {
+            instance: &self.instance,
+            table: &mut self.table,
+        }
     }
 }
 
-impl WasiGraphicsContextView for WorkloadState {}
-impl WasiFrameBufferView for WorkloadState {}
-
-struct UiThreadSpawner(Arc<wasi_surface_wasmtime::WasiWinitEventLoopProxy>);
-
-impl wasi_webgpu_wasmtime::MainThreadSpawner for UiThreadSpawner {
-    async fn spawn<F, T>(&self, f: F) -> T
-    where
-        F: FnOnce() -> T + Send + 'static,
-        T: Send + 'static,
-    {
-        self.0.spawn(f).await
+impl FrameBufferCtxView for WorkloadState {
+    fn frame_buffer_ctx<'a>(&'a mut self) -> FrameBufferCtx<'a> {
+        FrameBufferCtx {
+            table: &mut self.table,
+        }
     }
 }
 
-impl WasiWebGpuView for WorkloadState {
-    fn instance(&self) -> Arc<wgpu_core::global::Global> {
-        Arc::clone(&self.instance)
-    }
-
-    fn ui_thread_spawner(&self) -> Box<impl wasi_webgpu_wasmtime::MainThreadSpawner + 'static> {
-        Box::new(UiThreadSpawner(Arc::clone(&self.main_thread_proxy)))
+impl SurfaceCtxView for WorkloadState {
+    type Spawner = WasiWinitEventLoopProxy;
+    fn surface_ctx(&mut self) -> wasi_surface_wasmtime::SurfaceCtx<'_, WasiWinitEventLoopProxy> {
+        wasi_surface_wasmtime::SurfaceCtx {
+            table: &mut self.table,
+            main_thread_spawner: &self.main_thread_proxy,
+        }
     }
 }
-
-impl WasiSurfaceView for WorkloadState {
-    fn create_canvas(&self, desc: SurfaceDesc) -> Surface {
-        block_on(self.main_thread_proxy.create_window(desc))
+impl SurfaceWebgpuCtxView for WorkloadState {
+    type Spawner = WasiWinitEventLoopProxy;
+    fn surface_webgpu_ctx(&mut self) -> SurfaceWebgpuCtx<'_, WasiWinitEventLoopProxy> {
+        SurfaceWebgpuCtx {
+            table: &mut self.table,
+            instance: &self.instance,
+            main_thread_spawner: &self.main_thread_proxy,
+        }
+    }
+}
+impl SurfaceFrameBufferCtxView for WorkloadState {
+    type Spawner = WasiWinitEventLoopProxy;
+    fn surface_frame_buffer_ctx(&mut self) -> SurfaceFrameBufferCtx<'_, WasiWinitEventLoopProxy> {
+        SurfaceFrameBufferCtx {
+            table: &mut self.table,
+            instance: &self.instance,
+            main_thread_spawner: &self.main_thread_proxy,
+        }
     }
 }
 
@@ -130,18 +134,18 @@ async fn main() -> anyhow::Result<()> {
     let args = RuntimeArgs::parse();
 
     let (main_thread_loop, main_thread_proxy) =
-        wasi_surface_wasmtime::create_wasi_winit_event_loop();
+        wasi_surface_wasmtime::winit::create_wasi_winit_event_loop();
     let host_state = HostState::new(main_thread_proxy);
 
     let mut config = Config::default();
     config.wasm_component_model(true);
+    config.wasm_component_model_async(true);
     let engine = Engine::new(&config)?;
     let mut linker: Linker<WorkloadState> = Linker::new(&engine);
 
     wasi_webgpu_wasmtime::add_to_linker(&mut linker)?;
     wasi_frame_buffer_wasmtime::add_to_linker(&mut linker)?;
-    wasi_graphics_context_wasmtime::add_to_linker(&mut linker)?;
-    wasi_surface_wasmtime::add_to_linker(&mut linker)?;
+    wasi_surface_wasmtime::add_all_to_linker(&mut linker)?;
     Example::add_to_linker_imports::<_, WorkloadState>(&mut linker, |x| x)?;
 
     let workload_state = host_state.add_workload();
@@ -158,7 +162,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap();
 
     tokio::spawn(async move {
-        instance.call_start(&mut store).await.unwrap();
+        instance.func_start().call_async(store, ()).await.unwrap();
     });
 
     main_thread_loop.run();

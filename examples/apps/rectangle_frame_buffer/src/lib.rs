@@ -9,83 +9,80 @@ export!(Example);
 struct Example;
 
 impl Guest for Example {
-    fn start() {
-        draw_rectangle();
+    async fn start() {
+        draw_rectangle().await;
     }
 }
 
+use futures::stream::StreamExt;
+use std::cell::Cell;
 use std::cmp::min;
-use wasi::{frame_buffer::frame_buffer, graphics_context::graphics_context, surface::surface};
+use wasi_gfx::surface::{surface, surface_frame_buffer};
 
-fn draw_rectangle() {
-    let canvas = surface::Surface::new(surface::CreateDesc {
+async fn draw_rectangle() {
+    let surface = surface::Surface::new(surface::CreateDesc {
         height: None,
         width: None,
     });
-    let graphics_context = graphics_context::Context::new();
-    canvas.connect_graphics_context(&graphics_context);
+    let context = surface_frame_buffer::Context::new(&surface);
+    let green = Cell::new(false);
+    let height = Cell::new(surface.height());
+    let width = Cell::new(surface.width());
 
-    let surface = frame_buffer::Device::new();
-    surface.connect_graphics_context(&graphics_context);
+    let pointer_up_stream = surface.on_pointer_up().into_stream().for_each(|event| {
+        print(&format!("up: {:?}", event));
+        green.set(!green.get());
+        async {}
+    });
 
-    let pointer_up_pollable = canvas.subscribe_pointer_up();
-    let resize_pollable = canvas.subscribe_resize();
-    let frame_pollable = canvas.subscribe_frame();
-    let pollables = vec![&pointer_up_pollable, &resize_pollable, &frame_pollable];
-    let mut green = false;
-    let mut height = canvas.height();
-    let mut width = canvas.width();
-    loop {
-        let pollables_res = wasi::io::poll::poll(&pollables);
+    let resize_stream = surface.on_resize().into_stream().for_each(|event| {
+        print(&format!("resize: {:?}", event));
+        height.set(event.height);
+        width.set(event.width);
+        async {}
+    });
 
-        if pollables_res.contains(&0) {
-            let event = canvas.get_pointer_up();
-            print(&format!("up: {:?}", event));
-            green = !green;
-        }
+    let frame_stream = surface.on_frame().into_stream().for_each(|_event| {
+        print("frame event");
 
-        if pollables_res.contains(&1) {
-            let event = canvas.get_resize().unwrap();
-            print(&format!("resize: {:?}", event));
-            height = event.height;
-            width = event.width;
-        }
+        let buffer = context.get_current_buffer();
 
-        if pollables_res.contains(&2) {
-            canvas.get_frame();
-            print("frame event");
+        const RED: u32 = 0b_00000000_11111111_00000000_00000000;
+        const GREEN: u32 = 0b_00000000_00000000_11111111_00000000;
+        const GRAY: u32 = 0b_00000000_10000000_10000000_10000000;
 
-            let graphics_buffer = graphics_context.get_current_buffer();
+        let width = width.get();
+        let height = height.get();
 
-            let buffer = frame_buffer::Buffer::from_graphics_buffer(graphics_buffer);
-
-            const RED: u32 = 0b_00000000_11111111_00000000_00000000;
-            const GREEN: u32 = 0b_00000000_00000000_11111111_00000000;
-            const GRAY: u32 = 0b_00000000_10000000_10000000_10000000;
-
-            let local_width = min(width, 100);
-            let local_height = min(height, 100);
-            let mut buf = vec![0; (width * height) as usize];
-            for y in 0..local_height {
-                for x in 0..local_width {
-                    let color = if green { GREEN } else { RED };
-                    let v = if is_on_rect(local_width, local_height, x, y) {
-                        color
-                    } else {
-                        GRAY
-                    };
-                    let index = (y * width) + x;
-                    if index < buf.len() as u32 {
-                        buf[index as usize] = v;
-                    }
+        let local_width = min(width, 100);
+        let local_height = min(height, 100);
+        let mut buf = vec![0; (width * height) as usize];
+        for y in 0..local_height {
+            for x in 0..local_width {
+                let color = if green.get() { GREEN } else { RED };
+                let v = if is_on_rect(local_width, local_height, x, y) {
+                    color
+                } else {
+                    GRAY
+                };
+                let index = (y * width) + x;
+                if index < buf.len() as u32 {
+                    buf[index as usize] = v;
                 }
             }
-
-            buffer.set(bytemuck::cast_slice(&buf));
-
-            graphics_context.present();
         }
-    }
+
+        buffer.set_with_copy(bytemuck::cast_slice(&buf));
+
+        context.present();
+
+        async {
+            // give a chance for other events to come through
+            futures_lite::future::yield_now().await
+        }
+    });
+
+    futures::join!(pointer_up_stream, resize_stream, frame_stream,);
 }
 
 fn is_on_rect(width: u32, height: u32, x: u32, y: u32) -> bool {

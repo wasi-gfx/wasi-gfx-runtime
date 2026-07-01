@@ -1207,6 +1207,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e5c1b78ca4aae1ac06c48a526a655760685149f0d465d21f37abfe57ce075c6"
 
 [[package]]
+name = "futures-lite"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f78e10609fe0e0b3f4157ffab1876319b5b0db102a2c60dc4626306dc46b44ad"
+dependencies = [
+ "fastrand",
+ "futures-core",
+ "futures-io",
+ "parking",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "futures-macro"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1474,9 +1487,9 @@ checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "iana-time-zone"
-version = "0.1.64"
+version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33e57f83510bb73707521ebaffa789ec8caf86f9657cad665b092b581d40e9fb"
+checksum = "e31bc9ad994ba00e440a8aa5c9ef0ec67d5cb5e5cb0cc7f8b744a35b389cc470"
 dependencies = [
  "android_system_properties",
  "core-foundation-sys",
@@ -2359,6 +2372,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pastey"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2665,6 +2684,8 @@ name = "rectangle_simple_buffer"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "futures",
+ "futures-lite",
  "wit-bindgen 0.57.1",
 ]
 
@@ -2757,12 +2778,10 @@ dependencies = [
  "softbuffer",
  "tokio",
  "wasi-frame-buffer-wasmtime",
- "wasi-graphics-context-wasmtime",
  "wasi-surface-wasmtime",
  "wasi-webgpu-wasmtime",
  "wasmtime",
  "wasmtime-wasi",
- "wasmtime-wasi-io",
  "wgpu-core",
  "wgpu-types",
  "winit",
@@ -2946,8 +2965,8 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "async-broadcast",
- "async-trait",
- "wasmtime-wasi-io",
+ "futures",
+ "wasmtime",
 ]
 
 [[package]]
@@ -2969,8 +2988,9 @@ dependencies = [
 name = "skybox"
 version = "0.1.0"
 dependencies = [
- "bitflags 2.11.1",
  "bytemuck",
+ "futures",
+ "futures-lite",
  "glam",
  "ktx2",
  "log",
@@ -3129,9 +3149,9 @@ dependencies = [
 
 [[package]]
 name = "target-lexicon"
-version = "0.13.3"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df7f62577c25e07834649fc3b39fafdc597c0a3527dc1c60129201ccfcbaa50c"
+checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tempfile"
@@ -3357,6 +3377,8 @@ dependencies = [
 name = "triangle"
 version = "0.1.0"
 dependencies = [
+ "futures",
+ "futures-lite",
  "wit-bindgen 0.57.1",
 ]
 
@@ -3456,23 +3478,8 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 name = "wasi-frame-buffer-wasmtime"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
- "raw-window-handle",
- "softbuffer",
- "wasi-graphics-context-wasmtime",
  "wasmtime",
  "wasmtime-wasi",
- "wasmtime-wasi-io",
-]
-
-[[package]]
-name = "wasi-graphics-context-wasmtime"
-version = "0.1.0"
-dependencies = [
- "raw-window-handle",
- "wasmtime",
- "wasmtime-wasi",
- "wasmtime-wasi-io",
 ]
 
 [[package]]
@@ -3480,14 +3487,16 @@ name = "wasi-surface-wasmtime"
 version = "0.1.0"
 dependencies = [
  "async-broadcast",
+ "bytemuck",
  "futures",
  "oneshot",
  "raw-window-handle",
  "shared",
- "wasi-graphics-context-wasmtime",
+ "softbuffer",
+ "wasi-frame-buffer-wasmtime",
+ "wasi-webgpu-wasmtime",
  "wasmtime",
  "wasmtime-wasi",
- "wasmtime-wasi-io",
  "winit",
 ]
 
@@ -3499,12 +3508,11 @@ dependencies = [
  "callback-future",
  "futures",
  "log",
+ "pastey",
  "raw-window-handle",
  "shared",
- "wasi-graphics-context-wasmtime",
  "wasmtime",
  "wasmtime-wasi",
- "wasmtime-wasi-io",
  "wgpu-core",
  "wgpu-types",
 ]
@@ -4806,6 +4814,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 dependencies = [
  "bitflags 2.11.1",
+ "futures",
  "wit-bindgen-rust-macro 0.57.1",
 ]
 

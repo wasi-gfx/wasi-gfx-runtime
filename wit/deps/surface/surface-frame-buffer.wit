@@ -1,0 +1,16 @@
+interface surface-frame-buffer {
+  use wasi-gfx:frame-buffer/frame-buffer@0.1.0.{buffer};
+  use surface.{surface};
+
+  resource context {
+    constructor(surface: borrow<surface>);
+    get-current-buffer: func() -> buffer;
+    // TODO: consider if needed
+    present: func();
+  }
+}
+
+world frame-buffer-imports {
+  import surface-frame-buffer;
+  import wasi-gfx:frame-buffer/frame-buffer@0.1.0;
+}

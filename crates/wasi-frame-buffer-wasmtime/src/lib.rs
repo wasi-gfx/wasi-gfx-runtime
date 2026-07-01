@@ -1,213 +1,76 @@
-// TODO: Remove clippy allows, and either fix the code, or add comments explaining why it's okay to leave it.
+//! This crate is mostly just a shell. It exports `HasBuffer` and binds it to wasmtime.
+//!
+//! The actual implementation lives in the `surface-wasmtime` crate (see `surface_frame_buffer.rs`).
 
-#![allow(clippy::new_without_default)]
-
-use std::mem;
-use std::num::NonZeroU32;
-use std::sync::{Arc, Mutex};
-
-use raw_window_handle::{DisplayHandle, WindowHandle};
+use crate::wasi_gfx::frame_buffer::frame_buffer;
 use wasmtime::component::{HasData, Resource};
-use wasmtime_wasi_io::IoView;
-
-use crate::wasi::frame_buffer::frame_buffer;
-use wasi_graphics_context_wasmtime::{AbstractBuffer, Context, DisplayApi, DrawApi};
 
 wasmtime::component::bindgen!({
     path: "../../wit/",
-    world: "example",
+    world: "wasi-gfx:frame-buffer/imports",
     imports: {
         default: trappable,
     },
     with: {
-        "wasi:frame-buffer/frame-buffer.device": FBDeviceArc,
-        "wasi:frame-buffer/frame-buffer.buffer": FBBuffer,
-        "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
+        "wasi-gfx:frame-buffer/frame-buffer.buffer": GfxBuffer,
     },
 });
 
-pub struct FBDevice {
-    pub(crate) surface: Option<softbuffer::Surface<DisplayHandle<'static>, WindowHandle<'static>>>,
-}
-// TODO: actually ensure safety
-unsafe impl Send for FBDevice {}
-unsafe impl Sync for FBDevice {}
-impl FBDevice {
-    pub fn new() -> Self {
-        Self { surface: None }
-    }
-}
+// types
 
-// TODO: can we avoid the Mutex here?
-pub struct FBDeviceArc(pub Arc<Mutex<FBDevice>>);
-impl FBDeviceArc {
-    pub fn new() -> Self {
-        FBDeviceArc(Arc::new(Mutex::new(FBDevice::new())))
-    }
+// trait that providers of the frame-buffer should implement
+pub trait HasBuffer: Send {
+    fn get_buffer(&self) -> wasmtime::Result<Vec<u8>>;
+    fn set_buffer(&mut self, value: &[u8]) -> wasmtime::Result<()>;
 }
-impl DrawApi for FBDeviceArc {
-    fn get_current_buffer(&mut self) -> wasmtime::Result<AbstractBuffer> {
-        self.0.lock().unwrap().get_current_buffer()
-    }
-
-    fn present(&mut self) -> wasmtime::Result<()> {
-        self.0.lock().unwrap().present()
-    }
-
-    fn display_api_ready(&mut self, display_api: &Arc<dyn DisplayApi + Send + Sync>) {
-        self.0.lock().unwrap().display_api_ready(display_api)
-    }
+pub struct GfxBuffer {
+    pub buffer: Box<dyn HasBuffer>,
 }
 
-impl DrawApi for FBDevice {
-    fn get_current_buffer(&mut self) -> wasmtime::Result<AbstractBuffer> {
-        let surface = self.surface.as_mut().unwrap();
-        let buff = surface.buffer_mut().unwrap();
-        // TODO: use ouroboros?
-        let buff: softbuffer::Buffer<'static, Context, Context> = unsafe { mem::transmute(buff) };
-        let buff: FBBuffer = buff.into();
-        let buff = Box::new(buff);
-        let buff: AbstractBuffer = buff.into();
-        Ok(buff)
-    }
-
-    fn present(&mut self) -> wasmtime::Result<()> {
-        self.surface
-            .as_mut()
-            .unwrap()
-            .buffer_mut()
-            .unwrap()
-            .present()
-            .unwrap();
-        Ok(())
-    }
-
-    fn display_api_ready(&mut self, display: &Arc<dyn DisplayApi + Send + Sync>) {
-        let context = softbuffer::Context::new(display.display_handle().unwrap()).unwrap();
-        let surface = softbuffer::Surface::new(&context, display.window_handle().unwrap()).unwrap();
-
-        // TODO: use ouroboros?
-        let mut surface: softbuffer::Surface<DisplayHandle<'static>, WindowHandle<'static>> =
-            unsafe { mem::transmute(surface) };
-
-        // softbuffer requires setting the size before presenting.
-        let _ = surface.resize(
-            display
-                .width()
-                .try_into()
-                .unwrap_or(NonZeroU32::new(1).unwrap()),
-            display
-                .height()
-                .try_into()
-                .unwrap_or(NonZeroU32::new(1).unwrap()),
-        );
-        self.surface = Some(surface);
-    }
-}
-
-pub struct FBBuffer {
-    // Never none
-    buffer: Arc<Mutex<Option<softbuffer::Buffer<'static, Context, Context>>>>,
-}
-// TODO: ensure safety
-unsafe impl Send for FBBuffer {}
-unsafe impl Sync for FBBuffer {}
-impl From<softbuffer::Buffer<'static, Context, Context>> for FBBuffer {
-    fn from(buffer: softbuffer::Buffer<'static, Context, Context>) -> Self {
-        FBBuffer {
-            buffer: Arc::new(Mutex::new(Some(buffer))),
-        }
-    }
-}
-
-// wasmtime
-struct WasiFrameBuffer<T: Send>(T);
-impl<T: Send + 'static> HasData for WasiFrameBuffer<T> {
-    type Data<'a> = WasiFrameBufferImpl<&'a mut T>;
-}
+// linker connection
 pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
 where
-    T: WasiFrameBufferView,
+    T: FrameBufferCtxView,
 {
-    wasi::frame_buffer::frame_buffer::add_to_linker::<_, WasiFrameBuffer<T>>(l, |x| {
-        WasiFrameBufferImpl(x)
-    })?;
+    wasi_gfx::frame_buffer::frame_buffer::add_to_linker::<_, HasFrameBufferCtx>(
+        l,
+        T::frame_buffer_ctx,
+    )?;
     Ok(())
 }
 
-pub trait WasiFrameBufferView: IoView + Send {}
-
-#[repr(transparent)]
-pub struct WasiFrameBufferImpl<T>(pub T);
-impl<T: WasiFrameBufferView> IoView for WasiFrameBufferImpl<T> {
-    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
-        T::table(&mut self.0)
-    }
+pub trait FrameBufferCtxView {
+    fn frame_buffer_ctx<'a>(&'a mut self) -> FrameBufferCtx<'a>;
 }
 
-impl<T: ?Sized + WasiFrameBufferView> WasiFrameBufferView for &mut T {}
-impl<T: ?Sized + WasiFrameBufferView> WasiFrameBufferView for Box<T> {}
-impl<T: WasiFrameBufferView> WasiFrameBufferView for WasiFrameBufferImpl<T> {}
+pub struct FrameBufferCtx<'a> {
+    pub table: &'a mut wasmtime_wasi::ResourceTable,
+}
 
-impl<T: WasiFrameBufferView> frame_buffer::Host for WasiFrameBufferImpl<T> {}
+struct HasFrameBufferCtx;
 
-impl<T: WasiFrameBufferView> frame_buffer::HostDevice for WasiFrameBufferImpl<T> {
-    fn new(
-        &mut self,
-    ) -> wasmtime::Result<Resource<crate::wasi::frame_buffer::frame_buffer::Device>> {
-        Ok(self.table().push(FBDeviceArc::new())?)
+impl HasData for HasFrameBufferCtx {
+    type Data<'a> = FrameBufferCtx<'a>;
+}
+
+// wasmtime trait impls
+impl<'a> frame_buffer::Host for FrameBufferCtx<'a> {}
+
+impl<'a> frame_buffer::HostBuffer for FrameBufferCtx<'a> {
+    fn get_with_copy(&mut self, buffer: Resource<GfxBuffer>) -> wasmtime::Result<Vec<u8>> {
+        let buffer = self.table.get(&buffer)?;
+        let buffer = buffer.buffer.get_buffer()?;
+        Ok(buffer)
     }
 
-    fn connect_graphics_context(
-        &mut self,
-        surface: Resource<FBDeviceArc>,
-        graphics_context: Resource<Context>,
-    ) -> wasmtime::Result<()> {
-        let surface = FBDeviceArc(Arc::clone(&self.table().get(&surface)?.0));
-        let graphics_context = self.table().get_mut(&graphics_context)?;
-        graphics_context.connect_draw_api(Box::new(surface));
+    fn set_with_copy(&mut self, buffer: Resource<GfxBuffer>, val: Vec<u8>) -> wasmtime::Result<()> {
+        let buffer = self.table.get_mut(&buffer)?;
+        buffer.buffer.set_buffer(&val).unwrap();
         Ok(())
     }
 
-    fn drop(&mut self, _rep: Resource<FBDeviceArc>) -> wasmtime::Result<()> {
-        todo!()
-    }
-}
-
-impl<T: WasiFrameBufferView> frame_buffer::HostBuffer for WasiFrameBufferImpl<T> {
-    fn from_graphics_buffer(
-        &mut self,
-        buffer: Resource<AbstractBuffer>,
-    ) -> wasmtime::Result<Resource<FBBuffer>> {
-        let host_buffer: AbstractBuffer = self.table().delete(buffer)?;
-        let host_buffer: FBBuffer = host_buffer.inner_type();
-        Ok(self.table().push(host_buffer)?)
-    }
-
-    fn get(&mut self, buffer: Resource<FBBuffer>) -> wasmtime::Result<Vec<u8>> {
-        let buffer = self.table().get(&buffer)?;
-        let buffer = buffer.buffer.lock().unwrap();
-        let buffer = buffer.as_ref().unwrap();
-        let buffer = bytemuck::try_cast_slice(buffer)?;
-        Ok(buffer.to_vec())
-    }
-
-    fn set(&mut self, buffer: Resource<FBBuffer>, val: Vec<u8>) -> wasmtime::Result<()> {
-        let buffer = self.table().get_mut(&buffer)?;
-        let val = bytemuck::try_cast_slice(&val)?;
-        buffer
-            .buffer
-            .lock()
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .copy_from_slice(val);
-        Ok(())
-    }
-
-    fn drop(&mut self, frame_buffer: Resource<FBBuffer>) -> wasmtime::Result<()> {
-        let frame_buffer = self.table().delete(frame_buffer)?;
-        frame_buffer.buffer.lock().unwrap().take();
+    fn drop(&mut self, frame_buffer: Resource<GfxBuffer>) -> wasmtime::Result<()> {
+        let _frame_buffer = self.table.delete(frame_buffer)?;
         Ok(())
     }
 }

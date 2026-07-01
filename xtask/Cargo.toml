@@ -14,7 +14,7 @@ pico-args = { version = "0.5.0", features = [
     "short-space-opt",
     "combined-flags",
 ] }
-xshell = "0.2.3"
+xshell = "0.2.7"
 lazy_static = "1.4.0"
 
 [workspace]

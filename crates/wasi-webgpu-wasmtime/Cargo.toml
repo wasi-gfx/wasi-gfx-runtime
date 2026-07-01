@@ -6,16 +6,15 @@ edition = "2021"
 [dependencies]
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
-wasmtime-wasi-io.workspace = true
 raw-window-handle.workspace = true
 wgpu-core.workspace = true
 wgpu-types.workspace = true
-wasi-graphics-context-wasmtime = { path = "../wasi-graphics-context-wasmtime" }
 callback-future.workspace = true
 futures.workspace = true
 shared = { path = "../shared" }
 async-broadcast.workspace = true
 log.workspace = true
+pastey = "0.2"
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 workspace = true

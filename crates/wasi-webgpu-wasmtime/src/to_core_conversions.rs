@@ -45,46 +45,6 @@ impl ToCore<wgpu_types::Extent3d> for webgpu::GpuExtent3D {
     }
 }
 
-impl ToCore<wgpu_core::binding_model::BindGroupDescriptor<'static>>
-    for webgpu::GpuBindGroupDescriptor
-{
-    fn to_core(
-        self,
-        table: &ResourceTable,
-    ) -> wgpu_core::binding_model::BindGroupDescriptor<'static> {
-        wgpu_core::binding_model::BindGroupDescriptor {
-            label: self.label.map(|l| l.into()),
-            layout: self.layout.to_core(table),
-            entries: self.entries.into_iter().map(|e| e.to_core(table)).collect(),
-        }
-    }
-}
-
-impl<'a> ToCore<wgpu_core::binding_model::BindGroupEntry<'a>> for webgpu::GpuBindGroupEntry {
-    fn to_core(self, table: &ResourceTable) -> wgpu_core::binding_model::BindGroupEntry<'a> {
-        wgpu_core::binding_model::BindGroupEntry {
-            binding: self.binding,
-            resource: self.resource.to_core(table),
-        }
-    }
-}
-
-impl<'a> ToCore<wgpu_core::binding_model::BindingResource<'a>> for webgpu::GpuBindingResource {
-    fn to_core(self, table: &ResourceTable) -> wgpu_core::binding_model::BindingResource<'a> {
-        match self {
-            webgpu::GpuBindingResource::GpuBufferBinding(buffer) => {
-                wgpu_core::binding_model::BindingResource::Buffer(buffer.to_core(table))
-            }
-            webgpu::GpuBindingResource::GpuSampler(sampler) => {
-                wgpu_core::binding_model::BindingResource::Sampler(sampler.to_core(table))
-            }
-            webgpu::GpuBindingResource::GpuTextureView(texture_view) => {
-                wgpu_core::binding_model::BindingResource::TextureView(texture_view.to_core(table))
-            }
-        }
-    }
-}
-
 impl ToCore<wgpu_core::binding_model::BufferBinding> for webgpu::GpuBufferBinding {
     fn to_core(self, table: &ResourceTable) -> wgpu_core::binding_model::BufferBinding {
         let buffer = table.get(&self.buffer).unwrap();
@@ -140,9 +100,7 @@ impl<'a> ToCore<wgpu_core::resource::TextureViewDescriptor<'a>>
                 base_array_layer: self.base_array_layer.unwrap_or(0),
                 array_layer_count: self.array_layer_count,
             },
-            usage: self
-                .usage
-                .map(|usage| wgpu_types::TextureUsages::from_bits(usage).unwrap()),
+            usage: self.usage.map(|usage| usage.try_into().unwrap()),
         }
     }
 }
@@ -312,7 +270,11 @@ impl ToCore<wgpu_types::ColorTargetState> for webgpu::GpuColorTargetState {
         wgpu_types::ColorTargetState {
             format: self.format.into(),
             blend: self.blend.map(|b| b.to_core(table)),
-            write_mask: wgpu_types::ColorWrites::from_bits(self.write_mask.unwrap_or(0xF)).unwrap(),
+            write_mask: self
+                .write_mask
+                .unwrap_or(webgpu::GpuColorWrite::ALL)
+                .try_into()
+                .unwrap(),
         }
     }
 }
@@ -425,7 +387,7 @@ impl<'a> ToCore<wgpu_types::TextureDescriptor<wgpu_core::Label<'a>, Vec<wgpu_typ
                 .unwrap_or(webgpu::GpuTextureDimension::D2)
                 .into(),
             format: self.format.into(),
-            usage: wgpu_types::TextureUsages::from_bits(self.usage).unwrap(),
+            usage: self.usage.try_into().unwrap(),
             view_formats: self
                 .view_formats
                 .map(|view_formats| {
@@ -513,7 +475,7 @@ impl ToCore<wgpu_types::BindGroupLayoutEntry> for webgpu::GpuBindGroupLayoutEntr
     fn to_core(self, table: &ResourceTable) -> wgpu_types::BindGroupLayoutEntry {
         wgpu_types::BindGroupLayoutEntry {
             binding: self.binding,
-            visibility: wgpu_types::ShaderStages::from_bits(self.visibility).unwrap(),
+            visibility: self.visibility.try_into().unwrap(),
             ty: match (
                 self.buffer,
                 self.sampler,
@@ -682,7 +644,7 @@ impl<'a> ToCore<wgpu_types::BufferDescriptor<wgpu_core::Label<'a>>>
         wgpu_types::BufferDescriptor {
             label: self.label.map(|l| l.into()),
             size: self.size,
-            usage: wgpu_types::BufferUsages::from_bits(self.usage).unwrap(),
+            usage: self.usage.try_into().unwrap(),
             mapped_at_creation: self.mapped_at_creation.unwrap_or(false),
         }
     }
@@ -718,6 +680,10 @@ impl ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
         let features_webgpu = self
             .into_iter()
             .map(|feature| match feature {
+                webgpu::GpuFeatureName::CoreFeaturesAndLimits => {
+                    // wgpu_types::FeaturesWebGPU::CORE_FEATURES_AND_LIMITS
+                    todo!()
+                }
                 webgpu::GpuFeatureName::DepthClipControl => {
                     wgpu_types::FeaturesWebGPU::DEPTH_CLIP_CONTROL
                 }
@@ -764,6 +730,21 @@ impl ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
                     todo!()
                     // TODO: enable once wgpu does
                     // wgpu_types::FeaturesWebGPU::SUBGROUPS
+                }
+                webgpu::GpuFeatureName::TextureFormatsTier1 => {
+                    // wgpu_types::FeaturesWebGPU::TEXTURE_FORMATS_TIER_1
+                    todo!()
+                }
+                webgpu::GpuFeatureName::TextureFormatsTier2 => {
+                    // wgpu_types::FeaturesWebGPU::TEXTURE_FORMATS_TIER_2
+                    todo!()
+                }
+                webgpu::GpuFeatureName::PrimitiveIndex => {
+                    wgpu_types::FeaturesWebGPU::PRIMITIVE_INDEX
+                }
+                webgpu::GpuFeatureName::TextureComponentSwizzle => {
+                    // wgpu_types::FeaturesWebGPU::TEXTURE_COMPONENT_SWIZZLE
+                    todo!()
                 }
             })
             .collect();
