@@ -10,73 +10,103 @@ export!(ExampleSkybox);
 
 struct ExampleSkybox;
 
-use wasi::{graphics_context::graphics_context, surface::surface, webgpu::webgpu};
+use futures::StreamExt;
+use wasi::webgpu::webgpu;
+use wasi_gfx::surface::{surface, surface_webgpu};
 
 impl Guest for ExampleSkybox {
-    fn start() {
-        let mut example = Example::init();
-        example.render();
-        let pointer_up_pollable = example.canvas.subscribe_pointer_up();
-        let pointer_down_pollable = example.canvas.subscribe_pointer_down();
-        let pointer_move_pollable = example.canvas.subscribe_pointer_move();
-        let key_up_pollable = example.canvas.subscribe_key_up();
-        let key_down_pollable = example.canvas.subscribe_key_down();
-        // let resize_pollable = example.canvas.subscribe_resize();
-        let frame_pollable = example.canvas.subscribe_frame();
-        let pollables = vec![
-            &pointer_up_pollable,
-            &pointer_down_pollable,
-            &pointer_move_pollable,
-            &key_up_pollable,
-            &key_down_pollable,
-            // &resize_pollable,
-            &frame_pollable,
-        ];
-        loop {
-            let pollables_res = wasi::io::poll::poll(&pollables);
+    async fn start() {
+        let example = RefCell::new(Example::init().await);
 
-            if pollables_res.contains(&0) {
-                let event = example.canvas.get_pointer_up();
-                print(&format!("pointer_up: {:?}", event));
-            }
-            if pollables_res.contains(&1) {
-                let event = example.canvas.get_pointer_down();
+        let pointer_down_stream = example
+            .borrow()
+            .surface
+            .on_pointer_down()
+            .into_stream()
+            .for_each(|event| {
                 print(&format!("pointer_down: {:?}", event));
-            }
-            if pollables_res.contains(&2) {
-                let event = example.canvas.get_pointer_move();
-                print(&format!("pointer_move: {:?}", event));
-                let event = event.unwrap();
-                example.update(event.x as i32, event.y as i32);
-            }
-            if pollables_res.contains(&3) {
-                let event = example.canvas.get_key_up();
-                print(&format!("key_up: {:?}", event));
-            }
-            if pollables_res.contains(&4) {
-                let event = example.canvas.get_key_down();
-                print(&format!("key_down: {:?}", event));
-            }
-            // if pollables_res.contains(&5) {
-            //     let event = example.canvas.get_resize();
-            //     print(&format!("resize: {:?}", event));
-            //     my_run();
-            // }
+                async {}
+            });
 
-            if pollables_res.contains(&5) {
-                example.canvas.get_frame();
-                print("frame event");
-                example.render();
-            }
-        }
+        let pointer_up_stream = example
+            .borrow()
+            .surface
+            .on_pointer_up()
+            .into_stream()
+            .for_each(|event| {
+                print(&format!("pointer_up: {:?}", event));
+                async {}
+            });
+
+        let pointer_move_stream = example
+            .borrow()
+            .surface
+            .on_pointer_move()
+            .into_stream()
+            .for_each(|event| {
+                print(&format!("pointer_move: {:?}", event));
+                example.borrow_mut().update(event.x as i32, event.y as i32);
+                async {}
+            });
+
+        let key_up_stream = example
+            .borrow()
+            .surface
+            .on_key_up()
+            .into_stream()
+            .for_each(|event| {
+                print(&format!("key_up: {:?}", event));
+                async {}
+            });
+
+        let key_down_stream = example
+            .borrow()
+            .surface
+            .on_key_down()
+            .into_stream()
+            .for_each(|event| {
+                print(&format!("key_down: {:?}", event));
+                async {}
+            });
+
+        let resize_stream = example
+            .borrow()
+            .surface
+            .on_resize()
+            .into_stream()
+            .for_each(|event| {
+                print(&format!("resize: {:?}", event));
+                async {}
+            });
+
+        let frame_stream = example
+            .borrow()
+            .surface
+            .on_frame()
+            .into_stream()
+            .for_each(|_event| {
+                async {
+                    print("frame event");
+                    example.borrow_mut().render();
+                    // give a chance for other events to come through
+                    futures_lite::future::yield_now().await
+                }
+            });
+
+        futures::join!(
+            pointer_up_stream,
+            pointer_down_stream,
+            pointer_move_stream,
+            key_up_stream,
+            key_down_stream,
+            resize_stream,
+            frame_stream,
+        );
     }
 }
 
-mod flags;
-use flags::{BufferUsages, ColorWrites, ShaderStages, TextureUsages};
-
 use bytemuck::{Pod, Zeroable};
-use std::f32::consts;
+use std::{cell::RefCell, f32::consts};
 
 const IMAGE_SIZE: u32 = 256;
 
@@ -130,8 +160,8 @@ impl Camera {
 
 pub struct Example {
     device: webgpu::GpuDevice,
-    canvas: surface::Surface,
-    graphics_context: graphics_context::Context,
+    surface: surface::Surface,
+    context: surface_webgpu::Context,
     camera: Camera,
     sky_pipeline: webgpu::GpuRenderPipeline,
     entity_pipeline: webgpu::GpuRenderPipeline,
@@ -161,9 +191,10 @@ impl Example {
             sample_count: Some(1),
             dimension: Some(webgpu::GpuTextureDimension::D2),
             format: Self::DEPTH_FORMAT,
-            usage: TextureUsages::RENDER_ATTACHMENT.bits(),
+            usage: webgpu::GpuTextureUsage::RENDER_ATTACHMENT,
             label: None,
             view_formats: Some(vec![]),
+            texture_binding_view_dimension: None,
         });
 
         depth_texture.create_view(Some(&webgpu::GpuTextureViewDescriptor {
@@ -176,25 +207,37 @@ impl Example {
             array_layer_count: None,
             label: None,
             usage: None,
+            swizzle: None,
         }))
     }
 
-    fn init() -> Self {
-        let device = webgpu::get_gpu()
+    async fn init() -> Self {
+        let gpu = webgpu::get_gpu();
+        let device = gpu
             .request_adapter(None)
+            .await
             .unwrap()
             .request_device(None)
+            .await
             .unwrap();
-        let canvas = surface::Surface::new(surface::CreateDesc {
+        let surface = surface::Surface::new(surface::CreateDesc {
             height: None,
             width: None,
         });
-        let graphics_context = graphics_context::Context::new();
-        canvas.connect_graphics_context(&graphics_context);
-        device.connect_graphics_context(&graphics_context);
 
-        let height = canvas.height();
-        let width = canvas.width();
+        let context = surface_webgpu::Context::new(&surface);
+        context.configure(&surface_webgpu::ContextConfiguration {
+            device: &device,
+            format: gpu.get_preferred_canvas_format(),
+            usage: None,
+            view_formats: None,
+            color_space: None,
+            tone_mapping: None,
+            alpha_mode: None,
+        });
+
+        let height = surface.height();
+        let width = surface.width();
 
         let mut entities = Vec::new();
         {
@@ -221,7 +264,7 @@ impl Example {
                         &BufferInitDescriptor {
                             label: Some("Vertex"),
                             contents: bytemuck::cast_slice(&vertices),
-                            usage: BufferUsages::VERTEX,
+                            usage: webgpu::GpuBufferUsage::VERTEX,
                         },
                     );
                     entities.push(Entity {
@@ -238,7 +281,8 @@ impl Example {
                 entries: vec![
                     webgpu::GpuBindGroupLayoutEntry {
                         binding: 0,
-                        visibility: ShaderStages::VERTEX.bits() | ShaderStages::FRAGMENT.bits(),
+                        visibility: webgpu::GpuShaderStage::VERTEX
+                            | webgpu::GpuShaderStage::FRAGMENT,
                         buffer: Some(webgpu::GpuBufferBindingLayout {
                             type_: Some(webgpu::GpuBufferBindingType::Uniform),
                             has_dynamic_offset: Some(false),
@@ -250,7 +294,7 @@ impl Example {
                     },
                     webgpu::GpuBindGroupLayoutEntry {
                         binding: 1,
-                        visibility: ShaderStages::FRAGMENT.bits(),
+                        visibility: webgpu::GpuShaderStage::FRAGMENT,
                         buffer: None,
                         sampler: None,
                         texture: Some(webgpu::GpuTextureBindingLayout {
@@ -262,7 +306,7 @@ impl Example {
                     },
                     webgpu::GpuBindGroupLayoutEntry {
                         binding: 2,
-                        visibility: ShaderStages::FRAGMENT.bits(),
+                        visibility: webgpu::GpuShaderStage::FRAGMENT,
                         buffer: None,
                         sampler: Some(webgpu::GpuSamplerBindingLayout {
                             type_: Some(webgpu::GpuSamplerBindingType::Filtering),
@@ -293,13 +337,14 @@ impl Example {
             &BufferInitDescriptor {
                 label: Some("Buffer"),
                 contents: bytemuck::cast_slice(&raw_uniforms),
-                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                usage: webgpu::GpuBufferUsage::UNIFORM | webgpu::GpuBufferUsage::COPY_DST,
             },
         );
 
         let pipeline_layout = device.create_pipeline_layout(&webgpu::GpuPipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: vec![Some(&bind_group_layout)],
+            immediate_size: None,
         });
 
         let sky_pipeline = device.create_render_pipeline(webgpu::GpuRenderPipelineDescriptor {
@@ -319,7 +364,7 @@ impl Example {
                 targets: vec![Some(webgpu::GpuColorTargetState {
                     format: webgpu::get_gpu().get_preferred_canvas_format(),
                     blend: None,
-                    write_mask: Some(ColorWrites::ALL.bits()),
+                    write_mask: Some(webgpu::GpuColorWrite::ALL),
                 })],
             }),
             primitive: Some(webgpu::GpuPrimitiveState {
@@ -381,7 +426,7 @@ impl Example {
                 targets: vec![Some(webgpu::GpuColorTargetState {
                     format: webgpu::get_gpu().get_preferred_canvas_format(),
                     blend: None,
-                    write_mask: Some(ColorWrites::ALL.bits()),
+                    write_mask: Some(webgpu::GpuColorWrite::ALL),
                 })],
                 // targets: &[Some(config.view_formats[0].into())],
             }),
@@ -478,9 +523,10 @@ impl Example {
                 sample_count: Some(1),
                 dimension: Some(webgpu::GpuTextureDimension::D2),
                 format: skybox_format,
-                usage: TextureUsages::TEXTURE_BINDING.bits() | TextureUsages::COPY_DST.bits(),
+                usage: webgpu::GpuTextureUsage::TEXTURE_BINDING | webgpu::GpuTextureUsage::COPY_DST,
                 label: None,
                 view_formats: vec![].into(),
+                texture_binding_view_dimension: None,
             },
             // KTX2 stores mip levels in mip major order.
             // wgpu::util::TextureDataOrder::MipMajor,
@@ -497,6 +543,7 @@ impl Example {
             base_array_layer: None,
             array_layer_count: None,
             usage: None,
+            swizzle: None,
         }));
         let bind_group = device.create_bind_group(&webgpu::GpuBindGroupDescriptor {
             layout: &bind_group_layout,
@@ -529,8 +576,8 @@ impl Example {
 
         Example {
             device,
-            canvas,
-            graphics_context,
+            surface,
+            context,
             camera,
             sky_pipeline,
             entity_pipeline,
@@ -549,8 +596,7 @@ impl Example {
     }
 
     fn render(&mut self) {
-        let graphics_buffer = self.graphics_context.get_current_buffer();
-        let texture = webgpu::GpuTexture::from_graphics_buffer(graphics_buffer);
+        let texture = self.context.get_current_texture();
 
         let view = texture.create_view(Some(&webgpu::GpuTextureViewDescriptor {
             format: None,
@@ -562,6 +608,7 @@ impl Example {
             array_layer_count: None,
             label: None,
             usage: None,
+            swizzle: None,
         }));
 
         let encoder = self
@@ -631,7 +678,7 @@ impl Example {
 
         self.device.queue().submit(&[&encoder.finish(None)]);
 
-        self.graphics_context.present();
+        self.context.present();
     }
 }
 
@@ -642,7 +689,7 @@ fn device_create_texture_with_data(
 ) -> webgpu::GpuTexture {
     // Implicitly add the COPY_DST usage
     let mut desc = desc.to_owned();
-    desc.usage |= TextureUsages::COPY_DST.bits();
+    desc.usage |= webgpu::GpuTextureUsage::COPY_DST;
     // let texture = device.create_texture(&desc);
     let texture = device.create_texture(&desc);
 
@@ -793,7 +840,7 @@ pub struct BufferInitDescriptor<'a> {
     pub contents: &'a [u8],
     /// Usages of a buffer. If the buffer is used in any way that isn't specified here, the operation
     /// will panic.
-    pub usage: BufferUsages,
+    pub usage: webgpu::GpuBufferUsage,
 }
 struct MyBuffer {
     buffer: webgpu::GpuBuffer,
@@ -808,7 +855,7 @@ fn device_create_buffer_init(
         let buffer = device.create_buffer(&webgpu::GpuBufferDescriptor {
             label: descriptor.label.map(|l| l.into()),
             size: 0,
-            usage: descriptor.usage.bits(),
+            usage: descriptor.usage,
             mapped_at_creation: Some(false),
         });
         MyBuffer { buffer, size: 0 }
@@ -825,7 +872,7 @@ fn device_create_buffer_init(
         let buffer = device.create_buffer(&webgpu::GpuBufferDescriptor {
             label: descriptor.label.map(|l| l.into()),
             size: padded_size,
-            usage: descriptor.usage.bits(),
+            usage: descriptor.usage,
             mapped_at_creation: Some(true),
         });
 

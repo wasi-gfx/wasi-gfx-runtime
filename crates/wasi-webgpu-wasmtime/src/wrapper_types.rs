@@ -10,11 +10,13 @@ use std::{
 use crate::wasi::webgpu::webgpu;
 
 // can't pass generics to `wasmtime::component::bindgen`
+// TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
 pub type RecordGpuPipelineConstantValue = HashMap<String, webgpu::GpuPipelineConstantValue>;
 pub type RecordOptionGpuSize64 = HashMap<String, Option<webgpu::GpuSize64>>;
 
 // RenderPassEncoder, ComputePassEncoder, and RenderBundleEncoder need to be dropped when calling `.end`/`.finish` on them, but we can't guarantee that they'll be dropped in time by GC languages. Takeable lets you take the value and leaves None in place, so that RenderPass/ComputePass get dropped from Rust's point of view, but the wasm module can keep it's reference.
 // this is caused by the same underlying issue as this one https://github.com/gfx-rs/wgpu-native/issues/412
+// TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
 pub type RenderPassEncoder = Takeable<wgpu_core::command::RenderPass>;
 pub type ComputePassEncoder = Takeable<wgpu_core::command::ComputePass>;
 pub type RenderBundleEncoder = Takeable<RenderBundleEncoderInner>;
@@ -25,33 +27,16 @@ impl<T> Takeable<T>
 where
     T: std::fmt::Debug,
 {
-    pub fn new(id: T) -> Self {
+    pub(crate) fn new(id: T) -> Self {
         Takeable(Arc::new(std::sync::Mutex::new(Some(id))))
     }
-    pub fn lock<'a>(&'a self) -> std::sync::MutexGuard<'a, Option<T>> {
+    pub(crate) fn lock<'a>(&'a self) -> std::sync::MutexGuard<'a, Option<T>> {
         self.0.lock().unwrap()
     }
-    pub fn take(&self) -> Option<T> {
-        self.0.lock().unwrap().take()
-    }
+    // pub(crate) fn take(&self) -> Option<T> {
+    //     self.0.lock().unwrap().take()
+    // }
 }
-
-// // needed just to group the pointer and length together
-// pub struct BufferPtr {
-//     // See https://bytecodealliance.zulipchat.com/#narrow/stream/206238-general/topic/Should.20wasi.20resources.20be.20stored.20behind.20a.20mutex.3F
-//     pub(crate) ptr: NonNull<u8>,
-//     pub(crate) len: u64,
-// }
-// impl BufferPtr {
-//     pub fn slice(&self) -> &[u8] {
-//         unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len as usize) }
-//     }
-//     pub fn slice_mut(&mut self) -> &mut [u8] {
-//         unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len as usize) }
-//     }
-// }
-// unsafe impl Send for BufferPtr {}
-// unsafe impl Sync for BufferPtr {}
 
 // size needed in `GpuBuffer.size`, `RenderPass.set_index_buffer`, `RenderPass.set_vertex_buffer`.
 // usage needed in `GpuBuffer.usage`
@@ -63,6 +48,7 @@ pub struct Buffer {
 }
 
 // references to queue and adapter are also saved in device.
+// TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
 pub type Queue = Arc<wgpu_core::id::QueueId>;
 pub type Adapter = Arc<wgpu_core::id::AdapterId>;
 
@@ -75,6 +61,26 @@ pub struct Device {
     pub(crate) queue: Arc<wgpu_core::id::QueueId>,
     pub(crate) adapter: Arc<wgpu_core::id::AdapterId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
+}
+impl Device {
+    pub fn device_id(&self) -> &wgpu_core::id::DeviceId {
+        &self.device
+    }
+
+    /// Create a `Texture` from a `TextureId` that is connected to this device.
+    /// Useful in cases where an external crate get a texture through get_current_texture
+    /// and needs to connect it to a device.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the TextureId is actually connected to this device
+    #[doc(hidden)]
+    pub unsafe fn connect_texture(&self, texture_id: wgpu_core::id::TextureId) -> Texture {
+        Texture {
+            texture_id,
+            error_handler: Arc::clone(&self.error_handler),
+        }
+    }
 }
 
 #[derive(Clone)]

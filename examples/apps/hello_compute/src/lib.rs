@@ -11,8 +11,8 @@ export!(Example);
 struct Example;
 
 impl Guest for Example {
-    fn start() {
-        pollster::block_on(run_compute());
+    async fn start() {
+        run_compute().await;
     }
 }
 
@@ -40,8 +40,10 @@ async fn run_compute() {
 async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     let device = webgpu::get_gpu()
         .request_adapter(None)
+        .await
         .unwrap()
         .request_device(None)
+        .await
         .unwrap();
 
     // Loads the shader from WGSL
@@ -62,7 +64,7 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     let staging_buffer = device.create_buffer(&webgpu::GpuBufferDescriptor {
         label: None,
         size,
-        usage: webgpu::GpuBufferUsage::map_read() | webgpu::GpuBufferUsage::copy_dst(),
+        usage: webgpu::GpuBufferUsage::MAP_READ | webgpu::GpuBufferUsage::COPY_DST,
         mapped_at_creation: None,
     });
 
@@ -75,10 +77,9 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     let storage_buffer = device.create_buffer(&webgpu::GpuBufferDescriptor {
         label: Some("Storage Buffer".to_string()),
         size: contents.len() as webgpu::GpuSize64,
-        // usage: webgpu::GpuBufferUsages::STORAGE
-        //     | webgpu::GpuBufferUsages::COPY_DST
-        //     | webgpu::GpuBufferUsages::COPY_SRC,
-        usage: (1 << 7) | (1 << 3) | (1 << 2),
+        usage: webgpu::GpuBufferUsage::STORAGE
+            | webgpu::GpuBufferUsage::COPY_DST
+            | webgpu::GpuBufferUsage::COPY_SRC,
         mapped_at_creation: Some(true),
     });
 
@@ -138,13 +139,14 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     }
     // Sets adds copy operation to command encoder.
     // Will copy data from storage buffer on GPU to staging buffer on CPU.
-    encoder.copy_buffer_to_buffer(&storage_buffer, 0, &staging_buffer, 0, size);
+    encoder.copy_buffer_to_buffer(&storage_buffer, None, &staging_buffer, None, None);
 
     // Submits command encoder for processing
     device.queue().submit(&[&encoder.finish(None)]);
 
     staging_buffer
-        .map_async(webgpu::GpuMapMode::read(), Some(0), None)
+        .map_async(webgpu::GpuMapMode::READ, Some(0), None)
+        .await
         .unwrap();
 
     // Gets contents of buffer

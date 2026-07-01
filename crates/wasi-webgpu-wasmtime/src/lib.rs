@@ -8,20 +8,19 @@
 #![allow(clippy::unwrap_or_default)]
 #![allow(clippy::new_without_default)]
 
-use std::{future::Future, sync::Arc};
+use std::sync::Arc;
 
-use wasi_graphics_context_wasmtime::{AbstractBuffer, DisplayApi, DrawApi};
 use wasmtime::component::HasData;
-use wasmtime_wasi_io::IoView;
-use wgpu_core::id::SurfaceId;
 
 // ToCore trait used for resources, records, and variants.
-// Into trait used for enums, since they never need table access.
+// Into trait used for enums and flags, since they never need table access.
 mod enum_conversions;
+mod flags_conversions;
 mod to_core_conversions;
 
 mod trait_impls;
 mod wrapper_types;
+pub use wrapper_types::*;
 
 /// Re-export of `wgpu_core` and `wgpu_types` so that runtime implementors don't need to keep track of what version of wgpu this crate is using.
 pub mod reexports {
@@ -46,17 +45,15 @@ const PREFERRED_CANVAS_FORMAT: wasi::webgpu::webgpu::GpuTextureFormat =
 ))]
 pub(crate) type Backend = wgpu_core::api::Gl;
 
-// needed for wasmtime::component::bindgen! as it only looks in the current crate.
-
 wasmtime::component::bindgen!({
     path: "../../wit/",
     world: "example",
     imports: {
-        "wasi:webgpu/webgpu.[method]gpu-buffer.map-async": async | trappable,
+        "wasi:webgpu/webgpu.[method]gpu-device.lost": store | trappable,
+        "wasi:webgpu/webgpu.[method]gpu-device.on-uncaptured-error": store | trappable,
         default: trappable,
     },
     with: {
-        "wasi:io": wasmtime_wasi_io::bindings::wasi::io,
         "wasi:webgpu/webgpu.gpu-adapter": wrapper_types::Adapter,
         "wasi:webgpu/webgpu.gpu-device": wrapper_types::Device,
         "wasi:webgpu/webgpu.gpu-queue": wrapper_types::Queue,
@@ -69,7 +66,6 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu.gpu-render-bundle": wgpu_core::id::RenderBundleId,
         "wasi:webgpu/webgpu.gpu-command-buffer": wgpu_core::id::CommandBufferId,
         "wasi:webgpu/webgpu.gpu-buffer": wrapper_types::Buffer,
-        // "wasi:webgpu/webgpu.non-standard-buffer": wrapper_types::BufferPtr,
         "wasi:webgpu/webgpu.gpu-pipeline-layout": wgpu_core::id::PipelineLayoutId,
         "wasi:webgpu/webgpu.gpu-bind-group-layout": wgpu_core::id::BindGroupLayoutId,
         "wasi:webgpu/webgpu.gpu-sampler": wgpu_core::id::SamplerId,
@@ -84,151 +80,33 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu.record-gpu-pipeline-constant-value": wrapper_types::RecordGpuPipelineConstantValue,
         "wasi:webgpu/webgpu.record-option-gpu-size64": wrapper_types::RecordOptionGpuSize64,
         "wasi:webgpu/webgpu.gpu-error": wrapper_types::GpuError,
-        "wasi:graphics-context/graphics-context": wasi_graphics_context_wasmtime::wasi::graphics_context::graphics_context,
     },
 });
 
-struct WasiWebGpu<T: Send>(T);
-impl<T: Send + 'static> HasData for WasiWebGpu<T> {
-    type Data<'a> = WasiWebGpuImpl<&'a mut T>;
-}
+// linker connection
 pub fn add_to_linker<T>(l: &mut wasmtime::component::Linker<T>) -> wasmtime::Result<()>
 where
-    T: WasiWebGpuView,
+    T: WasiWebGpuCtxView,
 {
-    wasi::webgpu::webgpu::add_to_linker::<_, WasiWebGpu<T>>(l, |x| WasiWebGpuImpl(x))?;
+    wasi::webgpu::webgpu::add_to_linker::<_, HasWasiWebGpuCtx>(l, T::webgpu_ctx)?;
     Ok(())
 }
 
-pub trait WasiWebGpuView: IoView + Send {
-    fn instance(&self) -> Arc<wgpu_core::global::Global>;
-
-    /// Provide the ability to run closure on the UI thread.
-    /// On platforms that don't require UI to run on the UI thread, this can just execute in place.
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner>;
+/// returns a struct of references.
+/// Returning all references in a struct allows us to use different mutable references at the same time.
+pub trait WasiWebGpuCtxView: Send {
+    /// Return a [WasiWebGpu] from mutable reference to self.
+    fn webgpu_ctx(&mut self) -> WasiWebGpuCtx<'_>;
 }
 
-#[repr(transparent)]
-pub struct WasiWebGpuImpl<T>(pub T);
-impl<T: WasiWebGpuView> wasmtime_wasi_io::IoView for WasiWebGpuImpl<T> {
-    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
-        T::table(&mut self.0)
-    }
+pub struct WasiWebGpuCtx<'a> {
+    // wrapped in arc to allow cloning for async. might be able to remove
+    pub instance: &'a Arc<wgpu_core::global::Global>,
+    pub table: &'a mut wasmtime_wasi::ResourceTable,
 }
 
-impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for &mut T {
-    fn instance(&self) -> Arc<wgpu_core::global::Global> {
-        T::instance(self)
-    }
+struct HasWasiWebGpuCtx;
 
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
-        T::ui_thread_spawner(self)
-    }
-}
-impl<T: ?Sized + WasiWebGpuView> WasiWebGpuView for Box<T> {
-    fn instance(&self) -> Arc<wgpu_core::global::Global> {
-        T::instance(self)
-    }
-
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
-        T::ui_thread_spawner(self)
-    }
-}
-impl<T: WasiWebGpuView> WasiWebGpuView for WasiWebGpuImpl<T> {
-    fn instance(&self) -> Arc<wgpu_core::global::Global> {
-        T::instance(&self.0)
-    }
-
-    fn ui_thread_spawner(&self) -> Box<impl MainThreadSpawner> {
-        T::ui_thread_spawner(&self.0)
-    }
-}
-
-pub trait MainThreadSpawner: Send + Sync + 'static {
-    fn spawn<F, T>(&self, f: F) -> impl Future<Output = T>
-    where
-        F: FnOnce() -> T + Send + 'static,
-        T: Send + 'static;
-}
-
-struct WebGpuSurface<GI, CS, I>
-where
-    I: AsRef<wgpu_core::global::Global>,
-    GI: Fn() -> I,
-    CS: Fn(&Arc<dyn DisplayApi + Send + Sync>) -> SurfaceId,
-{
-    get_instance: GI,
-    create_surface: CS,
-    device_id: wgpu_core::id::DeviceId,
-    error_handler: Arc<wrapper_types::ErrorHandler>,
-    surface_id: Option<wgpu_core::id::SurfaceId>,
-}
-
-impl<GI, CS, I> DrawApi for WebGpuSurface<GI, CS, I>
-where
-    I: AsRef<wgpu_core::global::Global>,
-    GI: Fn() -> I,
-    CS: Fn(&Arc<dyn DisplayApi + Send + Sync>) -> SurfaceId,
-{
-    fn get_current_buffer(&mut self) -> wasmtime::Result<AbstractBuffer> {
-        let texture_id: wgpu_core::id::TextureId = (self.get_instance)()
-            .as_ref()
-            .surface_get_current_texture(self.surface_id.unwrap(), None)
-            .unwrap()
-            .texture
-            .unwrap();
-        let texture = wrapper_types::Texture {
-            texture_id,
-            error_handler: Arc::clone(&self.error_handler),
-        };
-        let buff = Box::new(texture);
-        let buff: AbstractBuffer = buff.into();
-        Ok(buff)
-    }
-
-    fn present(&mut self) -> wasmtime::Result<()> {
-        (self.get_instance)()
-            .as_ref()
-            .surface_present(self.surface_id.unwrap())
-            .unwrap();
-        Ok(())
-    }
-
-    fn display_api_ready(&mut self, display: &Arc<dyn DisplayApi + Send + Sync>) {
-        let surface_id = (self.create_surface)(display);
-        // TODO: fix this once user can pass in configuration options. For now just taking from `gpu.get-preferred-canvas-format()`.
-        let swapchain_format = PREFERRED_CANVAS_FORMAT.into();
-
-        // https://www.w3.org/TR/webgpu/#dictdef-gpucanvasconfiguration
-        let config = wgpu_types::SurfaceConfiguration {
-            format: swapchain_format,
-            usage: wgpu_types::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: vec![],
-            alpha_mode: wgpu_types::CompositeAlphaMode::Opaque,
-            width: display.width(),
-            height: display.height(),
-            present_mode: wgpu_types::PresentMode::Fifo,
-            // TODO: not sure what the correct value is
-            desired_maximum_frame_latency: 2,
-        };
-
-        (self.get_instance)()
-            .as_ref()
-            .surface_configure(surface_id, self.device_id, &config);
-
-        self.surface_id = Some(surface_id);
-    }
-}
-
-impl<GI, CS, I> Drop for WebGpuSurface<GI, CS, I>
-where
-    I: AsRef<wgpu_core::global::Global>,
-    GI: Fn() -> I,
-    CS: Fn(&Arc<dyn DisplayApi + Send + Sync>) -> SurfaceId,
-{
-    fn drop(&mut self) {
-        if let Some(surface_id) = self.surface_id {
-            (self.get_instance)().as_ref().surface_drop(surface_id);
-        }
-    }
+impl HasData for HasWasiWebGpuCtx {
+    type Data<'a> = WasiWebGpuCtx<'a>;
 }

@@ -1,13 +1,10 @@
-package wasi:surface@0.0.1;
+package wasi-gfx:surface@0.1.0;
 
 world imports {
   import surface;
 }
 
 interface surface {
-  use wasi:graphics-context/graphics-context@0.0.1.{context};
-  use wasi:io/poll@0.2.0.{pollable};
-
   record create-desc {
     height: option<u32>,
     width: option<u32>,
@@ -16,33 +13,18 @@ interface surface {
   resource surface {
     constructor(desc: create-desc);
 
-    connect-graphics-context: func(context: borrow<context>);
-
     height: func() -> u32;
     width: func() -> u32;
 
     request-set-size: func(height: option<u32>, width: option<u32>);
 
-    subscribe-resize: func() -> pollable;
-    get-resize: func() -> option<resize-event>;
-
-    subscribe-frame: func() -> pollable;
-    get-frame: func() -> option<frame-event>;
-
-    subscribe-pointer-up: func() -> pollable;
-    get-pointer-up: func() -> option<pointer-event>;
-
-    subscribe-pointer-down: func() -> pollable;
-    get-pointer-down: func() -> option<pointer-event>;
-
-    subscribe-pointer-move: func() -> pollable;
-    get-pointer-move: func() -> option<pointer-event>;
-
-    subscribe-key-up: func() -> pollable;
-    get-key-up: func() -> option<key-event>;
-
-    subscribe-key-down: func() -> pollable;
-    get-key-down: func() -> option<key-event>;
+    on-resize: func() -> stream<resize-event>;
+    on-frame: func() -> stream<frame-event>;
+    on-pointer-up: func() -> stream<pointer-event>;
+    on-pointer-down: func() -> stream<pointer-event>;
+    on-pointer-move: func() -> stream<pointer-event>;
+    on-key-up: func() -> stream<key-event>;
+    on-key-down: func() -> stream<key-event>;
   }
 
   record resize-event {

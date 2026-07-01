@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 wit-bindgen.workspace = true
 bytemuck = "1"
+futures.workspace = true
+futures-lite.workspace = true
 
 [lib]
 crate-type = ["cdylib"]

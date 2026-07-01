@@ -1,15 +1,10 @@
 [webgpu]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-prefix = "wasi-gfx-0.0.1/webgpu"
+url = "https://github.com/WebAssembly/wasi-gfx/archive/eb21e25fea34006e20027da90faf6ced31f36037.tar.gz"
 
 [surface]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-prefix = "wasi-gfx-0.0.1/surface"
-
-[graphics-context]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-prefix = "wasi-gfx-0.0.1/graphics-context"
+url = "https://github.com/wasi-gfx/wasi-gfx/archive/cd583a08d12498492705409cb55eef388323e94a.tar.gz"
+prefix = "wasi-gfx-cd583a08d12498492705409cb55eef388323e94a/packages/surface"
 
 [frame-buffer]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-prefix = "wasi-gfx-0.0.1/frame-buffer"
+url = "https://github.com/wasi-gfx/wasi-gfx/archive/cd583a08d12498492705409cb55eef388323e94a.tar.gz"
+prefix = "wasi-gfx-cd583a08d12498492705409cb55eef388323e94a/packages/frame-buffer"

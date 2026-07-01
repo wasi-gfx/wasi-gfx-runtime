@@ -2,16 +2,20 @@ use std::{
     any::Any,
     collections::HashMap,
     fmt::Debug,
+    future::Future,
+    pin::Pin,
     sync::{Arc, Mutex},
     thread::{self, sleep},
     time::Duration,
 };
 
-use crate::{Surface, SurfaceDesc, SurfaceProxy};
+use crate::surface::{
+    wasi_gfx, KeyEvent, MainThreadSpawner, PointerEvent, ResizeEvent, SurfaceDesc,
+};
+use crate::surface::{GfxWindow, Surface};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
-use wasi_graphics_context_wasmtime::DisplayApi;
 use winit::{
     application::ApplicationHandler,
     dpi::{PhysicalSize, Size},
@@ -41,12 +45,12 @@ impl WasiWinitEventLoop {
     /// This has to be run on the main thread.
     /// This call will block the thread.
     pub fn run(self) {
-        let proxies: Arc<Mutex<HashMap<WindowId, SurfaceProxy>>> = Default::default();
+        let surfaces: Arc<Mutex<HashMap<WindowId, Surface>>> = Default::default();
 
         {
-            let proxies = Arc::clone(&proxies);
+            let surfaces = Arc::clone(&surfaces);
             thread::spawn(move || loop {
-                for (_, proxy) in proxies.lock().unwrap().iter() {
+                for proxy in surfaces.lock().unwrap().values() {
                     proxy.animation_frame();
                 }
                 sleep(Duration::from_millis(16));
@@ -64,7 +68,7 @@ impl WasiWinitEventLoop {
                 self.0.window_handle()
             }
         }
-        impl DisplayApi for MyWindow {
+        impl GfxWindow for MyWindow {
             fn height(&self) -> u32 {
                 self.0.inner_size().height
             }
@@ -85,8 +89,8 @@ impl WasiWinitEventLoop {
         struct App {
             pointer_pos: HashMap<WindowId, (f64, f64)>,
             modifiers: HashMap<WindowId, ModifiersState>,
-            proxies: HashMap<WindowId, SurfaceProxy>,
-            arc_proxies: Arc<Mutex<HashMap<WindowId, SurfaceProxy>>>,
+            surfaces: HashMap<WindowId, Surface>,
+            arc_surfaces: Arc<Mutex<HashMap<WindowId, Surface>>>,
         }
 
         impl ApplicationHandler<MainThreadAction> for App {
@@ -111,15 +115,15 @@ impl WasiWinitEventLoop {
 
                         let window_id = window.id();
 
-                        let canvas = Surface::new(Box::new(MyWindow(window)));
+                        let surface = Surface::new(Box::new(MyWindow(window)));
 
-                        self.proxies.insert(window_id, canvas.proxy());
-                        self.arc_proxies
+                        self.surfaces.insert(window_id, surface.arc_clone());
+                        self.arc_surfaces
                             .lock()
                             .unwrap()
-                            .insert(window_id, canvas.proxy());
+                            .insert(window_id, surface.arc_clone());
 
-                        response_channel.send(canvas).unwrap();
+                        response_channel.send(surface).unwrap();
                     }
                     MainThreadAction::Spawn(f, res) => {
                         res.send(f()).unwrap();
@@ -138,8 +142,8 @@ impl WasiWinitEventLoop {
                         self.pointer_pos
                             .insert(window_id, (position.x, position.y))
                             .unwrap();
-                        if let Some(proxy) = self.proxies.get(&window_id) {
-                            proxy.pointer_move(crate::PointerEvent {
+                        if let Some(proxy) = self.surfaces.get(&window_id) {
+                            proxy.pointer_move(PointerEvent {
                                 x: position.x,
                                 y: position.y,
                             });
@@ -150,7 +154,7 @@ impl WasiWinitEventLoop {
                     }
                     WindowEvent::KeyboardInput { event: input, .. } => {
                         let modifiers = self.modifiers.get(&window_id).unwrap();
-                        let event = crate::KeyEvent {
+                        let event = KeyEvent {
                             key: match input.physical_key {
                                 winit::keyboard::PhysicalKey::Code(code) => code.try_into().ok(),
                                 winit::keyboard::PhysicalKey::Unidentified(_) => None,
@@ -166,7 +170,7 @@ impl WasiWinitEventLoop {
                             meta_key: modifiers.super_key(),
                             shift_key: modifiers.shift_key(),
                         };
-                        if let Some(proxy) = self.proxies.get(&window_id) {
+                        if let Some(proxy) = self.surfaces.get(&window_id) {
                             match input.state {
                                 ElementState::Pressed => {
                                     proxy.key_down(event);
@@ -179,11 +183,11 @@ impl WasiWinitEventLoop {
                     }
                     WindowEvent::MouseInput { state, .. } => {
                         let (pointer_x, pointer_y) = self.pointer_pos.get(&window_id).unwrap();
-                        let event = crate::PointerEvent {
+                        let event = PointerEvent {
                             x: *pointer_x,
                             y: *pointer_y,
                         };
-                        if let Some(proxy) = self.proxies.get(&window_id) {
+                        if let Some(proxy) = self.surfaces.get(&window_id) {
                             match state {
                                 ElementState::Pressed => {
                                     proxy.pointer_down(event);
@@ -195,8 +199,8 @@ impl WasiWinitEventLoop {
                         }
                     }
                     WindowEvent::Resized(new_size) => {
-                        if let Some(proxy) = self.proxies.get(&window_id) {
-                            proxy.canvas_resize(crate::ResizeEvent {
+                        if let Some(proxy) = self.surfaces.get(&window_id) {
+                            proxy.canvas_resize(ResizeEvent {
                                 height: new_size.height,
                                 width: new_size.width,
                             });
@@ -209,7 +213,7 @@ impl WasiWinitEventLoop {
         }
 
         let mut app = App {
-            arc_proxies: Arc::clone(&proxies),
+            arc_surfaces: Arc::clone(&surfaces),
             ..Default::default()
         };
         self.event_loop.run_app(&mut app).unwrap();
@@ -229,8 +233,10 @@ impl WasiWinitEventLoopProxy {
             .unwrap();
         receiver.await.unwrap()
     }
+}
 
-    pub async fn spawn<F, T>(&self, f: F) -> T
+impl MainThreadSpawner for WasiWinitEventLoopProxy {
+    async fn spawn<F, T>(&self, f: F) -> T
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
@@ -244,6 +250,11 @@ impl WasiWinitEventLoopProxy {
             .send_event(MainThreadAction::Spawn(boxed, sender))
             .unwrap();
         *receiver.await.unwrap().downcast().unwrap()
+    }
+
+    fn create_surface(&self, desc: SurfaceDesc) -> Pin<Box<dyn Future<Output = Surface> + Send>> {
+        let this = self.clone();
+        Box::pin(async move { this.create_window(desc).await })
     }
 }
 
@@ -268,11 +279,11 @@ impl Debug for MainThreadAction {
     }
 }
 
-impl TryFrom<winit::keyboard::KeyCode> for crate::wasi::surface::surface::Key {
+impl TryFrom<winit::keyboard::KeyCode> for wasi_gfx::surface::surface::Key {
     type Error = ();
 
     fn try_from(value: winit::keyboard::KeyCode) -> Result<Self, Self::Error> {
-        use crate::wasi::surface::surface::Key;
+        use wasi_gfx::surface::surface::Key;
         match value {
             winit::keyboard::KeyCode::Backquote => Ok(Key::Backquote),
             winit::keyboard::KeyCode::Backslash => Ok(Key::Backslash),

@@ -1,29 +1,16 @@
 [frame-buffer]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-prefix = "wasi-gfx-0.0.1/frame-buffer"
-sha256 = "c77cda1e98f2a4c343ec5cd42bf9940674e009d977dc6e3cab99152cc0a49ed3"
-sha512 = "b6db27fe297c01ec67a713e42e398b2823d566d488dbc8f5f2b81368d8f2c9f7ad83d98f820253002933d6eb9de6c751cf9606fef67cc4ad522ef6a665deb780"
-
-[graphics-context]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-prefix = "wasi-gfx-0.0.1/graphics-context"
-sha256 = "b138ab44463c5bb074207687c88d59dfca9c6bc7a5dad482dba626094cccbc3f"
-sha512 = "b9cef19d2cf0a0f3d0a58c94cf4483d051acfb5622e379bf0abcc6aa34c14d92210c56554387b932f08aba3c9c1e9e9cadb554e9dd0cf464b20c7d31c806515e"
-
-[io]
-sha256 = "7210e5653539a15478f894d4da24cc69d61924cbcba21d2804d69314a88e5a4c"
-sha512 = "49184a1b0945a889abd52d25271172ed3dc2db6968fcdddb1bab7ee0081f4a3eeee0977ad2291126a37631c0d86eeea75d822fa8af224c422134500bf9f0f2bb"
+url = "https://github.com/wasi-gfx/wasi-gfx/archive/cd583a08d12498492705409cb55eef388323e94a.tar.gz"
+prefix = "wasi-gfx-cd583a08d12498492705409cb55eef388323e94a/packages/frame-buffer"
+sha256 = "76a5592b40a771e63d4f7d845562efdde32409aa51ed7704658fe6ffdac49c1c"
+sha512 = "2858bef8e22684640db9829e2c332e4fccaf05854ee745dfd359719c2e35cd05b046da4671cb8bbc58cabda0abbad3dd0f093cf875fafc48283d38a296d65941"
 
 [surface]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-prefix = "wasi-gfx-0.0.1/surface"
-sha256 = "34c55612f86285fd8e90665e79c3d9de79a2a27f0153d565ca4a18680d986557"
-sha512 = "3950cddf68d1a68f25e19edbb53249422ced5bb386d43c3336696cd8837c95cf9435858e32a867fbd07ee4299ab3c01245e644d20bff9cb77c7faa34e2f9687d"
-deps = ["io"]
+url = "https://github.com/wasi-gfx/wasi-gfx/archive/cd583a08d12498492705409cb55eef388323e94a.tar.gz"
+prefix = "wasi-gfx-cd583a08d12498492705409cb55eef388323e94a/packages/surface"
+sha256 = "39e9cd8e5ee8fa3d2563c619be2cf2cca3eb2e3a331e8fabd993b727cc05688b"
+sha512 = "0b8a8d6295ed29afde9cd90ee32cfbebb88e73d6414609bc8c4841a95067a4747efcfcb65e63b1867e09541407291cb7ccd86d02385fd0d517b654cba435da50"
 
 [webgpu]
-url = "https://github.com/WebAssembly/wasi-gfx/archive/refs/heads/v0.0.1.tar.gz"
-prefix = "wasi-gfx-0.0.1/webgpu"
-sha256 = "1986249a458706635317a72eedda4f3f469919a9d1802893b701aea47d9cee54"
-sha512 = "63488865481f18d7b0258cc9ac97bfca92c3944fcd40d34ec723d2691a673db0140a905a62d995bfbb0fb61ba5785fbd07dc97317e5f90dfcfa292440a7ead48"
-deps = ["io"]
+url = "https://github.com/WebAssembly/wasi-gfx/archive/eb21e25fea34006e20027da90faf6ced31f36037.tar.gz"
+sha256 = "76d95b60a77d886a2f40fd969cd694545f511ee5ff59f33689cab5a2b32131c3"
+sha512 = "50acb2fe200a40c9ddaeb402108930eda24df540857c679314e3e3df34fd8f34051ec3ae2da3e80b8724f45c77f885fee1dcc168f1c5cf9e9accc9a6004c0d80"

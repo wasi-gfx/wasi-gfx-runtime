@@ -21,8 +21,8 @@ impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
             wgpu_types::TextureFormat::R8Sint => webgpu::GpuTextureFormat::R8sint,
             wgpu_types::TextureFormat::R16Uint => webgpu::GpuTextureFormat::R16uint,
             wgpu_types::TextureFormat::R16Sint => webgpu::GpuTextureFormat::R16sint,
-            wgpu_types::TextureFormat::R16Unorm => todo!(),
-            wgpu_types::TextureFormat::R16Snorm => todo!(),
+            wgpu_types::TextureFormat::R16Unorm => webgpu::GpuTextureFormat::R16unorm,
+            wgpu_types::TextureFormat::R16Snorm => webgpu::GpuTextureFormat::R16snorm,
             wgpu_types::TextureFormat::R16Float => webgpu::GpuTextureFormat::R16float,
             wgpu_types::TextureFormat::Rg8Unorm => webgpu::GpuTextureFormat::Rg8unorm,
             wgpu_types::TextureFormat::Rg8Snorm => webgpu::GpuTextureFormat::Rg8snorm,
@@ -34,8 +34,8 @@ impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
             wgpu_types::TextureFormat::R64Uint => todo!(),
             wgpu_types::TextureFormat::Rg16Uint => webgpu::GpuTextureFormat::Rg16uint,
             wgpu_types::TextureFormat::Rg16Sint => webgpu::GpuTextureFormat::Rg16sint,
-            wgpu_types::TextureFormat::Rg16Unorm => todo!(),
-            wgpu_types::TextureFormat::Rg16Snorm => todo!(),
+            wgpu_types::TextureFormat::Rg16Unorm => webgpu::GpuTextureFormat::Rg16unorm,
+            wgpu_types::TextureFormat::Rg16Snorm => webgpu::GpuTextureFormat::Rg16snorm,
             wgpu_types::TextureFormat::Rg16Float => webgpu::GpuTextureFormat::Rg16float,
             wgpu_types::TextureFormat::Rgba8Unorm => webgpu::GpuTextureFormat::Rgba8unorm,
             wgpu_types::TextureFormat::Rgba8UnormSrgb => webgpu::GpuTextureFormat::Rgba8unormSrgb,
@@ -52,8 +52,8 @@ impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
             wgpu_types::TextureFormat::Rg32Float => webgpu::GpuTextureFormat::Rg32float,
             wgpu_types::TextureFormat::Rgba16Uint => webgpu::GpuTextureFormat::Rgba16uint,
             wgpu_types::TextureFormat::Rgba16Sint => webgpu::GpuTextureFormat::Rgba16sint,
-            wgpu_types::TextureFormat::Rgba16Unorm => todo!(),
-            wgpu_types::TextureFormat::Rgba16Snorm => todo!(),
+            wgpu_types::TextureFormat::Rgba16Unorm => webgpu::GpuTextureFormat::Rgba16unorm,
+            wgpu_types::TextureFormat::Rgba16Snorm => webgpu::GpuTextureFormat::Rgba16snorm,
             wgpu_types::TextureFormat::Rgba16Float => webgpu::GpuTextureFormat::Rgba16float,
             wgpu_types::TextureFormat::Rgba32Uint => webgpu::GpuTextureFormat::Rgba32uint,
             wgpu_types::TextureFormat::Rgba32Sint => webgpu::GpuTextureFormat::Rgba32sint,
@@ -123,6 +123,8 @@ impl From<webgpu::GpuTextureFormat> for wgpu_types::TextureFormat {
             webgpu::GpuTextureFormat::R8sint => wgpu_types::TextureFormat::R8Sint,
             webgpu::GpuTextureFormat::R16uint => wgpu_types::TextureFormat::R16Uint,
             webgpu::GpuTextureFormat::R16sint => wgpu_types::TextureFormat::R16Sint,
+            webgpu::GpuTextureFormat::R16unorm => wgpu_types::TextureFormat::R16Unorm,
+            webgpu::GpuTextureFormat::R16snorm => wgpu_types::TextureFormat::R16Snorm,
             webgpu::GpuTextureFormat::R16float => wgpu_types::TextureFormat::R16Float,
             webgpu::GpuTextureFormat::Rg8unorm => wgpu_types::TextureFormat::Rg8Unorm,
             webgpu::GpuTextureFormat::Rg8snorm => wgpu_types::TextureFormat::Rg8Snorm,
@@ -133,6 +135,8 @@ impl From<webgpu::GpuTextureFormat> for wgpu_types::TextureFormat {
             webgpu::GpuTextureFormat::R32float => wgpu_types::TextureFormat::R32Float,
             webgpu::GpuTextureFormat::Rg16uint => wgpu_types::TextureFormat::Rg16Uint,
             webgpu::GpuTextureFormat::Rg16sint => wgpu_types::TextureFormat::Rg16Sint,
+            webgpu::GpuTextureFormat::Rg16unorm => wgpu_types::TextureFormat::Rg16Unorm,
+            webgpu::GpuTextureFormat::Rg16snorm => wgpu_types::TextureFormat::Rg16Snorm,
             webgpu::GpuTextureFormat::Rg16float => wgpu_types::TextureFormat::Rg16Float,
             webgpu::GpuTextureFormat::Rgba8unorm => wgpu_types::TextureFormat::Rgba8Unorm,
             webgpu::GpuTextureFormat::Rgba8unormSrgb => wgpu_types::TextureFormat::Rgba8UnormSrgb,
@@ -149,6 +153,8 @@ impl From<webgpu::GpuTextureFormat> for wgpu_types::TextureFormat {
             webgpu::GpuTextureFormat::Rg32float => wgpu_types::TextureFormat::Rg32Float,
             webgpu::GpuTextureFormat::Rgba16uint => wgpu_types::TextureFormat::Rgba16Uint,
             webgpu::GpuTextureFormat::Rgba16sint => wgpu_types::TextureFormat::Rgba16Sint,
+            webgpu::GpuTextureFormat::Rgba16unorm => wgpu_types::TextureFormat::Rgba16Unorm,
+            webgpu::GpuTextureFormat::Rgba16snorm => wgpu_types::TextureFormat::Rgba16Snorm,
             webgpu::GpuTextureFormat::Rgba16float => wgpu_types::TextureFormat::Rgba16Float,
             webgpu::GpuTextureFormat::Rgba32uint => wgpu_types::TextureFormat::Rgba32Uint,
             webgpu::GpuTextureFormat::Rgba32sint => wgpu_types::TextureFormat::Rgba32Sint,
@@ -577,6 +583,17 @@ impl From<wgpu_types::error::ErrorType> for webgpu::GpuErrorKind {
             wgpu_types::error::ErrorType::OutOfMemory => webgpu::GpuErrorKind::OutOfMemoryError,
             wgpu_types::error::ErrorType::Validation => webgpu::GpuErrorKind::ValidationError,
             wgpu_types::error::ErrorType::DeviceLost => todo!(),
+        }
+    }
+}
+
+impl From<webgpu::GpuCanvasAlphaMode> for wgpu_types::CompositeAlphaMode {
+    fn from(value: webgpu::GpuCanvasAlphaMode) -> Self {
+        match value {
+            webgpu::GpuCanvasAlphaMode::Opaque => wgpu_types::CompositeAlphaMode::Opaque,
+            webgpu::GpuCanvasAlphaMode::Premultiplied => {
+                wgpu_types::CompositeAlphaMode::PreMultiplied
+            }
         }
     }
 }
