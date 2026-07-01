@@ -1148,6 +1148,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "frame-buffer-wasmtime"
+version = "0.1.0"
+dependencies = [
+ "wasmtime",
+ "wasmtime-wasi",
+]
+
+[[package]]
 name = "fs-set-times"
 version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2770,15 +2778,15 @@ dependencies = [
  "async-broadcast",
  "clap",
  "env_logger",
+ "frame-buffer-wasmtime",
  "futures",
  "log",
  "oneshot",
  "rand 0.9.2",
  "raw-window-handle",
  "softbuffer",
+ "surface-wasmtime",
  "tokio",
- "wasi-frame-buffer-wasmtime",
- "wasi-surface-wasmtime",
  "wasi-webgpu-wasmtime",
  "wasmtime",
  "wasmtime-wasi",
@@ -3124,6 +3132,24 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
+name = "surface-wasmtime"
+version = "0.1.0"
+dependencies = [
+ "async-broadcast",
+ "bytemuck",
+ "frame-buffer-wasmtime",
+ "futures",
+ "oneshot",
+ "raw-window-handle",
+ "shared",
+ "softbuffer",
+ "wasi-webgpu-wasmtime",
+ "wasmtime",
+ "wasmtime-wasi",
+ "winit",
+]
 
 [[package]]
 name = "syn"
@@ -3473,32 +3499,6 @@ name = "wasi"
 version = "0.11.1+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
-
-[[package]]
-name = "wasi-frame-buffer-wasmtime"
-version = "0.1.0"
-dependencies = [
- "wasmtime",
- "wasmtime-wasi",
-]
-
-[[package]]
-name = "wasi-surface-wasmtime"
-version = "0.1.0"
-dependencies = [
- "async-broadcast",
- "bytemuck",
- "futures",
- "oneshot",
- "raw-window-handle",
- "shared",
- "softbuffer",
- "wasi-frame-buffer-wasmtime",
- "wasi-webgpu-wasmtime",
- "wasmtime",
- "wasmtime-wasi",
- "winit",
-]
 
 [[package]]
 name = "wasi-webgpu-wasmtime"

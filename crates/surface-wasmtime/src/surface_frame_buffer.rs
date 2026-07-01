@@ -1,10 +1,10 @@
 use crate::surface::{MainThreadSpawner, Surface};
+use frame_buffer_wasmtime::{GfxBuffer, HasBuffer};
 use std::{
     marker::PhantomData,
     num::NonZeroU32,
     sync::{Arc, Mutex},
 };
-use wasi_frame_buffer_wasmtime::{GfxBuffer, HasBuffer};
 use wasi_gfx::surface::surface_frame_buffer;
 use wasmtime::component::{HasData, Resource};
 
@@ -17,7 +17,7 @@ wasmtime::component::bindgen!({
     },
     with: {
         "wasi-gfx:surface/surface": crate::surface::wasi_gfx::surface::surface,
-        "wasi-gfx:frame-buffer/frame-buffer": wasi_frame_buffer_wasmtime::wasi_gfx::frame_buffer::frame_buffer,
+        "wasi-gfx:frame-buffer/frame-buffer": frame_buffer_wasmtime::wasi_gfx::frame_buffer::frame_buffer,
         "wasi-gfx:surface/surface-frame-buffer.context": GfxContext,
     },
 });
