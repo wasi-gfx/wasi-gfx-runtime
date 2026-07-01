@@ -21,8 +21,8 @@ env_logger.workspace = true
 log.workspace = true
 async-broadcast.workspace = true
 oneshot.workspace = true
-wasi-surface-wasmtime = { path = "../../crates/wasi-surface-wasmtime", features = ["winit", "surface-webgpu", "surface-frame-buffer"]}
-wasi-frame-buffer-wasmtime = { path = "../../crates/wasi-frame-buffer-wasmtime" }
+surface-wasmtime = { path = "../../crates/surface-wasmtime", features = ["winit", "surface-webgpu", "surface-frame-buffer"]}
+frame-buffer-wasmtime = { path = "../../crates/frame-buffer-wasmtime" }
 wasi-webgpu-wasmtime = { path = "../../crates/wasi-webgpu-wasmtime" }
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]

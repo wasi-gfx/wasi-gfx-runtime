@@ -2,9 +2,9 @@
 resolver = "2"
 members = [
     "crates/shared",
-    "crates/wasi-frame-buffer-wasmtime",
-    "crates/wasi-surface-wasmtime",
     "crates/wasi-webgpu-wasmtime",
+    "crates/frame-buffer-wasmtime",
+    "crates/surface-wasmtime",
     "examples/apps/rectangle_frame_buffer",
     "examples/apps/triangle",
     "examples/apps/skybox",

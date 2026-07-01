@@ -1,5 +1,5 @@
 [package]
-name = "wasi-frame-buffer-wasmtime"
+name = "frame-buffer-wasmtime"
 version = "0.1.0"
 edition = "2021"
 

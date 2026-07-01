@@ -1,12 +1,12 @@
 [package]
-name = "wasi-surface-wasmtime"
+name = "surface-wasmtime"
 version = "0.1.0"
 edition = "2021"
 
 [features]
 default = []
 surface-webgpu = ["wasi-webgpu-wasmtime"]
-surface-frame-buffer = ["wasi-frame-buffer-wasmtime", "softbuffer"]
+surface-frame-buffer = ["frame-buffer-wasmtime", "softbuffer"]
 
 [dependencies]
 wasmtime.workspace = true
@@ -17,7 +17,7 @@ oneshot.workspace = true
 winit = { workspace = true, optional = true }
 futures.workspace = true
 wasi-webgpu-wasmtime = { path = "../wasi-webgpu-wasmtime", optional = true }
-wasi-frame-buffer-wasmtime = { path = "../wasi-frame-buffer-wasmtime", optional = true }
+frame-buffer-wasmtime = { path = "../frame-buffer-wasmtime", optional = true }
 shared = { path = "../shared" }
 softbuffer = { workspace = true, optional = true }
 bytemuck = { workspace = true, features = ["extern_crate_std"] }

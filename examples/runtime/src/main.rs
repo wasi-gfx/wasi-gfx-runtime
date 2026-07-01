@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use wasi_frame_buffer_wasmtime::{FrameBufferCtx, FrameBufferCtxView};
-use wasi_surface_wasmtime::{
+use frame_buffer_wasmtime::{FrameBufferCtx, FrameBufferCtxView};
+use surface_wasmtime::{
     winit::WasiWinitEventLoopProxy, SurfaceCtxView, SurfaceFrameBufferCtx,
     SurfaceFrameBufferCtxView, SurfaceWebgpuCtx, SurfaceWebgpuCtxView,
 };
@@ -33,11 +33,11 @@ wasmtime::component::bindgen!({
 
 struct HostState {
     instance: Arc<wgpu_core::global::Global>,
-    main_thread_proxy: Arc<wasi_surface_wasmtime::winit::WasiWinitEventLoopProxy>,
+    main_thread_proxy: Arc<surface_wasmtime::winit::WasiWinitEventLoopProxy>,
 }
 
 impl HostState {
-    fn new(main_thread_proxy: wasi_surface_wasmtime::winit::WasiWinitEventLoopProxy) -> Self {
+    fn new(main_thread_proxy: surface_wasmtime::winit::WasiWinitEventLoopProxy) -> Self {
         Self {
             instance: Arc::new(wgpu_core::global::Global::new(
                 "webgpu",
@@ -91,8 +91,8 @@ impl FrameBufferCtxView for WorkloadState {
 
 impl SurfaceCtxView for WorkloadState {
     type Spawner = WasiWinitEventLoopProxy;
-    fn surface_ctx(&mut self) -> wasi_surface_wasmtime::SurfaceCtx<'_, WasiWinitEventLoopProxy> {
-        wasi_surface_wasmtime::SurfaceCtx {
+    fn surface_ctx(&mut self) -> surface_wasmtime::SurfaceCtx<'_, WasiWinitEventLoopProxy> {
+        surface_wasmtime::SurfaceCtx {
             table: &mut self.table,
             main_thread_spawner: &self.main_thread_proxy,
         }
@@ -134,7 +134,7 @@ async fn main() -> anyhow::Result<()> {
     let args = RuntimeArgs::parse();
 
     let (main_thread_loop, main_thread_proxy) =
-        wasi_surface_wasmtime::winit::create_wasi_winit_event_loop();
+        surface_wasmtime::winit::create_wasi_winit_event_loop();
     let host_state = HostState::new(main_thread_proxy);
 
     let mut config = Config::default();
@@ -144,8 +144,8 @@ async fn main() -> anyhow::Result<()> {
     let mut linker: Linker<WorkloadState> = Linker::new(&engine);
 
     wasi_webgpu_wasmtime::add_to_linker(&mut linker)?;
-    wasi_frame_buffer_wasmtime::add_to_linker(&mut linker)?;
-    wasi_surface_wasmtime::add_all_to_linker(&mut linker)?;
+    frame_buffer_wasmtime::add_to_linker(&mut linker)?;
+    surface_wasmtime::add_all_to_linker(&mut linker)?;
     Example::add_to_linker_imports::<_, WorkloadState>(&mut linker, |x| x)?;
 
     let workload_state = host_state.add_workload();
