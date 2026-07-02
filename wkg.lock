@@ -7,24 +7,24 @@ name = "wasi:webgpu"
 registry = "wasi.dev"
 
 [[packages.versions]]
-requirement = "=0.2.0-rc.2"
-version = "0.2.0-rc.2"
-digest = "sha256:da0a4992c5b7b28dbeba047d0867967c6e59dbba5f910495774494ce8a997413"
+requirement = "=0.3.0-rc.2"
+version = "0.3.0-rc.2"
+digest = "sha256:9ba613b2be1cc74135f496e684f3b2bdd373507302c56ddae8a16398f3c70866"
 
 [[packages]]
 name = "wasi-gfx:frame-buffer"
 registry = "ghcr.io"
 
 [[packages.versions]]
-requirement = "=0.1.0"
-version = "0.1.0"
-digest = "sha256:fd9c5853730e996986445731b8bfabe807e412af94d27b768467ed692ea9bab5"
+requirement = "=0.2.0"
+version = "0.2.0"
+digest = "sha256:fc65e5f78b8fa5f26911a156ca37a7aa9f30906e40254d7e39329adadb13ca32"
 
 [[packages]]
 name = "wasi-gfx:surface"
 registry = "ghcr.io"
 
 [[packages.versions]]
-requirement = "=0.1.0"
-version = "0.1.0"
-digest = "sha256:779a1bd54e66dc390e6cd42b1e1f2d42deb858082a2237a1d800d6ba393392b6"
+requirement = "=0.2.0"
+version = "0.2.0"
+digest = "sha256:ce90762db49f383d87c59d42b5401eea4005720dac3122121c14aec97faed12c"

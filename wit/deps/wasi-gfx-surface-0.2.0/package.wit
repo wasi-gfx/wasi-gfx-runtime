@@ -1,4 +1,4 @@
-package wasi-gfx:surface@0.1.0;
+package wasi-gfx:surface@0.2.0;
 
 interface surface {
   record create-desc {
@@ -223,7 +223,7 @@ interface surface {
 }
 
 interface surface-frame-buffer {
-  use wasi-gfx:frame-buffer/frame-buffer@0.1.0.{buffer};
+  use wasi-gfx:frame-buffer/frame-buffer@0.2.0.{buffer};
   use surface.{surface};
 
   resource context {
@@ -235,7 +235,7 @@ interface surface-frame-buffer {
 }
 
 interface surface-webgpu {
-  use wasi:webgpu/webgpu@0.2.0-rc.2.{gpu-device, gpu-texture, gpu-texture-format, gpu-texture-usage, predefined-color-space, gpu-canvas-tone-mapping, gpu-canvas-alpha-mode};
+  use wasi:webgpu/webgpu@0.3.0-rc.2.{gpu-device, gpu-texture, gpu-texture-format, gpu-texture-usage, predefined-color-space, gpu-canvas-tone-mapping, gpu-canvas-alpha-mode};
   use surface.{surface};
 
   record context-configuration {
@@ -259,12 +259,12 @@ interface surface-webgpu {
 }
 
 world frame-buffer-imports {
-  import wasi-gfx:frame-buffer/frame-buffer@0.1.0;
+  import wasi-gfx:frame-buffer/frame-buffer@0.2.0;
   import surface;
   import surface-frame-buffer;
 }
 world webgpu-imports {
-  import wasi:webgpu/webgpu@0.2.0-rc.2;
+  import wasi:webgpu/webgpu@0.3.0-rc.2;
   import surface;
   import surface-webgpu;
 }
