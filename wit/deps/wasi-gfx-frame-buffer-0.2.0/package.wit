@@ -1,4 +1,4 @@
-package wasi-gfx:frame-buffer@0.1.0;
+package wasi-gfx:frame-buffer@0.2.0;
 
 interface frame-buffer {
   resource buffer {

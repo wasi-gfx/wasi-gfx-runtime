@@ -2,10 +2,10 @@ package example:example;
 
 /// wit for the examples in this repo
 world example {
-    include wasi:webgpu/imports@0.2.0-rc.2;
-    include wasi-gfx:surface/webgpu-imports@0.1.0;
-    include wasi-gfx:frame-buffer/imports@0.1.0;
-    include wasi-gfx:surface/frame-buffer-imports@0.1.0;
+    include wasi:webgpu/imports@0.3.0-rc.2;
+    include wasi-gfx:surface/webgpu-imports@0.2.0;
+    include wasi-gfx:frame-buffer/imports@0.2.0;
+    include wasi-gfx:surface/frame-buffer-imports@0.2.0;
 
     /// main entrypoint
     export start: async func();
