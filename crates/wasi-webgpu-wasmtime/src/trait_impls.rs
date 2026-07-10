@@ -1,7 +1,7 @@
 use callback_future::CallbackFuture;
 use core::slice;
 use shared::StreamPipeMap;
-use std::{borrow::Cow, num::NonZeroU64, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, sync::Arc};
 use wasmtime::{
     bail,
     component::{Access, Accessor, FutureReader, Resource, StreamReader},
@@ -25,69 +25,82 @@ impl<'a> webgpu::Host for WasiWebGpuCtx<'a> {
 
 impl<'a> webgpu::HostRecordGpuPipelineConstantValue for WasiWebGpuCtx<'a> {
     fn new(&mut self) -> wasmtime::Result<Resource<webgpu::RecordGpuPipelineConstantValue>> {
-        todo!()
+        Ok(self.table.push(HashMap::new())?)
     }
 
     fn add(
         &mut self,
-        _record: Resource<webgpu::RecordGpuPipelineConstantValue>,
-        _key: String,
-        _value: webgpu::GpuPipelineConstantValue,
+        record: Resource<webgpu::RecordGpuPipelineConstantValue>,
+        key: String,
+        value: webgpu::GpuPipelineConstantValue,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let record = self.table.get_mut(&record)?;
+        record.insert(key, value);
+        Ok(())
     }
 
-    // fn get(&mut self, _record: Resource<webgpu::RecordGpuPipelineConstantValue>, _key: String) -> Option<webgpu::GpuPipelineConstantValue> {
     fn get(
         &mut self,
-        _record: Resource<webgpu::RecordGpuPipelineConstantValue>,
-        _key: String,
+        record: Resource<webgpu::RecordGpuPipelineConstantValue>,
+        key: String,
     ) -> wasmtime::Result<Option<webgpu::GpuPipelineConstantValue>> {
-        todo!()
+        let record = self.table.get(&record)?;
+        let value = record.get(&key).copied();
+        Ok(value)
     }
 
     fn has(
         &mut self,
-        _record: Resource<webgpu::RecordGpuPipelineConstantValue>,
-        _key: String,
+        record: Resource<webgpu::RecordGpuPipelineConstantValue>,
+        key: String,
     ) -> wasmtime::Result<bool> {
-        todo!()
+        let record = self.table.get(&record)?;
+        Ok(record.contains_key(&key))
     }
 
     fn remove(
         &mut self,
-        _record: Resource<webgpu::RecordGpuPipelineConstantValue>,
-        _key: String,
+        record: Resource<webgpu::RecordGpuPipelineConstantValue>,
+        key: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        let record = self.table.get_mut(&record)?;
+        record.remove(&key);
+        Ok(())
     }
 
     fn keys(
         &mut self,
-        _record: Resource<webgpu::RecordGpuPipelineConstantValue>,
+        record: Resource<webgpu::RecordGpuPipelineConstantValue>,
     ) -> wasmtime::Result<Vec<String>> {
-        todo!()
+        let record = self.table.get(&record)?;
+        let keys = record.keys().cloned().collect();
+        Ok(keys)
     }
 
     fn values(
         &mut self,
-        _record: Resource<webgpu::RecordGpuPipelineConstantValue>,
+        record: Resource<webgpu::RecordGpuPipelineConstantValue>,
     ) -> wasmtime::Result<Vec<webgpu::GpuPipelineConstantValue>> {
-        todo!()
+        let record = self.table.get(&record)?;
+        let values = record.values().copied().collect();
+        Ok(values)
     }
 
     fn entries(
         &mut self,
-        _record: Resource<webgpu::RecordGpuPipelineConstantValue>,
+        record: Resource<webgpu::RecordGpuPipelineConstantValue>,
     ) -> wasmtime::Result<Vec<(String, webgpu::GpuPipelineConstantValue)>> {
-        todo!()
+        let record = self.table.get(&record)?;
+        let entries = record.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        Ok(entries)
     }
 
     fn drop(
         &mut self,
-        _self_: Resource<webgpu::RecordGpuPipelineConstantValue>,
+        record: Resource<webgpu::RecordGpuPipelineConstantValue>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        self.table.delete(record)?;
+        Ok(())
     }
 }
 
