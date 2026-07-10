@@ -795,8 +795,13 @@ impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
                     }
                     "maxbindgroupsplusvertexbuffers" => {
                         if let Some(_value) = value {
-                            // TODO: wgpu doesn't support `max-bind-groups-plus-vertex-buffers` yet
+                            // TODO: enable once added to wgpu
                             // limits.max_bind_groups_plus_vertex_buffers = *value as u32;
+                        }
+                    }
+                    "maximmediatesize" => {
+                        if let Some(value) = value {
+                            limits.max_immediate_size = *value as u32;
                         }
                     }
                     "maxbindingsperbindgroup" => {
@@ -829,9 +834,33 @@ impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
                             limits.max_storage_buffers_per_shader_stage = *value as u32;
                         }
                     }
+                    "maxstoragebuffersinvertexstage" => {
+                        if let Some(_value) = value {
+                            // TODO: enable once added to wgpu
+                            // list.max_storage_buffers_in_vertex_stage = *value as u32;
+                        }
+                    }
+                    "maxstoragebuffersinfragmentstage" => {
+                        if let Some(_value) = value {
+                            // TODO: enable once added to wgpu
+                            // list.max_storage_buffers_in_fragment_stage = *value as u32;
+                        }
+                    }
                     "maxstoragetexturespershaderstage" => {
                         if let Some(value) = value {
                             limits.max_storage_textures_per_shader_stage = *value as u32;
+                        }
+                    }
+                    "maxstoragetexturesinvertexstage" => {
+                        if let Some(_value) = value {
+                            // TODO: enable once added to wgpu
+                            // limits.max_storage_textures_in_vertex_stage = *value as u32
+                        }
+                    }
+                    "maxstoragetexturesinfragmentstage" => {
+                        if let Some(_value) = value {
+                            // TODO: enable once added to wgpu
+                            // limits.max_storage_textures_in_fragment_stage = *value as u32
                         }
                     }
                     "maxuniformbufferspershaderstage" => {
@@ -881,7 +910,7 @@ impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
                     }
                     "maxinterstageshadervariables" => {
                         if let Some(_value) = value {
-                            // TODO: no `max_inter_stage_shader_variables` in wgpu. Is this the same as `max_inter_stage_shader_components`?
+                            // TODO: enable once added to wgpu
                             // limits.max_inter_stage_shader_variables = *value as u32;
                         }
                     }
