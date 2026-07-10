@@ -12,6 +12,7 @@ use crate::{
     types::{
         Buffer, CommandEncoder, ComputePassEncoder, ComputePipeline, Device, ErrorHandler,
         RenderBundleEncoder, RenderBundleEncoderInner, RenderPassEncoder, RenderPipeline, Texture,
+        WgslLanguageFeatures,
     },
     wasi::webgpu::webgpu,
     WasiWebGpuCtx, WasiWebGpuCtxView, PREFERRED_CANVAS_FORMAT,
@@ -2656,7 +2657,7 @@ impl<'a> webgpu::HostGpu for WasiWebGpuCtx<'a> {
         &mut self,
         _self_: Resource<webgpu::Gpu>,
     ) -> wasmtime::Result<Resource<webgpu::WgslLanguageFeatures>> {
-        todo!()
+        Ok(self.table.push(WgslLanguageFeatures::new())?)
     }
 
     fn drop(&mut self, _gpu: Resource<webgpu::Gpu>) -> wasmtime::Result<()> {
@@ -2776,14 +2777,16 @@ impl<'a> webgpu::HostGpuAdapterInfo for WasiWebGpuCtx<'a> {
 impl<'a> webgpu::HostWgslLanguageFeatures for WasiWebGpuCtx<'a> {
     fn has(
         &mut self,
-        _self_: Resource<webgpu::WgslLanguageFeatures>,
-        _key: String,
+        features: Resource<webgpu::WgslLanguageFeatures>,
+        key: String,
     ) -> wasmtime::Result<bool> {
-        todo!()
+        let features = self.table.get(&features)?;
+        Ok(features.has(&key))
     }
 
-    fn drop(&mut self, _features: Resource<webgpu::WgslLanguageFeatures>) -> wasmtime::Result<()> {
-        todo!()
+    fn drop(&mut self, features: Resource<webgpu::WgslLanguageFeatures>) -> wasmtime::Result<()> {
+        self.table.delete(features)?;
+        Ok(())
     }
 }
 impl<'a> webgpu::HostGpuSupportedFeatures for WasiWebGpuCtx<'a> {
