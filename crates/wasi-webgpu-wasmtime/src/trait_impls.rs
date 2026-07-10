@@ -1063,10 +1063,21 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
 
 impl<T: Send> webgpu::HostGpuQueueWithStore<T> for crate::HasWasiWebGpuCtx {
     async fn on_submitted_work_done(
-        _accessor: &Accessor<T, Self>,
-        _queue: Resource<webgpu::GpuQueue>,
+        accessor: &Accessor<T, Self>,
+        queue: Resource<webgpu::GpuQueue>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        accessor.with(|mut access| -> wasmtime::Result<_> {
+            let ctx = access.get();
+            let instance = Arc::clone(ctx.instance);
+            let queue_id = **ctx.table.get(&queue)?;
+
+            CallbackFuture::new(Box::new(move |resolve: Box<dyn FnOnce(()) + Send>| {
+                instance.queue_on_submitted_work_done(queue_id, Box::new(move || resolve(())));
+            }));
+            Ok(())
+        })?;
+
+        Ok(())
     }
 }
 
