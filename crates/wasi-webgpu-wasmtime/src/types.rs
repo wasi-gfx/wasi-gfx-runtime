@@ -9,6 +9,20 @@ use std::{
 
 use crate::wasi::webgpu::webgpu;
 
+pub struct WgslLanguageFeatures;
+impl WgslLanguageFeatures {
+    pub fn new() -> Self {
+        Self
+    }
+    pub fn has(&self, feature: &str) -> bool {
+        use wgpu_core::naga::front::wgsl::LanguageExtension;
+        matches!(
+            LanguageExtension::from_ident(feature),
+            Some(LanguageExtension::Implemented(_))
+        )
+    }
+}
+
 // can't pass generics to `wasmtime::component::bindgen`
 // TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
 pub type RecordGpuPipelineConstantValue = HashMap<String, webgpu::GpuPipelineConstantValue>;
