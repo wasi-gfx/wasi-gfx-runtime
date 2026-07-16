@@ -1,0 +1,5 @@
+default_registry = "ghcr.io"
+
+[namespace_registries]
+wasi = "wasi.dev"
+wasi-gfx = "ghcr.io"
