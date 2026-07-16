@@ -54,9 +54,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-      
+
       - name: Run tests
         run: cargo test
+
+  wit-sync:
+    name: Check vendored WIT is in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@ead08b90bd7b2e6d81963fb9cf0b7239f66d5db4 # v1.21.0
+
+      - name: Install wkg
+        run: cargo binstall -y wkg
+
+      - name: Configure wkg registry
+        run: wkg config --default-registry ghcr.io
+
+      # The WIT packages are vendored into several wit/ dirs (see wit-fetch.sh).
+      # Re-fetch them all and fail if any vendored copy has drifted.
+      - name: Check WIT dirs are in sync
+        run: |
+          ./wit-fetch.sh
+          git diff --exit-code

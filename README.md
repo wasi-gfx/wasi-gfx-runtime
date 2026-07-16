@@ -17,7 +17,7 @@ cargo install wkg
 
 Fetch the WIT dependencies:
 ```shell
-wkg wit fetch
+./wit-fetch.sh
 ```
 
 ### Running examples

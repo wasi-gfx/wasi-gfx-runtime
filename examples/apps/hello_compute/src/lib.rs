@@ -1,7 +1,7 @@
 use wasi::webgpu::webgpu;
 
 wit_bindgen::generate!({
-    path: "../../../wit",
+    path: "../../wit",
     world: "example:example/example",
     generate_all,
 });

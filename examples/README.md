@@ -16,13 +16,6 @@ Install wkg
 cargo install wkg
 ```
 
-
-#### Install wit dependencies
-```shell
-wkg wit fetch
-```
-
-
 #### List the available examples:
 ```shell
 cargo xtask run-demo

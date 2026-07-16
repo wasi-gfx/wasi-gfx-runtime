@@ -8,8 +8,7 @@ pub use wasi_gfx::surface::surface::{
 use wasmtime::component::{Access, HasData, Resource, StreamReader};
 
 wasmtime::component::bindgen!({
-    path: "../../wit/",
-    world: "example",
+    world: "wasi-gfx:surface/imports",
     require_store_data_send: true,
     imports: {
         "wasi-gfx:surface/surface.[method]surface.on-pointer-down": store | trappable,
