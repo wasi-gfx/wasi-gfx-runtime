@@ -9,8 +9,7 @@ use wasi_gfx::surface::surface_frame_buffer;
 use wasmtime::component::{HasData, Resource};
 
 wasmtime::component::bindgen!({
-    path: "../../wit/",
-    world: "example",
+    world: "wasi-gfx:surface/frame-buffer-imports",
     require_store_data_send: true,
     imports: {
         default: trappable,

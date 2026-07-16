@@ -46,8 +46,7 @@ const PREFERRED_CANVAS_FORMAT: wasi::webgpu::webgpu::GpuTextureFormat =
 pub(crate) type Backend = wgpu_core::api::Gl;
 
 wasmtime::component::bindgen!({
-    path: "../../wit/",
-    world: "example",
+    world: "wasi:webgpu/imports",
     imports: {
         "wasi:webgpu/webgpu.[method]gpu-device.lost": store | trappable,
         "wasi:webgpu/webgpu.[method]gpu-device.on-uncaptured-error": store | trappable,

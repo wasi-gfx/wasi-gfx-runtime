@@ -23,7 +23,7 @@ struct RuntimeArgs {
 }
 
 wasmtime::component::bindgen!({
-    path: "../../wit/",
+    path: "../wit/",
     world: "example",
     exports: {
         "start": async,

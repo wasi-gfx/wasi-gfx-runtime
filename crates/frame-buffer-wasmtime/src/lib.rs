@@ -6,7 +6,6 @@ use crate::wasi_gfx::frame_buffer::frame_buffer;
 use wasmtime::component::{HasData, Resource};
 
 wasmtime::component::bindgen!({
-    path: "../../wit/",
     world: "wasi-gfx:frame-buffer/imports",
     imports: {
         default: trappable,

@@ -10,8 +10,7 @@ use wasmtime::{
 };
 
 wasmtime::component::bindgen!({
-    path: "../../wit/",
-    world: "example",
+    world: "wasi-gfx:surface/webgpu-imports",
     require_store_data_send: true,
     imports: {
         default: trappable,

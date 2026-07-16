@@ -4,7 +4,7 @@ use wasi::webgpu::webgpu;
 use wasi_gfx::surface::{surface, surface_webgpu};
 
 wit_bindgen::generate!({
-    path: "../../../wit",
+    path: "../../wit",
     world: "example:example/example",
     generate_all,
 });
