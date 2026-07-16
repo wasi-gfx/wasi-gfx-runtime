@@ -13,15 +13,15 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "Apache-2.0 WITH LLVM-exception"
 repository = "https://github.com/wasi-gfx/wasi-gfx-runtime"
 
 [workspace.dependencies]
-shared = { path = "crates/shared", version = "0.1.0", package = "wasi-gfx-runtime-shared" }
-frame-buffer-wasmtime = { path = "crates/frame-buffer-wasmtime", version = "0.1.0" }
-wasi-webgpu-wasmtime = { path = "crates/wasi-webgpu-wasmtime", version = "0.1.0" }
+shared = { path = "crates/shared", version = "0.1.1", package = "wasi-gfx-runtime-shared" }
+frame-buffer-wasmtime = { path = "crates/frame-buffer-wasmtime", version = "0.1.1" }
+wasi-webgpu-wasmtime = { path = "crates/wasi-webgpu-wasmtime", version = "0.1.1" }
 
 clap = { version = "4.3", features = ["derive"] }
 wasmtime = "46"
