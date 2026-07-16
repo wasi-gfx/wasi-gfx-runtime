@@ -1,7 +1,10 @@
 [package]
-name = "shared"
-version = "0.1.0"
-edition = "2021"
+name = "wasi-gfx-runtime-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared internals for the wasi-gfx wasmtime host crates"
 
 [dependencies]
 wasmtime.workspace = true
