@@ -1,7 +1,10 @@
 [package]
 name = "wasi-webgpu-wasmtime"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Wasmtime host implementation of the wasi:webgpu API"
 
 [dependencies]
 wasmtime.workspace = true
@@ -11,7 +14,7 @@ wgpu-core.workspace = true
 wgpu-types.workspace = true
 callback-future.workspace = true
 futures.workspace = true
-shared = { path = "../shared" }
+shared.workspace = true
 async-broadcast.workspace = true
 log.workspace = true
 pastey = "0.2"
