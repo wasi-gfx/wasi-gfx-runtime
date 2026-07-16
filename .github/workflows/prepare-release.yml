@@ -1,0 +1,81 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part of the version to bump'
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    name: Create Release PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure running on main
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Error: this workflow must be dispatched from main (got $GITHUB_REF)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Bump workspace version
+        id: version
+        run: |
+          # Read the current version from the [workspace.package] table.
+          CURRENT=$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)
+          if [[ ! "$CURRENT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Current version '$CURRENT' is not a valid X.Y.Z version"
+            exit 1
+          fi
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          case "${{ inputs.bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+            *) echo "Error: unknown bump '${{ inputs.bump }}'"; exit 1 ;;
+          esac
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          # Replace the version inside the [workspace.package] table.
+          sed -i -E "/^\[workspace\.package\]/,/^\[/ s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"${VERSION}\"/" Cargo.toml
+
+          # Keep the internal crate dependency versions in [workspace.dependencies] in sync.
+          sed -i -E "s|(path = \"crates/[^\"]*\", version = \")[0-9]+\.[0-9]+\.[0-9]+|\1${VERSION}|g" Cargo.toml
+
+          # Keep Cargo.lock in sync so the publish workflow can use --locked.
+          cargo update --workspace
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Prepared ${{ inputs.bump }} bump: $VERSION (from $CURRENT)"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
+        with:
+          commit-message: "chore: release ${{ steps.version.outputs.version }}"
+          branch: release/${{ steps.version.outputs.version }}
+          title: "Release ${{ steps.version.outputs.version }}"
+          body: |
+            Bumps the workspace version to `${{ steps.version.outputs.version }}`.
+
+            Once merged, manually run the **Publish Release** workflow to:
+            - Publish crates to crates.io
+            - Create git tag `v${{ steps.version.outputs.version }}`
+            - Create the GitHub release
