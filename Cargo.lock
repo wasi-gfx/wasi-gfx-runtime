@@ -1123,7 +1123,7 @@ dependencies = [
 
 [[package]]
 name = "frame-buffer-wasmtime"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "wasmtime",
  "wasmtime-wasi",
@@ -3082,7 +3082,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "surface-wasmtime"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-broadcast",
  "bytemuck",
@@ -3449,7 +3449,7 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasi-gfx-runtime-shared"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-broadcast",
  "futures",
@@ -3458,7 +3458,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-webgpu-wasmtime"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-broadcast",
  "callback-future",
