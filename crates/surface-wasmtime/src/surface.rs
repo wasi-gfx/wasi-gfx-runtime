@@ -3,7 +3,7 @@ use shared::channel_to_stream;
 use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use wasi_gfx::surface::surface;
 pub use wasi_gfx::surface::surface::{
-    FrameEvent, KeyEvent, PointerEvent, {CreateDesc as SurfaceDesc, ResizeEvent},
+    FrameEvent, Key, KeyEvent, PointerEvent, {CreateDesc as SurfaceDesc, ResizeEvent},
 };
 use wasmtime::component::{Access, HasData, Resource, StreamReader};
 
