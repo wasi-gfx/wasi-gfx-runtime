@@ -93,6 +93,7 @@ macro_rules! flag_map {
         // Tests are named after the concrete flag types and direction, e.g.
         // `BufferUsages_to_GpuBufferUsage_all`, which also keeps each invocation's
         // tests uniquely named without a wrapper module.
+        #[cfg(test)]
         pastey::paste! {
             // A -> B: every A flag that has a B counterpart must be consumed.
             // Flags present only in A (None on the B side) must remain and force Err.

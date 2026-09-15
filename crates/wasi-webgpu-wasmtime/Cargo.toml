@@ -9,15 +9,11 @@ description = "Wasmtime host implementation of the wasi:webgpu API"
 [dependencies]
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
-raw-window-handle.workspace = true
-wgpu-core.workspace = true
 wgpu-types.workspace = true
 callback-future.workspace = true
-futures.workspace = true
 shared.workspace = true
 async-broadcast.workspace = true
 log.workspace = true
-pastey = "0.2"
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 workspace = true
@@ -34,3 +30,6 @@ features = ["wgsl", "metal", "noop"]
 [target.'cfg(all(not(target_os = "linux"), not(target_os = "android"), not(target_os = "windows"), not(target_os = "macos"), not(target_os = "ios")))'.dependencies.wgpu-core]
 workspace = true
 features = ["wgsl", "gles", "noop"]
+
+[dev-dependencies]
+pastey = "0.2"

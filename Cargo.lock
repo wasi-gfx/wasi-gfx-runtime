@@ -3462,10 +3462,8 @@ version = "0.2.0"
 dependencies = [
  "async-broadcast",
  "callback-future",
- "futures",
  "log",
  "pastey",
- "raw-window-handle",
  "wasi-gfx-runtime-shared",
  "wasmtime",
  "wasmtime-wasi",
