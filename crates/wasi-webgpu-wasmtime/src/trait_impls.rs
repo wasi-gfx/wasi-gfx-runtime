@@ -935,21 +935,38 @@ impl<T: Send> webgpu::HostGpuAdapterWithStore<T> for crate::HasWasiWebGpuCtx {
     ) -> wasmtime::Result<Result<Resource<webgpu::GpuDevice>, webgpu::RequestDeviceError>> {
         accessor.with(|mut access| {
             let ctx = access.get();
+            let table = ctx.table;
+            let adapter = Arc::clone(table.get(&adapter)?);
 
-            let adapter = Arc::clone(ctx.table.get(&adapter)?);
+            let descriptor = match descriptor {
+                Some(desc) => wgpu_types::DeviceDescriptor {
+                    label: desc.label.map(|l| l.into()),
+                    required_features: desc
+                        .required_features
+                        .map(|f| f.to_core(table))
+                        .unwrap_or_default(),
+                    required_limits: desc
+                        .required_limits
+                        .map(|limit| table.get(&limit).unwrap().to_core(table))
+                        .unwrap_or(wgpu_types::Limits::defaults()),
+                    // TODO: use descriptor.default_queue?
+                    // trace is not present in WebGPU
+                    trace: wgpu_types::Trace::default(),
+                    // Don't enable any experimental features
+                    experimental_features: wgpu_types::ExperimentalFeatures::disabled(),
+                    // memory_hints is not present in WebGPU, comes from options
+                    memory_hints: ctx.options.device_memory_hints.clone(),
+                },
+                None => wgpu_types::DeviceDescriptor::default(),
+            };
 
-            let device_queue_result = ctx.instance.adapter_request_device(
-                *adapter,
-                &descriptor
-                    .map(|d| d.to_core(ctx.table))
-                    .unwrap_or(wgpu_types::DeviceDescriptor::default()),
-                None,
-                None,
-            );
+            let device_queue_result =
+                ctx.instance
+                    .adapter_request_device(*adapter, &descriptor, None, None);
 
             Ok(match device_queue_result {
                 Ok((device_id, queue_id)) => {
-                    let device = ctx.table.push(Device {
+                    let device = table.push(Device {
                         device: device_id,
                         queue: Arc::new(queue_id),
                         adapter,
@@ -962,7 +979,7 @@ impl<T: Send> webgpu::HostGpuAdapterWithStore<T> for crate::HasWasiWebGpuCtx {
                     let message = err.to_string();
                     // https://www.w3.org/TR/webgpu/#dom-gpuadapter-requestdevice
                     match err {
-                        wgpu_core::instance::RequestDeviceError::LimitsExceeded(_) => {
+                        wgpu_core::instance::RequestDeviceError::UnsupportedFeature(_) => {
                             // From the spec:
                             // > 1. If any of the following requirements are unmet:
                             // >  - The set of values in descriptor.requiredFeatures must be a subset of those in adapter.[[features]].
@@ -973,7 +990,7 @@ impl<T: Send> webgpu::HostGpuAdapterWithStore<T> for crate::HasWasiWebGpuCtx {
                                 message,
                             })
                         }
-                        wgpu_core::instance::RequestDeviceError::UnsupportedFeature(_) => {
+                        wgpu_core::instance::RequestDeviceError::LimitsExceeded(_) => {
                             // From the spec:
                             // > 2. All of the requirements in the following steps must be met.
                             // >  2. For each [key, value] in descriptor.requiredLimits for which value is not undefined:

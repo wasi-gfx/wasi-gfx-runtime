@@ -103,6 +103,14 @@ pub struct WasiWebGpuCtx<'a> {
     // wrapped in arc to allow cloning for async. might be able to remove
     pub instance: &'a Arc<wgpu_core::global::Global>,
     pub table: &'a mut wasmtime_wasi::ResourceTable,
+    pub options: &'a WasiWebGpuOptions,
+}
+
+/// Extra WebGPU options
+#[derive(Clone, Debug, Default)]
+pub struct WasiWebGpuOptions {
+    /// Memory allocation strategy passed to wgpu on every `request-device`.
+    pub device_memory_hints: wgpu_types::MemoryHints,
 }
 
 struct HasWasiWebGpuCtx;
