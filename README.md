@@ -10,7 +10,7 @@ Install the following:
 ```shell
 rustup target add wasm32-unknown-unknown
 cargo install wasm-tools
-cargo install wkg
+cargo install wkg@0.15.1
 ```
 
 ### Setup
