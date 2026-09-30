@@ -1097,16 +1097,20 @@ impl<T: Send> webgpu::HostGpuQueueWithStore<T> for crate::HasWasiWebGpuCtx {
         accessor: &Accessor<T, Self>,
         queue: Resource<webgpu::GpuQueue>,
     ) -> wasmtime::Result<()> {
-        accessor.with(|mut access| -> wasmtime::Result<_> {
-            let ctx = access.get();
-            let instance = Arc::clone(ctx.instance);
-            let queue_id = **ctx.table.get(&queue)?;
+        accessor
+            .with(|mut access| -> wasmtime::Result<_> {
+                let ctx = access.get();
+                let instance = Arc::clone(ctx.instance);
+                let queue_id = **ctx.table.get(&queue)?;
 
-            CallbackFuture::new(Box::new(move |resolve: Box<dyn FnOnce(()) + Send>| {
-                instance.queue_on_submitted_work_done(queue_id, Box::new(move || resolve(())));
-            }));
-            Ok(())
-        })?;
+                Ok(CallbackFuture::new(Box::new(
+                    move |resolve: Box<dyn FnOnce(()) + Send>| {
+                        instance
+                            .queue_on_submitted_work_done(queue_id, Box::new(move || resolve(())));
+                    },
+                )))
+            })?
+            .await;
 
         Ok(())
     }
