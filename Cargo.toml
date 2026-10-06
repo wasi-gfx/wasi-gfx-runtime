@@ -24,8 +24,8 @@ frame-buffer-wasmtime = { path = "crates/frame-buffer-wasmtime", version = "0.3.
 wasi-webgpu-wasmtime = { path = "crates/wasi-webgpu-wasmtime", version = "0.3.1" }
 
 clap = { version = "4.3", features = ["derive"] }
-wasmtime = "48"
-wasmtime-wasi = "48"
+wasmtime = "49"
+wasmtime-wasi = "49"
 anyhow = "1.0"
 winit = { version = "0.30", features = [ "android-native-activity" ] }
 wgpu-core = "29"
