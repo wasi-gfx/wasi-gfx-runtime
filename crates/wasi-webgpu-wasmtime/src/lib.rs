@@ -102,7 +102,7 @@ pub trait WasiWebGpuCtxView: Send {
 pub struct WasiWebGpuCtx<'a> {
     // wrapped in arc to allow cloning for async. might be able to remove
     pub instance: &'a Arc<wgpu_core::global::Global>,
-    pub table: &'a mut wasmtime_wasi::ResourceTable,
+    pub table: &'a mut wasmtime::component::ResourceTable,
     pub options: &'a WasiWebGpuOptions,
 }
 

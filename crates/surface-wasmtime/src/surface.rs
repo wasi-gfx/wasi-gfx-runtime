@@ -199,7 +199,7 @@ pub trait SurfaceCtxView: Send {
 }
 
 pub struct SurfaceCtx<'a, S: MainThreadSpawner> {
-    pub table: &'a mut wasmtime_wasi::ResourceTable,
+    pub table: &'a mut wasmtime::component::ResourceTable,
     pub main_thread_spawner: &'a S,
 }
 

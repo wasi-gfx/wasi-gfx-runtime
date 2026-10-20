@@ -43,7 +43,7 @@ pub trait FrameBufferCtxView {
 }
 
 pub struct FrameBufferCtx<'a> {
-    pub table: &'a mut wasmtime_wasi::ResourceTable,
+    pub table: &'a mut wasmtime::component::ResourceTable,
 }
 
 struct HasFrameBufferCtx;

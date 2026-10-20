@@ -13,7 +13,7 @@ use wasmtime::{
     Config, Engine, Store,
 };
 
-use wasmtime_wasi::ResourceTable;
+use wasmtime::component::ResourceTable;
 
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
