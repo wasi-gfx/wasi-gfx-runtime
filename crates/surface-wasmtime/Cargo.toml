@@ -15,7 +15,7 @@ surface-frame-buffer = ["frame-buffer-wasmtime", "softbuffer"]
 wasmtime.workspace = true
 raw-window-handle.workspace = true
 async-broadcast.workspace = true
-oneshot.workspace = true
+oneshot = { workspace = true, features = ["async"] }
 winit = { workspace = true, optional = true }
 futures.workspace = true
 wasi-webgpu-wasmtime = { workspace = true, optional = true }

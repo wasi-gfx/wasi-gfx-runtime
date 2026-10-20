@@ -39,7 +39,7 @@ softbuffer = "0.4.8"
 env_logger = "0.11.11"
 log = "0.4.34"
 async-broadcast = "0.7.2"
-oneshot = "0.1"
+oneshot = "0.2.1"
 wit-bindgen = { version = "0.63.0", features = ["futures-stream"] }
 callback-future = "0.1.0"
 bytemuck = "1.25.2"
