@@ -8,8 +8,8 @@ publish = false
 
 [dependencies]
 wit-bindgen.workspace = true
-bytemuck = "1"
-pollster = "0.3"
+bytemuck = "1.25.2"
+pollster = "1.0.1"
 
 [lib]
 crate-type = ["cdylib"]
