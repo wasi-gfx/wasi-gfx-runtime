@@ -13,7 +13,6 @@ surface-frame-buffer = ["frame-buffer-wasmtime", "softbuffer"]
 
 [dependencies]
 wasmtime.workspace = true
-wasmtime-wasi.workspace = true
 raw-window-handle.workspace = true
 async-broadcast.workspace = true
 oneshot.workspace = true

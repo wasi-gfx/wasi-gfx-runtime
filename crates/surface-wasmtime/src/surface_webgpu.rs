@@ -52,7 +52,7 @@ pub trait SurfaceWebgpuCtxView: Send {
 }
 
 pub struct SurfaceWebgpuCtx<'a, S: MainThreadSpawner> {
-    pub table: &'a mut wasmtime_wasi::ResourceTable,
+    pub table: &'a mut wasmtime::component::ResourceTable,
     pub instance: &'a Arc<wasi_webgpu_wasmtime::reexports::wgpu_core::global::Global>,
     pub main_thread_spawner: &'a S,
 }
