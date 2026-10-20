@@ -60,6 +60,20 @@ jobs:
       - name: Run tests
         run: cargo test --locked
 
+  wasmtime-range:
+    name: Check both ends of the wasmtime range
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Check both ends of the wasmtime range
+        run: ./wasmtime-bounds.sh
+
   wit-sync:
     name: Check vendored WIT is in sync
     runs-on: ubuntu-latest
