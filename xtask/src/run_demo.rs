@@ -38,19 +38,19 @@ pub(crate) fn run_demo(shell: Shell, mut args: Arguments) -> anyhow::Result<()> 
 
     xshell::cmd!(
         shell,
-        "cargo build --package {demo_package} --release --target wasm32-unknown-unknown"
+        "cargo build --package {demo_package} --release --target wasm32-wasip2"
     )
     .quiet()
     .run()
     .context(format!("Failed to build wasm module for {}", demo_name))?;
 
-    xshell::cmd!(
-        shell,
-        "wasm-tools component new ./target/wasm32-unknown-unknown/release/{demo_package}.wasm -o ./target/example-{demo_package}.wasm"
-    )
-    .quiet()
-    .run()
-    .context(format!("Failed to build wasm component module for {}", demo_name))?;
+    // xshell::cmd!(
+    //     shell,
+    //     "wasm-tools component new ./target/wasm32-unknown-unknown/release/{demo_package}.wasm -o ./target/example-{demo_package}.wasm"
+    // )
+    // .quiet()
+    // .run()
+    // .context(format!("Failed to build wasm component module for {}", demo_name))?;
 
     xshell::cmd!(shell, "cargo run -p runtime -- --example {demo_package}")
         .quiet()
