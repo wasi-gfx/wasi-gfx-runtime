@@ -14,6 +14,7 @@ use wasmtime::{
 };
 
 use wasmtime::component::ResourceTable;
+use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 #[derive(clap::Parser, Debug)]
 struct RuntimeArgs {
@@ -58,6 +59,7 @@ impl HostState {
     pub fn add_workload(&self) -> WorkloadState {
         WorkloadState {
             table: ResourceTable::new(),
+            wasi_ctx: WasiCtx::builder().inherit_stdio().inherit_args().build(),
             instance: Arc::clone(&self.instance),
             webgpu_options: self.webgpu_options.clone(),
             main_thread_proxy: Arc::clone(&self.main_thread_proxy),
@@ -67,6 +69,7 @@ impl HostState {
 
 struct WorkloadState {
     table: ResourceTable,
+    wasi_ctx: WasiCtx,
     instance: Arc<wgpu_core::global::Global>,
     webgpu_options: WasiWebGpuOptions,
     main_thread_proxy: Arc<WasiWinitEventLoopProxy>,
@@ -74,6 +77,15 @@ struct WorkloadState {
 
 impl wasmtime::component::HasData for WorkloadState {
     type Data<'a> = &'a mut WorkloadState;
+}
+
+impl WasiView for WorkloadState {
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.wasi_ctx,
+            table: &mut self.table,
+        }
+    }
 }
 
 impl WasiWebGpuCtxView for WorkloadState {
@@ -151,13 +163,14 @@ async fn main() -> anyhow::Result<()> {
     wasi_webgpu_wasmtime::add_to_linker(&mut linker)?;
     frame_buffer_wasmtime::add_to_linker(&mut linker)?;
     surface_wasmtime::add_all_to_linker(&mut linker)?;
+    wasmtime_wasi::p2::add_to_linker_sync(&mut linker)?;
     Example::add_to_linker_imports::<_, WorkloadState>(&mut linker, |x| x)?;
 
     let workload_state = host_state.add_workload();
 
     let mut store = Store::new(&engine, workload_state);
 
-    let wasm_path = format!("./target/example-{}.wasm", args.example);
+    let wasm_path = format!("./target/wasm32-wasip2/release/{}.wasm", args.example);
 
     let component =
         Component::from_file(&engine, &wasm_path).context("Component file not found")?;
