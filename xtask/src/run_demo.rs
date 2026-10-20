@@ -1,19 +1,17 @@
 use anyhow::Context;
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::LazyLock};
 
 use pico_args::Arguments;
 use xshell::Shell;
 
-lazy_static::lazy_static! {
-    static ref SUPPORTED_DEMOS: HashSet<&'static str> = {
-        let mut s = HashSet::new();
+static SUPPORTED_DEMOS: LazyLock< HashSet<&'static str>> = LazyLock::new(|| {
+  let mut s = HashSet::new();
         s.insert("skybox");
         s.insert("triangle");
         s.insert("rectangle_simple_buffer");
         s.insert("hello_compute");
         s
-    };
-}
+});
 
 pub(crate) fn run_demo(shell: Shell, mut args: Arguments) -> anyhow::Result<()> {
     let demo_name: String = args.opt_value_from_str("--name")?.ok_or_else(|| {
