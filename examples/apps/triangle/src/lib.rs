@@ -108,16 +108,7 @@ async fn draw_triangle() {
                 label: None,
                 compilation_hints: None,
             }),
-            entry_point: Some(
-                {
-                    if green.get() {
-                        "fs_green"
-                    } else {
-                        "fs_main"
-                    }
-                }
-                .to_string(),
-            ),
+            entry_point: Some({ if green.get() { "fs_green" } else { "fs_main" } }.to_string()),
             targets: vec![Some(webgpu::GpuColorTargetState {
                 format: gpu.get_preferred_canvas_format(),
                 blend: None,

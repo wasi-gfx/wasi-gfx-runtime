@@ -8,6 +8,7 @@ use wasmtime::{
 };
 
 use crate::{
+    PREFERRED_CANVAS_FORMAT, WasiWebGpuCtx, WasiWebGpuCtxView,
     to_core_conversions::ToCore,
     types::{
         Buffer, CommandEncoder, ComputePassEncoder, ComputePipeline, Device, ErrorHandler,
@@ -15,7 +16,6 @@ use crate::{
         WgslLanguageFeatures,
     },
     wasi::webgpu::webgpu,
-    WasiWebGpuCtx, WasiWebGpuCtxView, PREFERRED_CANVAS_FORMAT,
 };
 
 impl<'a> webgpu::Host for WasiWebGpuCtx<'a> {
