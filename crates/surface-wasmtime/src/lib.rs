@@ -1,7 +1,7 @@
 mod surface;
 pub use surface::{
-    add_to_linker as add_surface_to_linker, GfxWindow, Key, KeyEvent, MainThreadSpawner,
-    PointerEvent, ResizeEvent, Surface, SurfaceCtx, SurfaceCtxView, SurfaceDesc,
+    GfxWindow, Key, KeyEvent, MainThreadSpawner, PointerEvent, ResizeEvent, Surface, SurfaceCtx,
+    SurfaceCtxView, SurfaceDesc, add_to_linker as add_surface_to_linker,
 };
 
 #[cfg(feature = "winit")]
@@ -11,15 +11,15 @@ pub mod winit;
 mod surface_webgpu;
 #[cfg(feature = "surface-webgpu")]
 pub use surface_webgpu::{
-    add_to_linker as add_surface_webgpu_to_linker, SurfaceWebgpuCtx, SurfaceWebgpuCtxView,
+    SurfaceWebgpuCtx, SurfaceWebgpuCtxView, add_to_linker as add_surface_webgpu_to_linker,
 };
 
 #[cfg(feature = "surface-frame-buffer")]
 mod surface_frame_buffer;
 #[cfg(feature = "surface-frame-buffer")]
 pub use surface_frame_buffer::{
-    add_to_linker as add_surface_frame_buffer_to_linker, SurfaceFrameBufferCtx,
-    SurfaceFrameBufferCtxView,
+    SurfaceFrameBufferCtx, SurfaceFrameBufferCtxView,
+    add_to_linker as add_surface_frame_buffer_to_linker,
 };
 
 /// Add surface, surface-webgpu, surface-frame-buffer to the linker

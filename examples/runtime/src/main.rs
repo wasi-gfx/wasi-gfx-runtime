@@ -3,14 +3,14 @@ use std::sync::Arc;
 use clap::Parser;
 use frame_buffer_wasmtime::{FrameBufferCtx, FrameBufferCtxView};
 use surface_wasmtime::{
-    winit::WasiWinitEventLoopProxy, SurfaceCtxView, SurfaceFrameBufferCtx,
-    SurfaceFrameBufferCtxView, SurfaceWebgpuCtx, SurfaceWebgpuCtxView,
+    SurfaceCtxView, SurfaceFrameBufferCtx, SurfaceFrameBufferCtxView, SurfaceWebgpuCtx,
+    SurfaceWebgpuCtxView, winit::WasiWinitEventLoopProxy,
 };
 use wasi_webgpu_wasmtime::{WasiWebGpuCtx, WasiWebGpuCtxView, WasiWebGpuOptions};
 use wasmtime::{
+    Config, Engine, Store,
     component::{Component, Linker},
     error::Context,
-    Config, Engine, Store,
 };
 
 use wasmtime::component::ResourceTable;

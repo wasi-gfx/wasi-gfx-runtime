@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/shared",
     "crates/wasi-webgpu-wasmtime",
@@ -14,7 +14,7 @@ members = [
 
 [workspace.package]
 version = "0.4.0"
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0 WITH LLVM-exception"
 repository = "https://github.com/wasi-gfx/wasi-gfx-runtime"
 

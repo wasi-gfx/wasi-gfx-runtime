@@ -160,10 +160,10 @@ async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     // dropped before we unmap the buffer.
     drop(data);
     staging_buffer.unmap().unwrap(); // Unmaps buffer from memory
-                                     // If you are familiar with C++ these 2 lines can be thought of similarly to:
-                                     //   delete myPointer;
-                                     //   myPointer = NULL;
-                                     // It effectively frees the memory and sets the pointer to NULL.
+    // If you are familiar with C++ these 2 lines can be thought of similarly to:
+    //   delete myPointer;
+    //   myPointer = NULL;
+    // It effectively frees the memory and sets the pointer to NULL.
 
     // Returns data from buffer
     Some(result)
