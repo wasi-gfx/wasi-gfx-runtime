@@ -4,10 +4,10 @@ use std::{
 };
 
 use futures::{Stream, StreamExt};
+use wasmtime::StoreContextMut;
 use wasmtime::component::{
     Access, Destination, HasData, Lift, Lower, StreamProducer, StreamReader, StreamResult,
 };
-use wasmtime::StoreContextMut;
 
 // TODO: explore moving these to wasmtime
 
@@ -105,10 +105,11 @@ pub fn unwrap_unless_inactive<T>(res: Result<Option<T>, TrySendError<T>>) {
 }
 
 pub fn unwrap_unless_inactive_or_full<T>(res: Result<Option<T>, TrySendError<T>>) {
-    if let Err(e) = &res {
-        if matches!(e, TrySendError::Inactive(_) | TrySendError::Full(_)) {
-            return;
-        }
+    if let Err(e) = &res
+        && matches!(e, TrySendError::Inactive(_) | TrySendError::Full(_))
+    {
+        return;
     }
+
     res.unwrap();
 }
