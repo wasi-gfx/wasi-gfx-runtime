@@ -9,10 +9,10 @@ use std::{
     time::Duration,
 };
 
-use crate::surface::{
-    wasi_gfx, KeyEvent, MainThreadSpawner, PointerEvent, ResizeEvent, SurfaceDesc,
-};
 use crate::surface::{GfxWindow, Surface};
+use crate::surface::{
+    KeyEvent, MainThreadSpawner, PointerEvent, ResizeEvent, SurfaceDesc, wasi_gfx,
+};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -49,11 +49,13 @@ impl WasiWinitEventLoop {
 
         {
             let surfaces = Arc::clone(&surfaces);
-            thread::spawn(move || loop {
-                for proxy in surfaces.lock().unwrap().values() {
-                    proxy.animation_frame();
+            thread::spawn(move || {
+                loop {
+                    for proxy in surfaces.lock().unwrap().values() {
+                        proxy.animation_frame();
+                    }
+                    sleep(Duration::from_millis(16));
                 }
-                sleep(Duration::from_millis(16));
             });
         }
 

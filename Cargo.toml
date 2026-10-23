@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/shared",
     "crates/wasi-webgpu-wasmtime",
@@ -14,7 +14,7 @@ members = [
 
 [workspace.package]
 version = "0.4.0"
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0 WITH LLVM-exception"
 repository = "https://github.com/wasi-gfx/wasi-gfx-runtime"
 
@@ -23,23 +23,23 @@ shared = { path = "crates/shared", version = "0.4.0", package = "wasi-gfx-runtim
 frame-buffer-wasmtime = { path = "crates/frame-buffer-wasmtime", version = "0.4.0" }
 wasi-webgpu-wasmtime = { path = "crates/wasi-webgpu-wasmtime", version = "0.4.0" }
 
-clap = { version = "4.3", features = ["derive"] }
-wasmtime = ">=46, <=50"
-anyhow = "1.0"
-winit = { version = "0.30", features = [ "android-native-activity" ] }
+clap = { version = "4.6.7", features = ["derive"] }
+wasmtime = "50.0.0"
+anyhow = "1.0.104"
+winit = { version = "0.30.13", features = ["android-native-activity"] }
 wgpu-core = "29"
 wgpu-types = "29"
-raw-window-handle = "0.6"
-async-trait = "0.1"
-rand = "0.9"
-futures = "0.3"
-futures-lite = "2"
-tokio = { version = "1.44", features = ["full"] }
-softbuffer = "0.4"
-env_logger = "0.11"
-log = "0.4"
-async-broadcast = "0.7"
-oneshot = "0.1"
-wit-bindgen = { version = "0.57", features = ["futures-stream"] }
-callback-future = "0.1"
-bytemuck = "1"
+raw-window-handle = "0.6.2"
+async-trait = "0.1.92"
+rand = "0.10.3"
+futures = "0.3.34"
+futures-lite = "2.6.1"
+tokio = { version = "1.54.0", features = ["full"] }
+softbuffer = "0.4.8"
+env_logger = "0.11.11"
+log = "0.4.34"
+async-broadcast = "0.7.2"
+oneshot = "0.2.1"
+wit-bindgen = { version = "0.63.0", features = ["futures-stream"] }
+callback-future = "0.1.0"
+bytemuck = "1.25.2"

@@ -1,7 +1,7 @@
 [package]
 name = "runtime"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 clap.workspace = true
 wasmtime.workspace = true
+wasmtime-wasi = { version = "50.0.0" }
 anyhow.workspace = true
 winit.workspace = true
 wgpu-types.workspace = true
@@ -21,7 +22,11 @@ env_logger.workspace = true
 log.workspace = true
 async-broadcast.workspace = true
 oneshot.workspace = true
-surface-wasmtime = { path = "../../crates/surface-wasmtime", features = ["winit", "surface-webgpu", "surface-frame-buffer"]}
+surface-wasmtime = { path = "../../crates/surface-wasmtime", features = [
+    "winit",
+    "surface-webgpu",
+    "surface-frame-buffer",
+] }
 frame-buffer-wasmtime = { path = "../../crates/frame-buffer-wasmtime" }
 wasi-webgpu-wasmtime = { path = "../../crates/wasi-webgpu-wasmtime" }
 
