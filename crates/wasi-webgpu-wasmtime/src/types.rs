@@ -63,7 +63,6 @@ pub struct Buffer {
 
 // references to queue and adapter are also saved in device.
 // TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
-pub type Queue = Arc<wgpu_core::id::QueueId>;
 pub type Adapter = Arc<wgpu_core::id::AdapterId>;
 
 // queue needed for Device.queue
@@ -71,14 +70,21 @@ pub type Adapter = Arc<wgpu_core::id::AdapterId>;
 // keeping queue and adapter as Arc for reference counting while dropping.
 #[derive(Clone)]
 pub struct Device {
-    pub(crate) device: wgpu_core::id::DeviceId,
+    pub(crate) device: Arc<wgpu_core::id::DeviceId>,
     pub(crate) queue: Arc<wgpu_core::id::QueueId>,
     pub(crate) adapter: Arc<wgpu_core::id::AdapterId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
+// device needed to poll in `GpuQueue.on_submitted_work_done`; it is
+// dropped when both the device and its queues are.
+pub struct Queue {
+    pub(crate) queue: Arc<wgpu_core::id::QueueId>,
+    pub(crate) device: Arc<wgpu_core::id::DeviceId>,
+}
+
 impl Device {
     pub fn device_id(&self) -> &wgpu_core::id::DeviceId {
-        &self.device
+        self.device.as_ref()
     }
 
     /// Create a `Texture` from a `TextureId` that is connected to this device.
