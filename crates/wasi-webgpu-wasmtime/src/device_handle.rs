@@ -23,6 +23,11 @@ type Abort = Box<dyn FnOnce(&DeviceLostInfo) + Send>;
 /// `queue_submit` needs, so a long wait would stall the guest's submits.
 const WAIT_SLICE: Duration = Duration::from_millis(10);
 
+/// How long a lost device's work may keep running after its last holder
+/// drops. wgpu panics when it drops a busy queue, so the queue and the
+/// instance are leaked instead once this passes.
+const ABANDON_AFTER: Duration = Duration::from_secs(60);
+
 /// A device and its queue. They leave the hub when the last holder drops.
 ///
 /// The guest's device, its queues and buffers, and a running poll each hold
@@ -290,9 +295,90 @@ impl DeviceHandle {
 }
 
 impl Drop for DeviceHandle {
+    /// wgpu blocks while it drops a queue with work in flight and panics if
+    /// the work outlasts about 6s, so a busy queue is dropped from a thread
+    /// once its device is idle.
     fn drop(&mut self) {
-        self.instance.queue_drop(self.queue);
-        self.instance.device_drop(self.device);
+        let idle = self
+            .instance
+            .device_poll(self.device, wgpu_types::PollType::Poll);
+        if let Ok(wgpu_types::PollStatus::QueueEmpty) = idle {
+            self.instance.queue_drop(self.queue);
+            self.instance.device_drop(self.device);
+            return;
+        }
+        let release = Release {
+            instance: Arc::clone(&self.instance),
+            device: self.device,
+            queue: self.queue,
+            timeout: self.timeout,
+            lost: Arc::clone(&self.lost),
+        };
+        let spawned = std::thread::Builder::new()
+            .name("wasi-webgpu-release".into())
+            .spawn(move || release.run());
+        if let Err(err) = spawned {
+            log::error!("failed to spawn the queue release thread, leaking the queue: {err}");
+            // Dropping the instance would drop the busy queue.
+            std::mem::forget(Arc::clone(&self.instance));
+        }
+    }
+}
+
+/// A busy queue and its device, dropped once the device is idle. It holds the
+/// instance, which drops every queue it still has when it drops.
+struct Release {
+    instance: Arc<Global>,
+    device: DeviceId,
+    queue: QueueId,
+    timeout: Option<Duration>,
+    lost: Arc<DeviceLost>,
+}
+
+impl Release {
+    fn run(self) {
+        let started = Instant::now();
+        let mut lost_at = None;
+        loop {
+            let polled = self.instance.device_poll(
+                self.device,
+                wgpu_types::PollType::Wait {
+                    submission_index: None,
+                    timeout: Some(WAIT_SLICE),
+                },
+            );
+            match polled {
+                Ok(wgpu_types::PollStatus::QueueEmpty) => {
+                    self.instance.queue_drop(self.queue);
+                    self.instance.device_drop(self.device);
+                    return;
+                }
+                Ok(_) | Err(WaitIdleError::Timeout) => {}
+                Err(err) => {
+                    self.lose(format!("device poll failed: {err}"));
+                    std::thread::sleep(WAIT_SLICE);
+                }
+            }
+            let now = Instant::now();
+            if self.lost.is_lost() {
+                let lost_at = *lost_at.get_or_insert(now);
+                if now - lost_at >= ABANDON_AFTER {
+                    log::error!(
+                        "GPU work still running {ABANDON_AFTER:?} after its device was lost, leaking the queue"
+                    );
+                    std::mem::forget(self.instance);
+                    return;
+                }
+            } else if let Some(timeout) = self.timeout.filter(|timeout| now - started >= *timeout) {
+                self.lose(format!("GPU work did not finish within {timeout:?}"));
+            }
+        }
+    }
+
+    fn lose(&self, message: String) {
+        self.lost
+            .lose(webgpu::GpuDeviceLostReason::Unknown, message);
+        self.instance.device_destroy(self.device);
     }
 }
 
