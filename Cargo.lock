@@ -311,15 +311,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
-name = "callback-future"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b76a63a41df0ba9490dd817a3d98511c6d3d9e530eff9bcf5f3de2a6723d1c3f"
-dependencies = [
- "futures",
-]
-
-[[package]]
 name = "calloop"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3129,8 +3120,8 @@ name = "wasi-webgpu-wasmtime"
 version = "0.5.0"
 dependencies = [
  "async-broadcast",
- "callback-future",
  "log",
+ "oneshot",
  "pastey",
  "wasi-gfx-runtime-shared",
  "wasmtime",
