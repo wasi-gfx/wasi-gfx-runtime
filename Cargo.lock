@@ -3121,6 +3121,7 @@ version = "0.5.0"
 dependencies = [
  "async-broadcast",
  "log",
+ "oneshot",
  "pastey",
  "wasi-gfx-runtime-shared",
  "wasmtime",

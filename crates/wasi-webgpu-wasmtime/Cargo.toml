@@ -12,6 +12,7 @@ wgpu-types.workspace = true
 shared.workspace = true
 async-broadcast.workspace = true
 log.workspace = true
+oneshot.workspace = true
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 workspace = true
