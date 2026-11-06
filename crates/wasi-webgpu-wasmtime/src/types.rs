@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::wasi::webgpu::webgpu;
+use crate::{owned::Owned, wasi::webgpu::webgpu};
 
 pub struct WgslLanguageFeatures;
 impl WgslLanguageFeatures {
@@ -55,7 +55,7 @@ where
 // size needed in `GpuBuffer.size`, `RenderPass.set_index_buffer`, `RenderPass.set_vertex_buffer`.
 // usage needed in `GpuBuffer.usage`
 pub struct Buffer {
-    pub(crate) buffer_id: wgpu_core::id::BufferId,
+    pub(crate) buffer_id: Owned<wgpu_core::id::BufferId>,
     pub(crate) size: u64,
     pub(crate) usage: wgpu_types::BufferUsages,
     pub(crate) map_state: webgpu::GpuBufferMapState,
@@ -63,19 +63,60 @@ pub struct Buffer {
 
 // references to queue and adapter are also saved in device.
 // TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
-pub type Queue = Arc<wgpu_core::id::QueueId>;
-pub type Adapter = Arc<wgpu_core::id::AdapterId>;
+pub type Queue = Arc<Owned<wgpu_core::id::QueueId>>;
+pub type Adapter = Arc<Owned<wgpu_core::id::AdapterId>>;
+
+// Resources that are only a wgpu-core id. Dropping the table entry releases it.
+pub type BindGroup = Owned<wgpu_core::id::BindGroupId>;
+pub type BindGroupLayout = Owned<wgpu_core::id::BindGroupLayoutId>;
+pub type CommandBuffer = Owned<wgpu_core::id::CommandBufferId>;
+pub type PipelineLayout = Owned<wgpu_core::id::PipelineLayoutId>;
+pub type QuerySet = Owned<wgpu_core::id::QuerySetId>;
+pub type RenderBundle = Owned<wgpu_core::id::RenderBundleId>;
+pub type Sampler = Owned<wgpu_core::id::SamplerId>;
+pub type ShaderModule = Owned<wgpu_core::id::ShaderModuleId>;
+pub type TextureView = Owned<wgpu_core::id::TextureViewId>;
 
 // queue needed for Device.queue
 // adapter needed for surface_get_capabilities in connect_graphics_context
 // keeping queue and adapter as Arc for reference counting while dropping.
 #[derive(Clone)]
 pub struct Device {
-    pub(crate) device: wgpu_core::id::DeviceId,
-    pub(crate) queue: Arc<wgpu_core::id::QueueId>,
-    pub(crate) adapter: Arc<wgpu_core::id::AdapterId>,
+    pub(crate) device: Arc<Owned<wgpu_core::id::DeviceId>>,
+    pub(crate) queue: Queue,
+    pub(crate) adapter: Adapter,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
+impl Buffer {
+    pub(crate) fn buffer_id(&self) -> wgpu_core::id::BufferId {
+        *self.buffer_id
+    }
+}
+
+impl CommandEncoder {
+    pub(crate) fn command_encoder_id(&self) -> wgpu_core::id::CommandEncoderId {
+        *self.command_encoder_id
+    }
+}
+
+impl Texture {
+    pub(crate) fn texture_id(&self) -> wgpu_core::id::TextureId {
+        *self.texture_id
+    }
+}
+
+impl RenderPipeline {
+    pub(crate) fn render_pipeline_id(&self) -> wgpu_core::id::RenderPipelineId {
+        *self.render_pipeline_id
+    }
+}
+
+impl ComputePipeline {
+    pub(crate) fn compute_pipeline_id(&self) -> wgpu_core::id::ComputePipelineId {
+        *self.compute_pipeline_id
+    }
+}
+
 impl Device {
     pub fn device_id(&self) -> &wgpu_core::id::DeviceId {
         &self.device
@@ -87,28 +128,28 @@ impl Device {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the TextureId is actually connected to this device
+    /// The caller must ensure that the TextureId is actually connected to this device.
+    /// The returned `Texture` owns the id and releases it when dropped.
     #[doc(hidden)]
     pub unsafe fn connect_texture(&self, texture_id: wgpu_core::id::TextureId) -> Texture {
         Texture {
-            texture_id,
+            texture_id: Owned::new(self.device.instance(), texture_id),
             error_handler: Arc::clone(&self.error_handler),
         }
     }
 }
 
-#[derive(Clone)]
 pub struct CommandEncoder {
-    pub(crate) command_encoder_id: wgpu_core::id::CommandEncoderId,
+    pub(crate) command_encoder_id: Owned<wgpu_core::id::CommandEncoderId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
 pub struct Texture {
-    pub(crate) texture_id: wgpu_core::id::TextureId,
+    pub(crate) texture_id: Owned<wgpu_core::id::TextureId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 pub struct RenderPipeline {
-    pub(crate) render_pipeline_id: wgpu_core::id::RenderPipelineId,
+    pub(crate) render_pipeline_id: Owned<wgpu_core::id::RenderPipelineId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
@@ -118,7 +159,7 @@ pub struct RenderBundleEncoderInner {
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 pub struct ComputePipeline {
-    pub(crate) compute_pipeline_id: wgpu_core::id::ComputePipelineId,
+    pub(crate) compute_pipeline_id: Owned<wgpu_core::id::ComputePipelineId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
