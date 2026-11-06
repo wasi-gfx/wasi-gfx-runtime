@@ -1033,11 +1033,12 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
             .collect::<wasmtime::Result<Vec<_>>>()?;
         let queue = self.table.get(&queue)?;
         // A lost device refuses the submission, and generates no error for it.
-        if let Err((_, err)) = self
+        match self
             .instance
             .queue_submit(*queue.queue_id(), &command_buffers)
         {
-            queue.error_handler.handle_possible_error(Some(err));
+            Ok(index) => queue.handle.watch(index),
+            Err((_, err)) => queue.error_handler.handle_possible_error(Some(err)),
         }
         Ok(())
     }
