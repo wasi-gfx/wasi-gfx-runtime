@@ -2535,8 +2535,10 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<Vec<u8>, webgpu::GetMappedRangeError>> {
         let buffer = self.table.get(&buffer)?;
+        // > If this.[[mapState]] is not "mapped", throw an OperationError.
+        // https://www.w3.org/TR/webgpu/#dom-gpubuffer-getmappedrange
         if buffer.map_state() != webgpu::GpuBufferMapState::Mapped {
-            todo!("Throw buffer not mapped error");
+            return Ok(Err(not_mapped()));
         }
         let buffer_id = buffer.buffer_id;
         let (ptr, len) = self
@@ -2557,8 +2559,10 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<(), webgpu::GetMappedRangeError>> {
         let buffer = self.table.get(&buffer)?;
+        // > If this.[[mapState]] is not "mapped", throw an OperationError.
+        // https://www.w3.org/TR/webgpu/#dom-gpubuffer-getmappedrange
         if buffer.map_state() != webgpu::GpuBufferMapState::Mapped {
-            todo!("Throw buffer not mapped error");
+            return Ok(Err(not_mapped()));
         }
         let buffer_id = buffer.buffer_id;
         let (ptr, len) = self
@@ -2602,6 +2606,13 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         let buffer = self.table.delete(buffer)?;
         self.instance.buffer_drop(buffer.buffer_id);
         Ok(())
+    }
+}
+
+fn not_mapped() -> webgpu::GetMappedRangeError {
+    webgpu::GetMappedRangeError {
+        kind: webgpu::GetMappedRangeErrorKind::OperationError,
+        message: "buffer is not mapped".into(),
     }
 }
 
