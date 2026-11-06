@@ -1,7 +1,7 @@
 //! Shared ownership of a device and its queue, and the thread that polls them.
 
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use wgpu_core::{
     device::{queue::SubmittedWorkDoneClosure, WaitIdleError},
@@ -31,6 +31,8 @@ pub(crate) struct DeviceHandle {
     instance: Arc<Global>,
     device: DeviceId,
     queue: QueueId,
+    /// Longest a call waits for the GPU before the device is lost.
+    timeout: Option<Duration>,
     lost: Arc<DeviceLost>,
     poller: Mutex<Poller>,
 }
@@ -47,11 +49,21 @@ struct Poller {
 struct Waiter {
     index: SubmissionIndex,
     generation: u64,
+    deadline: Option<Instant>,
+    /// Whether wgpu has run the call's callback.
+    settled: Box<dyn Fn() -> bool + Send>,
     abort: Abort,
 }
 
 impl DeviceHandle {
-    pub(crate) fn new(instance: Arc<Global>, device: DeviceId, queue: QueueId) -> Self {
+    /// `timeout` bounds how long a call waits for the GPU; `None` or zero
+    /// waits for as long as the work runs.
+    pub(crate) fn new(
+        instance: Arc<Global>,
+        device: DeviceId,
+        queue: QueueId,
+        timeout: Option<Duration>,
+    ) -> Self {
         let lost = Arc::<DeviceLost>::default();
         let reported = Arc::clone(&lost);
         instance.device_set_device_lost_closure(
@@ -62,6 +74,7 @@ impl DeviceHandle {
             instance,
             device,
             queue,
+            timeout: timeout.filter(|timeout| !timeout.is_zero()),
             lost,
             poller: Mutex::default(),
         }
@@ -114,7 +127,12 @@ impl DeviceHandle {
         let index = self
             .instance
             .queue_on_submitted_work_done(self.queue, callback);
-        self.poll_until(index, Box::new(move |_| settle.send(())));
+        let settled = settle.clone();
+        self.poll_until(
+            index,
+            Box::new(move || settled.is_settled()),
+            Box::new(move |_| settle.send(())),
+        );
         done
     }
 
@@ -139,8 +157,10 @@ impl DeviceHandle {
         };
         // On error, wgpu-core has already called the callback with it.
         if let Ok(index) = self.instance.buffer_map_async(buffer, offset, size, op) {
+            let settled = settle.settle.clone();
             self.poll_until(
                 index,
+                Box::new(move || settled.is_settled()),
                 Box::new(move |info| settle.send(Err(lost_error(info)))),
             );
         }
@@ -149,8 +169,14 @@ impl DeviceHandle {
 
     /// Polls this device on a background thread until `index` completes,
     /// which runs the wgpu callbacks registered on it. `abort` runs instead if
-    /// the device is lost. One thread per device serves every waiting call.
-    fn poll_until(self: &Arc<Self>, index: SubmissionIndex, abort: Abort) {
+    /// the device is lost, which happens if `index` outlives the timeout.
+    /// One thread per device serves every waiting call.
+    fn poll_until(
+        self: &Arc<Self>,
+        index: SubmissionIndex,
+        settled: Box<dyn Fn() -> bool + Send>,
+        abort: Abort,
+    ) {
         if let Some(info) = self.lost.info() {
             abort(&info);
             return;
@@ -162,6 +188,8 @@ impl DeviceHandle {
             poller.waiting.push(Waiter {
                 index,
                 generation,
+                deadline: self.timeout.map(|timeout| Instant::now() + timeout),
+                settled,
                 abort,
             });
             if poller.running {
@@ -197,9 +225,9 @@ impl DeviceHandle {
                     timeout: Some(WAIT_SLICE),
                 },
             };
-            match self.instance.device_poll(self.device, poll_type) {
-                Ok(_) => {}
-                Err(WaitIdleError::Timeout) => continue,
+            let finished = match self.instance.device_poll(self.device, poll_type) {
+                Ok(_) => true,
+                Err(WaitIdleError::Timeout) => false,
                 Err(err) => {
                     self.lose(
                         webgpu::GpuDeviceLostReason::Unknown,
@@ -207,19 +235,34 @@ impl DeviceHandle {
                     );
                     return;
                 }
-            }
+            };
             // A loss wgpu reported during the poll, or a `destroy` meanwhile.
             if self.lost.is_lost() {
                 self.abort_waiting();
                 return;
             }
             let mut poller = self.lock_poller();
-            poller
-                .waiting
-                .retain(|waiter| waiter.index > target || waiter.generation > started);
+            poller.waiting.retain(|waiter| {
+                let retired = finished && waiter.index <= target && waiter.generation <= started;
+                !retired && !(waiter.settled)()
+            });
             if poller.waiting.is_empty() {
                 poller.running = false;
                 poller.target = 0;
+                return;
+            }
+            let now = Instant::now();
+            let late = poller
+                .waiting
+                .iter()
+                .any(|waiter| waiter.deadline.is_some_and(|deadline| deadline <= now));
+            drop(poller);
+            if late {
+                let timeout = self.timeout.unwrap_or_default();
+                self.lose(
+                    webgpu::GpuDeviceLostReason::Unknown,
+                    format!("GPU work did not finish within {timeout:?}"),
+                );
                 return;
             }
         }
@@ -270,6 +313,13 @@ impl<T> Settle<T> {
 
     fn send(&self, value: T) {
         self.send_with(value, |_| {});
+    }
+
+    fn is_settled(&self) -> bool {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_none()
     }
 
     /// Like `send`, but runs `first` before sending, and only if this is the
@@ -371,7 +421,7 @@ mod tests {
             )
             .unwrap();
         instance.adapter_drop(adapter);
-        Arc::new(DeviceHandle::new(instance, device, queue))
+        Arc::new(DeviceHandle::new(instance, device, queue, None))
     }
 
     fn buffer(device: &DeviceHandle, usage: wgpu_types::BufferUsages) -> BufferId {

@@ -115,6 +115,10 @@ pub struct WasiWebGpuCtx<'a> {
 pub struct WasiWebGpuOptions {
     /// Memory allocation strategy passed to wgpu on every `request-device`.
     pub device_memory_hints: wgpu_types::MemoryHints,
+    /// Longest `GpuBuffer.map-async` or `GpuQueue.on-submitted-work-done`
+    /// waits for GPU work. Work that runs longer loses its device. `None` or
+    /// zero waits for as long as the work runs.
+    pub wait_timeout: Option<std::time::Duration>,
 }
 
 struct HasWasiWebGpuCtx;

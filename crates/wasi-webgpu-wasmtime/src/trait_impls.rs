@@ -976,6 +976,7 @@ impl<T: Send> webgpu::HostGpuAdapterWithStore<T> for crate::HasWasiWebGpuCtx {
                             Arc::clone(ctx.instance),
                             device_id,
                             queue_id,
+                            ctx.options.wait_timeout,
                         )),
                         adapter,
                         error_handler: Arc::new(ErrorHandler::default()),
