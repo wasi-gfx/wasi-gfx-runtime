@@ -59,7 +59,18 @@ pub struct Buffer {
     pub(crate) device: Arc<DeviceHandle>,
     pub(crate) size: u64,
     pub(crate) usage: wgpu_types::BufferUsages,
-    pub(crate) map_state: webgpu::GpuBufferMapState,
+    /// Shared with a pending map, which settles it.
+    pub(crate) map_state: Arc<Mutex<webgpu::GpuBufferMapState>>,
+}
+
+impl Buffer {
+    pub(crate) fn map_state(&self) -> webgpu::GpuBufferMapState {
+        *self.map_state.lock().unwrap()
+    }
+
+    pub(crate) fn set_map_state(&self, map_state: webgpu::GpuBufferMapState) {
+        *self.map_state.lock().unwrap() = map_state;
+    }
 }
 
 // references to adapter are also saved in device.
@@ -78,6 +89,7 @@ pub struct Device {
 /// A device's queue. It keeps the device alive, so the queue can poll it.
 pub struct Queue {
     pub(crate) handle: Arc<DeviceHandle>,
+    pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
 impl Queue {
@@ -206,7 +218,12 @@ impl ErrorHandler {
         error: Option<E>,
     ) {
         if let Some(error) = error {
-            let error_kind = error.webgpu_error_type().into();
+            // > If device is lost, return; no errors are generated after this.
+            // https://www.w3.org/TR/webgpu/#abstract-opdef-generate-an-error
+            let error_kind = match error.webgpu_error_type() {
+                wgpu_types::error::ErrorType::DeviceLost => return,
+                error_type => error_type.into(),
+            };
             let error = GpuError {
                 message: error.to_string(),
                 kind: error_kind,

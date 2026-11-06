@@ -19,8 +19,10 @@ mod flags_conversions;
 mod to_core_conversions;
 
 mod device_handle;
+mod lost;
 mod trait_impls;
 mod types;
+pub use lost::DeviceLostInfo;
 pub use types::*;
 
 /// Re-export of `wgpu_core` and `wgpu_types` so that runtime implementors don't need to keep track of what version of wgpu this crate is using.
@@ -78,6 +80,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu.gpu-query-set": wgpu_core::id::QuerySetId,
         "wasi:webgpu/webgpu.gpu-supported-limits": wgpu_types::Limits,
         "wasi:webgpu/webgpu.gpu-error": types::GpuError,
+        "wasi:webgpu/webgpu.gpu-device-lost-info": lost::DeviceLostInfo,
         "wasi:webgpu/webgpu.wgsl-language-features": types::WgslLanguageFeatures,
         "wasi:webgpu/webgpu.record-gpu-pipeline-constant-value": types::RecordGpuPipelineConstantValue,
         "wasi:webgpu/webgpu.record-option-gpu-size64": types::RecordOptionGpuSize64,
@@ -119,3 +122,6 @@ struct HasWasiWebGpuCtx;
 impl HasData for HasWasiWebGpuCtx {
     type Data<'a> = WasiWebGpuCtx<'a>;
 }
+
+#[cfg(test)]
+mod tests;

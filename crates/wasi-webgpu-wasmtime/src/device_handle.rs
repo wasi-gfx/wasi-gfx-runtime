@@ -11,9 +11,13 @@ use wgpu_core::{
     SubmissionIndex,
 };
 
-use crate::wasi::webgpu::webgpu;
+use crate::{
+    lost::{DeviceLost, DeviceLostInfo},
+    wasi::webgpu::webgpu,
+};
 
-type Abort = Box<dyn FnOnce() + Send>;
+/// Settles a waiting call with the device's loss.
+type Abort = Box<dyn FnOnce(&DeviceLostInfo) + Send>;
 
 /// Longest one poll waits. A waiting poll holds wgpu-core's fence lock, which
 /// `queue_submit` needs, so a long wait would stall the guest's submits.
@@ -27,6 +31,7 @@ pub(crate) struct DeviceHandle {
     instance: Arc<Global>,
     device: DeviceId,
     queue: QueueId,
+    lost: Arc<DeviceLost>,
     poller: Mutex<Poller>,
 }
 
@@ -47,10 +52,17 @@ struct Waiter {
 
 impl DeviceHandle {
     pub(crate) fn new(instance: Arc<Global>, device: DeviceId, queue: QueueId) -> Self {
+        let lost = Arc::<DeviceLost>::default();
+        let reported = Arc::clone(&lost);
+        instance.device_set_device_lost_closure(
+            device,
+            Box::new(move |reason, message| reported.lose(reason.into(), message)),
+        );
         Self {
             instance,
             device,
             queue,
+            lost,
             poller: Mutex::default(),
         }
     }
@@ -63,11 +75,38 @@ impl DeviceHandle {
         &self.queue
     }
 
-    /// Resolves once all work submitted so far, including queued writes, is done.
+    pub(crate) fn lost(&self) -> &Arc<DeviceLost> {
+        &self.lost
+    }
+
+    /// wgpu reports a destroyed device lost only once its queue drains, and
+    /// only to a poll; the spec loses it at once.
+    /// https://www.w3.org/TR/webgpu/#dom-gpudevice-destroy
+    pub(crate) fn destroy(&self) {
+        self.lose(
+            webgpu::GpuDeviceLostReason::Destroyed,
+            "device destroyed".into(),
+        );
+    }
+
+    /// Loses the device and settles every call waiting on it. The device
+    /// ignores later submissions, and its work keeps the GPU busy until it
+    /// ends or the driver resets it.
+    fn lose(&self, reason: webgpu::GpuDeviceLostReason, message: String) {
+        self.lost.lose(reason, message);
+        self.instance.device_destroy(self.device);
+        self.abort_waiting();
+    }
+
+    /// Resolves once all work submitted so far, including queued writes, is
+    /// done, or once the device is lost.
+    /// https://www.w3.org/TR/webgpu/#lose-the-device
     pub(crate) fn on_submitted_work_done(self: &Arc<Self>) -> oneshot::Receiver<()> {
         // wgpu-core leaves queued writes out of work-done callbacks, so submit them.
         if let Err((_, err)) = self.instance.queue_submit(self.queue, &[]) {
-            log::warn!("failed to flush queued writes: {err}");
+            if !self.lost.is_lost() {
+                log::warn!("failed to flush queued writes: {err}");
+            }
         }
         let (settle, done) = Settle::new();
         let on_done = settle.clone();
@@ -75,19 +114,22 @@ impl DeviceHandle {
         let index = self
             .instance
             .queue_on_submitted_work_done(self.queue, callback);
-        self.poll_until(index, Box::new(move || settle.send(())));
+        self.poll_until(index, Box::new(move |_| settle.send(())));
         done
     }
 
     /// Maps `buffer`, resolving with the result once the mapping is done.
+    /// `state` follows the map even if the caller stops waiting for it.
     pub(crate) fn map_async(
         self: &Arc<Self>,
         buffer: BufferId,
         host: wgpu_core::device::HostMap,
         offset: u64,
         size: Option<u64>,
+        state: Arc<Mutex<webgpu::GpuBufferMapState>>,
     ) -> oneshot::Receiver<Result<(), webgpu::MapAsyncError>> {
         let (settle, mapped) = Settle::new();
+        let settle = MapSettle { settle, state };
         let on_mapped = settle.clone();
         let op = BufferMapOperation {
             host,
@@ -99,7 +141,7 @@ impl DeviceHandle {
         if let Ok(index) = self.instance.buffer_map_async(buffer, offset, size, op) {
             self.poll_until(
                 index,
-                Box::new(move || settle.send(Err(aborted("the device was lost")))),
+                Box::new(move |info| settle.send(Err(lost_error(info)))),
             );
         }
         mapped
@@ -107,8 +149,12 @@ impl DeviceHandle {
 
     /// Polls this device on a background thread until `index` completes,
     /// which runs the wgpu callbacks registered on it. `abort` runs instead if
-    /// polling fails. One thread per device serves every waiting call.
+    /// the device is lost. One thread per device serves every waiting call.
     fn poll_until(self: &Arc<Self>, index: SubmissionIndex, abort: Abort) {
+        if let Some(info) = self.lost.info() {
+            abort(&info);
+            return;
+        }
         {
             let mut poller = self.lock_poller();
             poller.target = poller.target.max(index);
@@ -128,8 +174,10 @@ impl DeviceHandle {
             .name("wasi-webgpu-poll".into())
             .spawn(move || this.run_poller());
         if let Err(err) = spawned {
-            log::error!("failed to spawn the device poll thread: {err}");
-            self.abort_waiting();
+            self.lose(
+                webgpu::GpuDeviceLostReason::Unknown,
+                format!("failed to spawn the device poll thread: {err}"),
+            );
         }
     }
 
@@ -153,10 +201,17 @@ impl DeviceHandle {
                 Ok(_) => {}
                 Err(WaitIdleError::Timeout) => continue,
                 Err(err) => {
-                    log::warn!("device poll failed: {err}");
-                    self.abort_waiting();
+                    self.lose(
+                        webgpu::GpuDeviceLostReason::Unknown,
+                        format!("device poll failed: {err}"),
+                    );
                     return;
                 }
+            }
+            // A loss wgpu reported during the poll, or a `destroy` meanwhile.
+            if self.lost.is_lost() {
+                self.abort_waiting();
+                return;
             }
             let mut poller = self.lock_poller();
             poller
@@ -170,7 +225,11 @@ impl DeviceHandle {
         }
     }
 
+    /// Settles every waiting call with the device's loss.
     fn abort_waiting(&self) {
+        let Some(info) = self.lost.info() else {
+            return;
+        };
         let waiting = {
             let mut poller = self.lock_poller();
             poller.running = false;
@@ -178,7 +237,7 @@ impl DeviceHandle {
             std::mem::take(&mut poller.waiting)
         };
         for waiter in waiting {
-            (waiter.abort)();
+            (waiter.abort)(&info);
         }
     }
 
@@ -210,17 +269,62 @@ impl<T> Settle<T> {
     }
 
     fn send(&self, value: T) {
+        self.send_with(value, |_| {});
+    }
+
+    /// Like `send`, but runs `first` before sending, and only if this is the
+    /// first value.
+    fn send_with(&self, value: T, first: impl FnOnce(&T)) {
         let send = self.0.lock().unwrap_or_else(PoisonError::into_inner).take();
         if let Some(send) = send {
+            first(&value);
             let _ = send.send(value);
         }
     }
 }
 
+/// Settles a map and sets the buffer's map state to match, before the waiting
+/// call can see the result.
+#[derive(Clone)]
+struct MapSettle {
+    settle: Settle<Result<(), webgpu::MapAsyncError>>,
+    state: Arc<Mutex<webgpu::GpuBufferMapState>>,
+}
+
+impl MapSettle {
+    fn send(&self, mapped: Result<(), webgpu::MapAsyncError>) {
+        self.settle.send_with(mapped, |mapped| {
+            *self.state.lock().unwrap_or_else(PoisonError::into_inner) = match mapped {
+                Ok(()) => webgpu::GpuBufferMapState::Mapped,
+                Err(_) => webgpu::GpuBufferMapState::Unmapped,
+            };
+        });
+    }
+}
+
 fn map_error(err: &BufferAccessError) -> webgpu::MapAsyncError {
+    // Unmapping or destroying the buffer first aborts the map.
+    // https://www.w3.org/TR/webgpu/#abort-a-pending-map
+    let kind = match err {
+        BufferAccessError::MapAborted => webgpu::MapAsyncErrorKind::AbortError,
+        _ => webgpu::MapAsyncErrorKind::OperationError,
+    };
     webgpu::MapAsyncError {
-        kind: webgpu::MapAsyncErrorKind::OperationError,
+        kind,
         message: err.to_string(),
+    }
+}
+
+/// Destroying the device unmaps its buffers, which aborts their maps.
+/// https://www.w3.org/TR/webgpu/#dom-gpudevice-destroy
+fn lost_error(info: &DeviceLostInfo) -> webgpu::MapAsyncError {
+    let kind = match info.reason {
+        webgpu::GpuDeviceLostReason::Destroyed => webgpu::MapAsyncErrorKind::AbortError,
+        webgpu::GpuDeviceLostReason::Unknown => webgpu::MapAsyncErrorKind::OperationError,
+    };
+    webgpu::MapAsyncError {
+        kind,
+        message: info.message.clone(),
     }
 }
 
@@ -326,12 +430,28 @@ mod tests {
         }
     }
 
+    fn unmapped() -> Arc<Mutex<webgpu::GpuBufferMapState>> {
+        Arc::new(Mutex::new(webgpu::GpuBufferMapState::Pending))
+    }
+
+    fn state(state: &Mutex<webgpu::GpuBufferMapState>) -> webgpu::GpuBufferMapState {
+        *state.lock().unwrap()
+    }
+
     #[test]
     fn map_async_resolves() {
         let device = noop_device();
         let buffer = buffer(&device, wgpu_types::BufferUsages::MAP_READ);
-        let mapped = device.map_async(buffer, wgpu_core::device::HostMap::Read, 0, None);
+        let map_state = unmapped();
+        let mapped = device.map_async(
+            buffer,
+            wgpu_core::device::HostMap::Read,
+            0,
+            None,
+            Arc::clone(&map_state),
+        );
         assert!(mapped.recv_timeout(TIMEOUT).unwrap().is_ok());
+        assert_eq!(state(&map_state), webgpu::GpuBufferMapState::Mapped);
         device.instance.buffer_drop(buffer);
     }
 
@@ -339,12 +459,71 @@ mod tests {
     fn map_async_reports_a_validation_error() {
         let device = noop_device();
         let buffer = buffer(&device, wgpu_types::BufferUsages::MAP_READ);
-        let mapped = device.map_async(buffer, wgpu_core::device::HostMap::Write, 0, None);
+        let map_state = unmapped();
+        let mapped = device.map_async(
+            buffer,
+            wgpu_core::device::HostMap::Write,
+            0,
+            None,
+            Arc::clone(&map_state),
+        );
         let err = mapped.recv_timeout(TIMEOUT).unwrap().unwrap_err();
         assert!(matches!(
             err.kind,
             webgpu::MapAsyncErrorKind::OperationError
         ));
+        assert_eq!(state(&map_state), webgpu::GpuBufferMapState::Unmapped);
+        device.instance.buffer_drop(buffer);
+    }
+
+    #[test]
+    fn map_state_follows_a_map_nobody_waits_for() {
+        let device = noop_device();
+        let buffer = buffer(&device, wgpu_types::BufferUsages::MAP_READ);
+        let map_state = unmapped();
+        drop(device.map_async(
+            buffer,
+            wgpu_core::device::HostMap::Read,
+            0,
+            None,
+            Arc::clone(&map_state),
+        ));
+        let deadline = std::time::Instant::now() + TIMEOUT;
+        while state(&map_state) == webgpu::GpuBufferMapState::Pending {
+            assert!(std::time::Instant::now() < deadline, "map never settled");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(state(&map_state), webgpu::GpuBufferMapState::Mapped);
+        device.instance.buffer_drop(buffer);
+    }
+
+    #[test]
+    fn destroy_loses_the_device() {
+        let device = noop_device();
+        device.destroy();
+        let info = device.lost().info().unwrap();
+        assert_eq!(info.reason, webgpu::GpuDeviceLostReason::Destroyed);
+    }
+
+    #[test]
+    fn waits_on_a_destroyed_device_settle() {
+        let device = noop_device();
+        let buffer = buffer(&device, wgpu_types::BufferUsages::MAP_READ);
+        device.destroy();
+        device
+            .on_submitted_work_done()
+            .recv_timeout(TIMEOUT)
+            .unwrap();
+        let map_state = unmapped();
+        let mapped = device.map_async(
+            buffer,
+            wgpu_core::device::HostMap::Read,
+            0,
+            None,
+            Arc::clone(&map_state),
+        );
+        assert!(mapped.recv_timeout(TIMEOUT).unwrap().is_err());
+        assert_eq!(state(&map_state), webgpu::GpuBufferMapState::Unmapped);
         device.instance.buffer_drop(buffer);
     }
 
