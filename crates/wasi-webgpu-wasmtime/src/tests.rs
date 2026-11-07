@@ -293,6 +293,59 @@ fn reading_an_unmapped_range_is_an_operation_error() {
     ));
 }
 
+fn assert_operation_error<T: std::fmt::Debug>(result: Result<T, webgpu::GetMappedRangeError>) {
+    assert!(
+        matches!(
+            &result,
+            Err(webgpu::GetMappedRangeError {
+                kind: webgpu::GetMappedRangeErrorKind::OperationError,
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn an_invalid_mapped_range_is_an_operation_error() {
+    let (mut state, rep) = State::new(true);
+    let mut ctx = state.webgpu_ctx();
+    let buffer = || Resource::new_borrow(rep);
+    // Past the end, unaligned, and longer than the buffer.
+    for (offset, size) in [(Some(24), None), (Some(4), None), (None, Some(24))] {
+        assert_operation_error(
+            ctx.get_mapped_range_get_with_copy(buffer(), offset, size)
+                .unwrap(),
+        );
+        assert_operation_error(
+            ctx.get_mapped_range_set_with_copy(buffer(), vec![0; 16], offset, size)
+                .unwrap(),
+        );
+    }
+}
+
+#[test]
+fn writing_the_wrong_length_is_an_operation_error() {
+    let (mut state, rep) = State::new(true);
+    let mut ctx = state.webgpu_ctx();
+    let buffer = || Resource::new_borrow(rep);
+    for len in [8, 24] {
+        assert_operation_error(
+            ctx.get_mapped_range_set_with_copy(buffer(), vec![1; len], None, None)
+                .unwrap(),
+        );
+    }
+    let data: Vec<u8> = (0..8).collect();
+    ctx.get_mapped_range_set_with_copy(buffer(), data.clone(), Some(8), None)
+        .unwrap()
+        .unwrap();
+    let read = ctx
+        .get_mapped_range_get_with_copy(buffer(), None, None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(read, [vec![0; 8], data].concat());
+}
+
 fn unmap_before_map_callback(remap: bool, destroy: bool) {
     let (state, rep) = State::new(false);
     let (other, error) = state.instance.device_create_buffer(

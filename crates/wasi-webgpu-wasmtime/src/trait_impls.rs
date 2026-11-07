@@ -2536,20 +2536,12 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<Vec<u8>, webgpu::GetMappedRangeError>> {
         let buffer = self.table.get(&buffer)?;
-        // > If this.[[mapState]] is not "mapped", throw an OperationError.
-        // https://www.w3.org/TR/webgpu/#dom-gpubuffer-getmappedrange
-        if buffer.map_state() != webgpu::GpuBufferMapState::Mapped {
-            return Ok(Err(not_mapped()));
-        }
-        let buffer_id = buffer.buffer_id;
-        let (ptr, len) = self
-            .instance
-            // https://www.w3.org/TR/webgpu/#gpubuffer
-            .buffer_get_mapped_range(buffer_id, offset.unwrap_or(0), size)?;
-        let data = unsafe { slice::from_raw_parts(ptr.as_ptr(), len as usize) };
-        let mut output = vec![0; len as usize];
-        output.copy_from_slice(data);
-        Ok(Ok(output))
+        let (ptr, len) = match mapped_range(self.instance, buffer, offset, size) {
+            Ok(range) => range,
+            Err(err) => return Ok(Err(err)),
+        };
+        let data = unsafe { slice::from_raw_parts(ptr.as_ptr(), len) };
+        Ok(Ok(data.to_vec()))
     }
 
     fn get_mapped_range_set_with_copy(
@@ -2560,18 +2552,18 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<(), webgpu::GetMappedRangeError>> {
         let buffer = self.table.get(&buffer)?;
-        // > If this.[[mapState]] is not "mapped", throw an OperationError.
-        // https://www.w3.org/TR/webgpu/#dom-gpubuffer-getmappedrange
-        if buffer.map_state() != webgpu::GpuBufferMapState::Mapped {
-            return Ok(Err(not_mapped()));
+        let (ptr, len) = match mapped_range(self.instance, buffer, offset, size) {
+            Ok(range) => range,
+            Err(err) => return Ok(Err(err)),
+        };
+        if data.len() != len {
+            return Ok(Err(operation_error(format!(
+                "data is {} bytes but the mapped range is {len}",
+                data.len()
+            ))));
         }
-        let buffer_id = buffer.buffer_id;
-        let (ptr, len) = self
-            .instance
-            // https://www.w3.org/TR/webgpu/#gpubuffer
-            .buffer_get_mapped_range(buffer_id, offset.unwrap_or(0), size)?;
-        let buffer = unsafe { slice::from_raw_parts_mut(ptr.as_ptr(), len as usize) };
-        buffer.copy_from_slice(&data);
+        let range = unsafe { slice::from_raw_parts_mut(ptr.as_ptr(), len) };
+        range.copy_from_slice(&data);
         Ok(Ok(()))
     }
 
@@ -2611,10 +2603,28 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
     }
 }
 
-fn not_mapped() -> webgpu::GetMappedRangeError {
+/// The mapped bytes `offset..offset + size` of `buffer`, or the
+/// `OperationError` that `getMappedRange` throws.
+/// https://www.w3.org/TR/webgpu/#dom-gpubuffer-getmappedrange
+fn mapped_range(
+    instance: &wgpu_core::global::Global,
+    buffer: &Buffer,
+    offset: Option<webgpu::GpuSize64>,
+    size: Option<webgpu::GpuSize64>,
+) -> Result<(std::ptr::NonNull<u8>, usize), webgpu::GetMappedRangeError> {
+    if buffer.map_state() != webgpu::GpuBufferMapState::Mapped {
+        return Err(operation_error("buffer is not mapped".into()));
+    }
+    match instance.buffer_get_mapped_range(buffer.buffer_id, offset.unwrap_or(0), size) {
+        Ok((ptr, len)) => Ok((ptr, len as usize)),
+        Err(err) => Err(operation_error(err.to_string())),
+    }
+}
+
+fn operation_error(message: String) -> webgpu::GetMappedRangeError {
     webgpu::GetMappedRangeError {
         kind: webgpu::GetMappedRangeErrorKind::OperationError,
-        message: "buffer is not mapped".into(),
+        message,
     }
 }
 
