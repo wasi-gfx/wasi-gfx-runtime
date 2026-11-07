@@ -1034,12 +1034,9 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
         let queue = self.table.get(&queue)?;
         // A lost device refuses the submission, and generates no error for it.
         // A failed submit may still have sent queued writes to the GPU.
-        if let Err((_, err)) = self
-            .instance
-            .queue_submit(*queue.queue_id(), &command_buffers)
-        {
-            queue.error_handler.handle_possible_error(Some(err));
-        }
+        queue
+            .error_handler
+            .handle_possible_error(queue.handle.submit(&command_buffers));
         queue.handle.watch();
         Ok(())
     }
@@ -2541,12 +2538,13 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<Vec<u8>, webgpu::GetMappedRangeError>> {
         let buffer = self.table.get(&buffer)?;
-        let (ptr, len) = match mapped_range(self.instance, buffer, offset, size) {
-            Ok(range) => range,
-            Err(err) => return Ok(Err(err)),
-        };
-        let data = unsafe { slice::from_raw_parts(ptr.as_ptr(), len) };
-        Ok(Ok(data.to_vec()))
+        Ok(with_mapped_range(
+            self.instance,
+            buffer,
+            offset,
+            size,
+            |range| Ok(range.to_vec()),
+        ))
     }
 
     fn get_mapped_range_set_with_copy(
@@ -2557,19 +2555,23 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<(), webgpu::GetMappedRangeError>> {
         let buffer = self.table.get(&buffer)?;
-        let (ptr, len) = match mapped_range(self.instance, buffer, offset, size) {
-            Ok(range) => range,
-            Err(err) => return Ok(Err(err)),
-        };
-        if data.len() != len {
-            return Ok(Err(operation_error(format!(
-                "data is {} bytes but the mapped range is {len}",
-                data.len()
-            ))));
-        }
-        let range = unsafe { slice::from_raw_parts_mut(ptr.as_ptr(), len) };
-        range.copy_from_slice(&data);
-        Ok(Ok(()))
+        Ok(with_mapped_range(
+            self.instance,
+            buffer,
+            offset,
+            size,
+            |range| {
+                if data.len() != range.len() {
+                    return Err(operation_error(format!(
+                        "data is {} bytes but the mapped range is {}",
+                        data.len(),
+                        range.len()
+                    )));
+                }
+                range.copy_from_slice(&data);
+                Ok(())
+            },
+        ))
     }
 
     fn unmap(
@@ -2612,22 +2614,25 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
     }
 }
 
-/// The mapped bytes `offset..offset + size` of `buffer`, or the
-/// `OperationError` that `getMappedRange` throws.
-/// https://www.w3.org/TR/webgpu/#dom-gpubuffer-getmappedrange
-fn mapped_range(
+/// Keeps native storage alive until the mapped copy finishes.
+pub(crate) fn with_mapped_range<R>(
     instance: &wgpu_core::global::Global,
     buffer: &Buffer,
     offset: Option<webgpu::GpuSize64>,
     size: Option<webgpu::GpuSize64>,
-) -> Result<(std::ptr::NonNull<u8>, usize), webgpu::GetMappedRangeError> {
+    copy: impl FnOnce(&mut [u8]) -> Result<R, webgpu::GetMappedRangeError>,
+) -> Result<R, webgpu::GetMappedRangeError> {
+    let _memory = buffer.device.lock_memory();
     if buffer.map_state() != webgpu::GpuBufferMapState::Mapped {
         return Err(operation_error("buffer is not mapped".into()));
     }
-    match instance.buffer_get_mapped_range(buffer.buffer_id, offset.unwrap_or(0), size) {
-        Ok((ptr, len)) => Ok((ptr, len as usize)),
-        Err(err) => Err(operation_error(err.to_string())),
-    }
+    let (ptr, len) = instance
+        .buffer_get_mapped_range(buffer.buffer_id, offset.unwrap_or(0), size)
+        .map_err(|err| operation_error(err.to_string()))?;
+    // The memory lock excludes polling and submission cleanup. The store
+    // borrow excludes guest unmap, destroy, and other mapped copies.
+    let range = unsafe { slice::from_raw_parts_mut(ptr.as_ptr(), len as usize) };
+    copy(range)
 }
 
 /// The bytes of `data` that `writeBuffer` copies, or the `OperationError` it

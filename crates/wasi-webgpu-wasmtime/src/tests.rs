@@ -562,3 +562,73 @@ fn delayed_map_callback_preserves_a_new_mapping() {
 fn destroy_rejects_a_delayed_map_callback() {
     unmap_before_map_callback(false, true);
 }
+
+fn mapped_copy_excludes_cleanup(submit: bool) {
+    let (state, rep) = State::new(false);
+    let mut store = Store::new(&Engine::default(), state);
+    block_on(store.run_concurrent(async |access| {
+        let access = access.with_getter::<HasWasiWebGpuCtx>(State::webgpu_ctx);
+        HasWasiWebGpuCtx::map_async(
+            &access,
+            Resource::new_borrow(rep),
+            webgpu::GpuMapMode::READ,
+            None,
+            None,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    }))
+    .unwrap();
+    let state = store.data();
+    let buffer = state
+        .table
+        .get(&Resource::<Buffer>::new_borrow(rep))
+        .unwrap();
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (done_tx, done_rx) = mpsc::channel();
+    std::thread::scope(|threads| {
+        let copied =
+            crate::trait_impls::with_mapped_range(&state.instance, buffer, None, None, |range| {
+                let device = Arc::clone(&state.device);
+                threads.spawn(move || {
+                    entered_tx.send(()).unwrap();
+                    if submit {
+                        let _ = device.submit(&[]);
+                    } else {
+                        device.poll(wgpu_types::PollType::Poll).unwrap();
+                    }
+                    done_tx.send(()).unwrap();
+                });
+                entered_rx.recv_timeout(TEST_TIMEOUT).unwrap();
+                // Check exclusion before losing the device, so failure cannot
+                // free memory that this test is about to access.
+                assert!(matches!(
+                    done_rx.recv_timeout(Duration::from_millis(50)),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ));
+                state.device.destroy();
+                range.fill(42);
+                Ok(range.to_vec())
+            })
+            .unwrap();
+        assert_eq!(copied, vec![42; 16]);
+        done_rx.recv_timeout(TEST_TIMEOUT).unwrap();
+    });
+    // Native cleanup can proceed after the copy releases its guard.
+    state.device.poll(wgpu_types::PollType::Poll).unwrap();
+    assert!(state
+        .instance
+        .buffer_get_mapped_range(buffer.buffer_id, 0, None)
+        .is_err());
+}
+
+#[test]
+fn mapped_copy_excludes_poll_cleanup() {
+    mapped_copy_excludes_cleanup(false);
+}
+
+#[test]
+fn mapped_copy_excludes_submit_cleanup() {
+    mapped_copy_excludes_cleanup(true);
+}

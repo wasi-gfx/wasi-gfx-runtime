@@ -5,9 +5,12 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use wgpu_core::{
-    device::{queue::SubmittedWorkDoneClosure, DeviceError, WaitIdleError},
+    device::{
+        queue::{QueueSubmitError, SubmittedWorkDoneClosure},
+        DeviceError, WaitIdleError,
+    },
     global::Global,
-    id::{BufferId, DeviceId, QueueId},
+    id::{BufferId, CommandBufferId, DeviceId, QueueId},
     resource::{BufferAccessError, BufferMapOperation},
     SubmissionIndex,
 };
@@ -43,6 +46,8 @@ pub(crate) struct DeviceHandle {
     lost: Arc<DeviceLost>,
     /// Set by `destroy`, which unmaps the device's buffers.
     destroyed: AtomicBool,
+    /// Serializes mapped copies with native resource cleanup.
+    memory: Mutex<()>,
     poller: Mutex<Poller>,
     /// Wakes an idle poller when a call starts waiting.
     wake: Condvar,
@@ -131,6 +136,7 @@ impl DeviceHandle {
             timeout: timeout.filter(|timeout| !timeout.is_zero()),
             lost,
             destroyed: AtomicBool::new(false),
+            memory: Mutex::new(()),
             poller: Mutex::default(),
             wake: Condvar::new(),
         }
@@ -146,6 +152,27 @@ impl DeviceHandle {
 
     pub(crate) fn lost(&self) -> &Arc<DeviceLost> {
         &self.lost
+    }
+
+    pub(crate) fn lock_memory(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.memory.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub(crate) fn submit(&self, commands: &[CommandBufferId]) -> Option<QueueSubmitError> {
+        // Submitting also polls the device and may free lost-device resources.
+        let _memory = self.lock_memory();
+        self.instance
+            .queue_submit(self.queue, commands)
+            .err()
+            .map(|(_, err)| err)
+    }
+
+    pub(crate) fn poll(
+        &self,
+        poll_type: wgpu_types::PollType<SubmissionIndex>,
+    ) -> Result<wgpu_types::PollStatus, WaitIdleError> {
+        let _memory = self.lock_memory();
+        self.instance.device_poll(self.device, poll_type)
     }
 
     /// wgpu reports a destroyed device lost only once its queue drains, and
@@ -195,7 +222,7 @@ impl DeviceHandle {
     /// https://www.w3.org/TR/webgpu/#lose-the-device
     pub(crate) fn on_submitted_work_done(self: &Arc<Self>) -> oneshot::Receiver<()> {
         // wgpu-core leaves queued writes out of work-done callbacks, so submit them.
-        if let Err((_, err)) = self.instance.queue_submit(self.queue, &[]) {
+        if let Some(err) = self.submit(&[]) {
             if !self.lost.is_lost() {
                 log::warn!("failed to flush queued writes: {err}");
             }
@@ -278,7 +305,7 @@ impl DeviceHandle {
                     timeout: Some(WAIT_SLICE),
                 },
             };
-            let waited_out = match self.instance.device_poll(self.device, poll_type) {
+            let waited_out = match self.poll(poll_type) {
                 Ok(_) => false,
                 Err(WaitIdleError::Timeout) => true,
                 Err(err) => {
@@ -368,7 +395,7 @@ fn timed_out(timeout: Duration) -> String {
 impl Drop for DeviceHandle {
     /// wgpu blocks while it drops a queue with work in flight and panics if
     /// the work outlasts about 6s, so a busy queue is dropped from a thread
-    /// once its device is idle.
+    /// once its device is idle. No mapped copy outlives the last handle.
     fn drop(&mut self) {
         let polled = self
             .instance
