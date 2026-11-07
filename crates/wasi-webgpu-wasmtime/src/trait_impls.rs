@@ -2580,14 +2580,15 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         buffer: Resource<webgpu::GpuBuffer>,
     ) -> wasmtime::Result<Result<(), webgpu::UnmapError>> {
         let buffer = self.table.get(&buffer)?;
-        self.instance.buffer_unmap(buffer.buffer_id)?;
         buffer.set_map_state(webgpu::GpuBufferMapState::Unmapped);
+        self.instance.buffer_unmap(buffer.buffer_id)?;
         Ok(Ok(()))
     }
 
     fn destroy(&mut self, buffer: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<()> {
-        let buffer_id = self.table.get_mut(&buffer)?.buffer_id;
-        self.instance.buffer_destroy(buffer_id);
+        let buffer = self.table.get(&buffer)?;
+        buffer.set_map_state(webgpu::GpuBufferMapState::Unmapped);
+        self.instance.buffer_destroy(buffer.buffer_id);
         Ok(())
     }
 
@@ -2648,8 +2649,8 @@ impl<T: Send> webgpu::HostGpuBufferWithStore<T> for crate::HasWasiWebGpuCtx {
         let offset = offset.unwrap_or(0);
 
         let mapping = accessor.with(|mut access| -> wasmtime::Result<_> {
-            let buffer = access.get().table.get(&buffer)?;
-            let mut map_state = buffer.map_state.lock().unwrap();
+            let buffer = access.get().table.get_mut(&buffer)?;
+            let map_state = buffer.map_state.lock().unwrap();
             // > If this.[[mapping]] is not null or this.[[pending_map]] is not
             // > null, reject promise with an OperationError.
             // A rejected map leaves the earlier map's state alone.
@@ -2659,7 +2660,9 @@ impl<T: Send> webgpu::HostGpuBufferWithStore<T> for crate::HasWasiWebGpuCtx {
                     message: "buffer is already mapped or has a pending map".into(),
                 }));
             }
-            *map_state = webgpu::GpuBufferMapState::Pending;
+            drop(map_state);
+            // Each map owns its state; an old callback cannot change a newer map.
+            buffer.map_state = Arc::new(Mutex::new(webgpu::GpuBufferMapState::Pending));
             Ok(Ok((
                 Arc::clone(&buffer.device),
                 buffer.buffer_id,
