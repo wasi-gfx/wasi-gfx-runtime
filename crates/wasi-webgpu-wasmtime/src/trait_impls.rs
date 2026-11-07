@@ -1038,15 +1038,10 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<Result<(), webgpu::WriteBufferError>> {
         let queue = *(*self.table.get(&queue)?);
         let buffer_id = self.table.get(&buffer)?.buffer_id;
-        let mut data = &data[..];
-        if let Some(data_offset) = data_offset {
-            let data_offset = data_offset as usize;
-            data = &data[data_offset..];
-        }
-        if let Some(size) = size {
-            let size = size as usize;
-            data = &data[..size];
-        }
+        let data = match write_buffer_data(&data, data_offset, size) {
+            Ok(data) => data,
+            Err(e) => return Ok(Err(e)),
+        };
         self.instance
             .queue_write_buffer(queue, buffer_id, buffer_offset, data)?;
         Ok(Ok(()))
@@ -1576,16 +1571,15 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
         let render_pass = render_pass.as_mut().unwrap();
         // https://www.w3.org/TR/webgpu/#programmable-passes
-        let dynamic_offsets = &dynamic_offsets_data.unwrap_or(vec![]);
-        let mut dynamic_offsets = &dynamic_offsets[..];
-        if let Some(dynamic_offsets_data_start) = dynamic_offsets_data_start {
-            let dynamic_offsets_data_start = dynamic_offsets_data_start as usize;
-            dynamic_offsets = &dynamic_offsets[dynamic_offsets_data_start..];
-        }
-        if let Some(dynamic_offsets_data_length) = dynamic_offsets_data_length {
-            let dynamic_offsets_data_length = dynamic_offsets_data_length as usize;
-            dynamic_offsets = &dynamic_offsets[..dynamic_offsets_data_length];
-        }
+        let dynamic_offsets_data = dynamic_offsets_data.unwrap_or_default();
+        let dynamic_offsets = match dynamic_offsets(
+            &dynamic_offsets_data,
+            dynamic_offsets_data_start,
+            dynamic_offsets_data_length,
+        ) {
+            Ok(dynamic_offsets) => dynamic_offsets,
+            Err(e) => return Ok(Err(e)),
+        };
 
         self.instance.render_pass_set_bind_group(
             render_pass,
@@ -1984,16 +1978,15 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         let compute_pass = compute_pass.as_mut().unwrap();
         // https://www.w3.org/TR/webgpu/#programmable-passes
 
-        let dynamic_offsets = &dynamic_offsets_data.unwrap_or(vec![]);
-        let mut dynamic_offsets = &dynamic_offsets[..];
-        if let Some(dynamic_offsets_data_start) = dynamic_offsets_data_start {
-            let dynamic_offsets_data_start = dynamic_offsets_data_start as usize;
-            dynamic_offsets = &dynamic_offsets[dynamic_offsets_data_start..];
-        }
-        if let Some(dynamic_offsets_data_length) = dynamic_offsets_data_length {
-            let dynamic_offsets_data_length = dynamic_offsets_data_length as usize;
-            dynamic_offsets = &dynamic_offsets[..dynamic_offsets_data_length];
-        }
+        let dynamic_offsets_data = dynamic_offsets_data.unwrap_or_default();
+        let dynamic_offsets = match dynamic_offsets(
+            &dynamic_offsets_data,
+            dynamic_offsets_data_start,
+            dynamic_offsets_data_length,
+        ) {
+            Ok(dynamic_offsets) => dynamic_offsets,
+            Err(e) => return Ok(Err(e)),
+        };
 
         self.instance.compute_pass_set_bind_group(
             compute_pass,
@@ -2208,16 +2201,15 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         let bundle_encoder = bundle_encoder.as_mut().unwrap();
 
         // https://www.w3.org/TR/webgpu/#programmable-passes
-        let dynamic_offsets = &dynamic_offsets_data.unwrap_or(vec![]);
-        let mut dynamic_offsets = &dynamic_offsets[..];
-        if let Some(dynamic_offsets_data_start) = dynamic_offsets_data_start {
-            let dynamic_offsets_data_start = dynamic_offsets_data_start as usize;
-            dynamic_offsets = &dynamic_offsets[dynamic_offsets_data_start..];
-        }
-        if let Some(dynamic_offsets_data_length) = dynamic_offsets_data_length {
-            let dynamic_offsets_data_length = dynamic_offsets_data_length as usize;
-            dynamic_offsets = &dynamic_offsets[..dynamic_offsets_data_length];
-        }
+        let dynamic_offsets_data = dynamic_offsets_data.unwrap_or_default();
+        let dynamic_offsets = match dynamic_offsets(
+            &dynamic_offsets_data,
+            dynamic_offsets_data_start,
+            dynamic_offsets_data_length,
+        ) {
+            Ok(dynamic_offsets) => dynamic_offsets,
+            Err(e) => return Ok(Err(e)),
+        };
 
         unsafe {
             wgpu_core::command::bundle_ffi::wgpu_render_bundle_set_bind_group(
@@ -2562,6 +2554,16 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
             // https://www.w3.org/TR/webgpu/#gpubuffer
             .buffer_get_mapped_range(buffer_id, offset.unwrap_or(0), size)?;
         let buffer = unsafe { slice::from_raw_parts_mut(ptr.as_ptr(), len as usize) };
+        if data.len() != buffer.len() {
+            return Ok(Err(webgpu::GetMappedRangeError {
+                kind: webgpu::GetMappedRangeErrorKind::RangeError,
+                message: format!(
+                    "data length {} does not match mapped range length {}",
+                    data.len(),
+                    buffer.len()
+                ),
+            }));
+        }
         buffer.copy_from_slice(&data);
         Ok(Ok(()))
     }
@@ -3187,5 +3189,187 @@ impl<'a> webgpu::HostGpuSupportedLimits for WasiWebGpuCtx<'a> {
     fn drop(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> wasmtime::Result<()> {
         self.table.delete(limits)?;
         Ok(())
+    }
+}
+
+/// Returns the `[start, start + length)` sub-slice of a guest-supplied list, or `None` if that
+/// range does not fit. A missing `start` means 0 and a missing `length` means "to the end".
+///
+/// `start` and `length` come from the guest, so this must not panic, overflow, or truncate on
+/// any host pointer width.
+fn guest_sub_slice<T>(data: &[T], start: Option<u64>, length: Option<u64>) -> Option<&[T]> {
+    let start = usize::try_from(start.unwrap_or(0)).ok()?;
+    let rest = data.get(start..)?;
+    match length {
+        None => Some(rest),
+        Some(length) => rest.get(..usize::try_from(length).ok()?),
+    }
+}
+
+/// Selects the bytes of `data` that `write-buffer-with-copy` writes.
+///
+/// From the spec, an `OperationError` is thrown unless `dataOffset + contentsSize <= dataSize`
+/// and `contentsSize` is a multiple of 4 bytes.
+/// https://www.w3.org/TR/webgpu/#dom-gpuqueue-writebuffer
+fn write_buffer_data(
+    data: &[u8],
+    data_offset: Option<u64>,
+    size: Option<u64>,
+) -> Result<&[u8], webgpu::WriteBufferError> {
+    let operation_error = |message| webgpu::WriteBufferError {
+        kind: webgpu::WriteBufferErrorKind::OperationError,
+        message,
+    };
+    let contents = guest_sub_slice(data, data_offset, size).ok_or_else(|| {
+        let data_offset = data_offset.unwrap_or(0);
+        operation_error(match size {
+            Some(size) => format!(
+                "data-offset {data_offset} + size {size} is out of range for data of length {}",
+                data.len()
+            ),
+            None => format!(
+                "data-offset {data_offset} is out of range for data of length {}",
+                data.len()
+            ),
+        })
+    })?;
+    if contents.len() % 4 != 0 {
+        return Err(operation_error(format!(
+            "write size {} is not a multiple of 4 bytes",
+            contents.len()
+        )));
+    }
+    Ok(contents)
+}
+
+/// Selects the dynamic offsets that `set-bind-group` uses.
+///
+/// From the spec, a `RangeError` is thrown if
+/// `dynamicOffsetsDataStart + dynamicOffsetsDataLength > dynamicOffsetsData.length`.
+/// https://www.w3.org/TR/webgpu/#programmable-passes
+fn dynamic_offsets(
+    data: &[webgpu::GpuBufferDynamicOffset],
+    start: Option<u64>,
+    length: Option<u32>,
+) -> Result<&[webgpu::GpuBufferDynamicOffset], webgpu::SetBindGroupError> {
+    guest_sub_slice(data, start, length.map(u64::from)).ok_or_else(|| {
+        let start = start.unwrap_or(0);
+        webgpu::SetBindGroupError {
+            kind: webgpu::SetBindGroupErrorKind::RangeError,
+            message: match length {
+                Some(length) => format!(
+                    "dynamic-offsets-data-start {start} + dynamic-offsets-data-length {length} is out of range for dynamic-offsets-data of length {}",
+                    data.len()
+                ),
+                None => format!(
+                    "dynamic-offsets-data-start {start} is out of range for dynamic-offsets-data of length {}",
+                    data.len()
+                ),
+            },
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn guest_sub_slice_in_range() {
+        let data = [0u8, 1, 2, 3, 4, 5, 6, 7];
+        assert_eq!(guest_sub_slice(&data, None, None), Some(&data[..]));
+        assert_eq!(guest_sub_slice(&data, Some(2), None), Some(&data[2..]));
+        assert_eq!(guest_sub_slice(&data, Some(2), Some(4)), Some(&data[2..6]));
+        assert_eq!(guest_sub_slice(&data, None, Some(3)), Some(&data[..3]));
+        assert_eq!(guest_sub_slice(&data, Some(8), None), Some(&data[8..]));
+        assert_eq!(guest_sub_slice(&data, Some(8), Some(0)), Some(&data[8..]));
+    }
+
+    #[test]
+    fn guest_sub_slice_out_of_range() {
+        let data = [0u8; 8];
+        assert_eq!(guest_sub_slice(&data, Some(9), None), None);
+        assert_eq!(guest_sub_slice(&data, None, Some(9)), None);
+        assert_eq!(guest_sub_slice(&data, Some(4), Some(5)), None);
+        // Values that would overflow `offset + size`, or truncate as `usize` on 32-bit hosts.
+        assert_eq!(guest_sub_slice(&data, Some(u64::MAX), None), None);
+        assert_eq!(guest_sub_slice(&data, Some(4), Some(u64::MAX)), None);
+        assert_eq!(guest_sub_slice(&data, Some(u64::MAX), Some(u64::MAX)), None);
+        assert_eq!(guest_sub_slice(&data, Some(1 << 32), None), None);
+        assert_eq!(guest_sub_slice(&data, None, Some((1 << 32) + 4)), None);
+    }
+
+    fn assert_write_buffer_operation_error(result: Result<&[u8], webgpu::WriteBufferError>) {
+        match result {
+            Err(webgpu::WriteBufferError {
+                kind: webgpu::WriteBufferErrorKind::OperationError,
+                ..
+            }) => {}
+            Ok(data) => panic!("expected an error, got {} bytes", data.len()),
+        }
+    }
+
+    #[test]
+    fn write_buffer_data_in_range() {
+        let data: Vec<u8> = (0..16).collect();
+        assert_eq!(write_buffer_data(&data, None, None).unwrap(), &data[..]);
+        assert_eq!(write_buffer_data(&data, Some(4), None).unwrap(), &data[4..]);
+        assert_eq!(
+            write_buffer_data(&data, Some(4), Some(8)).unwrap(),
+            &data[4..12]
+        );
+        assert_eq!(
+            write_buffer_data(&data, Some(16), None).unwrap(),
+            &[] as &[u8]
+        );
+    }
+
+    #[test]
+    fn write_buffer_data_out_of_range() {
+        let data = vec![0u8; 16];
+        assert_write_buffer_operation_error(write_buffer_data(&data, Some(17), None));
+        assert_write_buffer_operation_error(write_buffer_data(&data, None, Some(20)));
+        assert_write_buffer_operation_error(write_buffer_data(&data, Some(8), Some(12)));
+        assert_write_buffer_operation_error(write_buffer_data(&data, Some(u64::MAX), None));
+        assert_write_buffer_operation_error(write_buffer_data(&data, Some(4), Some(u64::MAX)));
+    }
+
+    #[test]
+    fn write_buffer_data_unaligned_size() {
+        let data = vec![0u8; 16];
+        assert_write_buffer_operation_error(write_buffer_data(&data, None, Some(3)));
+        assert_write_buffer_operation_error(write_buffer_data(&data, Some(1), None));
+        assert_write_buffer_operation_error(write_buffer_data(&data[..15], None, None));
+    }
+
+    #[test]
+    fn dynamic_offsets_in_range() {
+        let data = [0u32, 256, 512, 768];
+        assert_eq!(dynamic_offsets(&data, None, None).unwrap(), &data[..]);
+        assert_eq!(
+            dynamic_offsets(&data, Some(1), Some(2)).unwrap(),
+            &data[1..3]
+        );
+        assert_eq!(dynamic_offsets(&[], None, None).unwrap(), &[] as &[u32]);
+    }
+
+    #[test]
+    fn dynamic_offsets_out_of_range() {
+        let data = [0u32, 256, 512, 768];
+        for (start, length) in [
+            (Some(5), None),
+            (Some(2), Some(3)),
+            (None, Some(5)),
+            (Some(u64::MAX), Some(u32::MAX)),
+        ] {
+            match dynamic_offsets(&data, start, length) {
+                Err(webgpu::SetBindGroupError {
+                    kind: webgpu::SetBindGroupErrorKind::RangeError,
+                    ..
+                }) => {}
+                other => panic!("expected a range error for {start:?}/{length:?}, got {other:?}"),
+            }
+        }
+        assert!(dynamic_offsets(&[], Some(1), None).is_err());
     }
 }
