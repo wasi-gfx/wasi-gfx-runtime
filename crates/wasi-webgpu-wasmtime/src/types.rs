@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::wasi::webgpu::webgpu;
+use crate::{device_handle::DeviceHandle, wasi::webgpu::webgpu};
 
 pub struct WgslLanguageFeatures;
 impl WgslLanguageFeatures {
@@ -56,29 +56,60 @@ where
 // usage needed in `GpuBuffer.usage`
 pub struct Buffer {
     pub(crate) buffer_id: wgpu_core::id::BufferId,
+    pub(crate) device: Arc<DeviceHandle>,
     pub(crate) size: u64,
     pub(crate) usage: wgpu_types::BufferUsages,
-    pub(crate) map_state: webgpu::GpuBufferMapState,
+    /// Shared with a pending map, which settles it.
+    pub(crate) map_state: Arc<Mutex<webgpu::GpuBufferMapState>>,
 }
 
-// references to queue and adapter are also saved in device.
+impl Buffer {
+    /// Destroying the device unmaps its buffers.
+    /// https://www.w3.org/TR/webgpu/#dom-gpudevice-destroy
+    pub(crate) fn map_state(&self) -> webgpu::GpuBufferMapState {
+        if self.device.is_destroyed() {
+            return webgpu::GpuBufferMapState::Unmapped;
+        }
+        *self.map_state.lock().unwrap()
+    }
+
+    pub(crate) fn set_map_state(&self, map_state: webgpu::GpuBufferMapState) {
+        *self.map_state.lock().unwrap() = map_state;
+    }
+}
+
+// references to adapter are also saved in device.
 // TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
-pub type Queue = Arc<wgpu_core::id::QueueId>;
 pub type Adapter = Arc<wgpu_core::id::AdapterId>;
 
-// queue needed for Device.queue
 // adapter needed for surface_get_capabilities in connect_graphics_context
-// keeping queue and adapter as Arc for reference counting while dropping.
+// keeping adapter as Arc for reference counting while dropping.
 #[derive(Clone)]
 pub struct Device {
-    pub(crate) device: wgpu_core::id::DeviceId,
-    pub(crate) queue: Arc<wgpu_core::id::QueueId>,
+    pub(crate) handle: Arc<DeviceHandle>,
     pub(crate) adapter: Arc<wgpu_core::id::AdapterId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
+
+/// A device's queue. It keeps the device alive, so the queue can poll it.
+pub struct Queue {
+    pub(crate) handle: Arc<DeviceHandle>,
+    pub(crate) error_handler: Arc<ErrorHandler>,
+}
+
+impl Queue {
+    pub fn queue_id(&self) -> &wgpu_core::id::QueueId {
+        self.handle.queue_id()
+    }
+
+    pub fn device_id(&self) -> &wgpu_core::id::DeviceId {
+        self.handle.device_id()
+    }
+}
+
 impl Device {
     pub fn device_id(&self) -> &wgpu_core::id::DeviceId {
-        &self.device
+        self.handle.device_id()
     }
 
     /// Create a `Texture` from a `TextureId` that is connected to this device.
@@ -192,7 +223,12 @@ impl ErrorHandler {
         error: Option<E>,
     ) {
         if let Some(error) = error {
-            let error_kind = error.webgpu_error_type().into();
+            // > If device is lost, return; no errors are generated after this.
+            // https://www.w3.org/TR/webgpu/#abstract-opdef-generate-an-error
+            let error_kind = match error.webgpu_error_type() {
+                wgpu_types::error::ErrorType::DeviceLost => return,
+                error_type => error_type.into(),
+            };
             let error = GpuError {
                 message: error.to_string(),
                 kind: error_kind,
