@@ -63,7 +63,12 @@ pub struct Buffer {
 
 // references to queue and adapter are also saved in device.
 // TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
-pub type Queue = Arc<wgpu_core::id::QueueId>;
+/// A device's queue. It shares the device's error handler, so validation errors
+/// from queue operations reach the device's error scopes.
+pub struct Queue {
+    pub(crate) queue: Arc<wgpu_core::id::QueueId>,
+    pub(crate) error_handler: Arc<ErrorHandler>,
+}
 pub type Adapter = Arc<wgpu_core::id::AdapterId>;
 
 // queue needed for Device.queue
