@@ -1107,6 +1107,8 @@ impl<T: Send> webgpu::HostGpuQueueWithStore<T> for crate::HasWasiWebGpuCtx {
                     move |resolve: Box<dyn FnOnce(()) + Send>| {
                         instance
                             .queue_on_submitted_work_done(queue_id, Box::new(move || resolve(())));
+                        // TODO: only poll this device.
+                        instance.poll_all_devices(true).unwrap();
                     },
                 )))
             })?
