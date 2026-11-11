@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 cp Cargo.lock Cargo.lock.backup
 
 low=$(sed -n 's/^wasmtime = "[>=^]*\([0-9]*\).*/\1/p' Cargo.toml)
-cargo update wasmtime --precise "$low.0.0"
+cargo update wasmtime --precise "$low.0.1"
 cargo check
 cargo update wasmtime
 cargo check
