@@ -9,7 +9,7 @@ description = "Wasmtime host implementation of the wasi:webgpu API"
 [dependencies]
 wasmtime.workspace = true
 wgpu-types.workspace = true
-callback-future.workspace = true
+futures.workspace = true
 shared.workspace = true
 async-broadcast.workspace = true
 log.workspace = true

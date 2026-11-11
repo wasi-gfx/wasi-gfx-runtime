@@ -13,6 +13,7 @@ use crate::surface::{GfxWindow, Surface};
 use crate::surface::{
     KeyEvent, MainThreadSpawner, PointerEvent, ResizeEvent, SurfaceDesc, wasi_gfx,
 };
+use futures::channel::oneshot;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
