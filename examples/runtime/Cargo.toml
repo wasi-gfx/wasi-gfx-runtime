@@ -20,7 +20,6 @@ softbuffer.workspace = true
 env_logger.workspace = true
 log.workspace = true
 async-broadcast.workspace = true
-oneshot.workspace = true
 surface-wasmtime = { path = "../../crates/surface-wasmtime", features = ["winit", "surface-webgpu", "surface-frame-buffer"]}
 frame-buffer-wasmtime = { path = "../../crates/frame-buffer-wasmtime" }
 wasi-webgpu-wasmtime = { path = "../../crates/wasi-webgpu-wasmtime" }
