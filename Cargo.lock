@@ -311,15 +311,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
-name = "callback-future"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b76a63a41df0ba9490dd817a3d98511c6d3d9e530eff9bcf5f3de2a6723d1c3f"
-dependencies = [
- "futures",
-]
-
-[[package]]
 name = "calloop"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2025,12 +2016,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
-name = "oneshot"
-version = "0.1.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4ce411919553d3f9fa53a0880544cda985a112117a0444d5ff1e870a893d6ea"
-
-[[package]]
 name = "orbclient"
 version = "0.3.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2462,7 +2447,6 @@ dependencies = [
  "frame-buffer-wasmtime",
  "futures",
  "log",
- "oneshot",
  "rand",
  "raw-window-handle",
  "softbuffer",
@@ -2802,7 +2786,6 @@ dependencies = [
  "bytemuck",
  "frame-buffer-wasmtime",
  "futures",
- "oneshot",
  "raw-window-handle",
  "softbuffer",
  "wasi-gfx-runtime-shared",
@@ -3129,7 +3112,7 @@ name = "wasi-webgpu-wasmtime"
 version = "0.5.1"
 dependencies = [
  "async-broadcast",
- "callback-future",
+ "futures",
  "log",
  "pastey",
  "wasi-gfx-runtime-shared",
