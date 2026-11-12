@@ -597,3 +597,12 @@ impl From<webgpu::GpuCanvasAlphaMode> for wgpu_types::CompositeAlphaMode {
         }
     }
 }
+
+impl From<webgpu::PredefinedColorSpace> for wgpu_types::SurfaceColorSpace {
+    fn from(value: webgpu::PredefinedColorSpace) -> Self {
+        match value {
+            webgpu::PredefinedColorSpace::Srgb => wgpu_types::SurfaceColorSpace::Srgb,
+            webgpu::PredefinedColorSpace::DisplayP3 => wgpu_types::SurfaceColorSpace::DisplayP3,
+        }
+    }
+}
