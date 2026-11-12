@@ -27,8 +27,8 @@ clap = { version = "4.3", features = ["derive"] }
 wasmtime = ">=46, <=50"
 anyhow = "1.0"
 winit = { version = "0.30", features = [ "android-native-activity" ] }
-wgpu-core = "29"
-wgpu-types = "29"
+wgpu-core = "30"
+wgpu-types = "30"
 raw-window-handle = "0.6"
 async-trait = "0.1"
 rand = "0.9"

@@ -114,6 +114,7 @@ impl<'a, S: MainThreadSpawner> surface_webgpu::HostContext for SurfaceWebgpuCtx<
                 usage: configuration.usage.unwrap_or(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::GpuTextureUsage::RENDER_ATTACHMENT).try_into().unwrap(),
                 view_formats: configuration.view_formats.into_iter().flatten().map(|f| f.into()).collect(),
                 alpha_mode: configuration.alpha_mode.unwrap_or(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::GpuCanvasAlphaMode::Opaque).into(),
+                color_space: configuration.color_space.unwrap_or(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::PredefinedColorSpace::Srgb).into(),
                 // not present in WebGPU
                 width: context.surface.width(),
                 height: context.surface.height(),
