@@ -222,12 +222,11 @@ flag_map! {
 
 flag_map! {
     wgpu_types::TextureUsages => webgpu::GpuTextureUsage,
-    Some(wgpu_types::TextureUsages::COPY_SRC),          Some(webgpu::GpuTextureUsage::COPY_SRC);
-    Some(wgpu_types::TextureUsages::COPY_DST),          Some(webgpu::GpuTextureUsage::COPY_DST);
-    Some(wgpu_types::TextureUsages::TEXTURE_BINDING),   Some(webgpu::GpuTextureUsage::TEXTURE_BINDING);
-    Some(wgpu_types::TextureUsages::STORAGE_BINDING),   Some(webgpu::GpuTextureUsage::STORAGE_BINDING);
-    Some(wgpu_types::TextureUsages::RENDER_ATTACHMENT), Some(webgpu::GpuTextureUsage::RENDER_ATTACHMENT);
-    None,                                               Some(webgpu::GpuTextureUsage::TRANSIENT_ATTACHMENT);
-    Some(wgpu_types::TextureUsages::STORAGE_ATOMIC),    None;
-    Some(wgpu_types::TextureUsages::TRANSIENT),         None;
+     Some(wgpu_types::TextureUsages::COPY_SRC),             Some(webgpu::GpuTextureUsage::COPY_SRC);
+    Some(wgpu_types::TextureUsages::COPY_DST),             Some(webgpu::GpuTextureUsage::COPY_DST);
+    Some(wgpu_types::TextureUsages::TEXTURE_BINDING),      Some(webgpu::GpuTextureUsage::TEXTURE_BINDING);
+    Some(wgpu_types::TextureUsages::STORAGE_BINDING),      Some(webgpu::GpuTextureUsage::STORAGE_BINDING);
+    Some(wgpu_types::TextureUsages::RENDER_ATTACHMENT),    Some(webgpu::GpuTextureUsage::RENDER_ATTACHMENT);
+    Some(wgpu_types::TextureUsages::TRANSIENT_ATTACHMENT), Some(webgpu::GpuTextureUsage::TRANSIENT_ATTACHMENT);
+    Some(wgpu_types::TextureUsages::STORAGE_ATOMIC),       None;
 }
