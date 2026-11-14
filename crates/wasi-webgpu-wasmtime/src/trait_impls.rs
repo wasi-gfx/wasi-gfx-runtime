@@ -512,6 +512,7 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
         let error_handler = Arc::clone(&device.error_handler);
         let render_bundle_encoder = wgpu_core::command::RenderBundleEncoder::new(
             &descriptor.to_core(self.table),
+            None,
             device_id,
         )?;
         let render_bundle_encoder =
@@ -1139,8 +1140,8 @@ impl<'a> webgpu::HostGpuCommandEncoder for WasiWebGpuCtx<'a> {
                 .map(|c| c.map(|c| c.to_core(self.table)))
                 .collect::<Vec<_>>()
                 .into(),
-            depth_stencil_attachment: depth_stencil_attachment.as_ref(),
-            timestamp_writes: timestamp_writes.as_ref(),
+            depth_stencil_attachment,
+            timestamp_writes,
             occlusion_query_set: descriptor
                 .occlusion_query_set
                 .map(|oqs| oqs.to_core(self.table)),
@@ -1627,10 +1628,10 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         offset: Option<webgpu::GpuSize64>,
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<()> {
-        let buffer_id = self
-            .table
-            .get(&buffer.expect("TODO: deal null buffers"))?
-            .buffer_id;
+        let buffer_id = match buffer {
+            Some(buffer) => Some(self.table.get(&buffer)?.buffer_id),
+            None => None,
+        };
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
         let render_pass = render_pass.as_mut().unwrap();
         self.instance.render_pass_set_vertex_buffer(
@@ -2146,10 +2147,10 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
             .map(|d| d.to_core(self.table))
             .unwrap_or(wgpu_types::RenderBundleDescriptor::default());
         let mut bundle_encoder_lock = self.table.get_mut(&bundle_encoder)?.lock();
-        let bundle_encoder = bundle_encoder_lock.take().unwrap();
+        let mut bundle_encoder = bundle_encoder_lock.take().unwrap();
         drop(bundle_encoder_lock);
         let (render_bundle, err) = self.instance.render_bundle_encoder_finish(
-            bundle_encoder.render_bundle_encoder,
+            &mut bundle_encoder.render_bundle_encoder,
             &descriptor,
             None,
         );
@@ -2220,15 +2221,15 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
             dynamic_offsets = &dynamic_offsets[..dynamic_offsets_data_length];
         }
 
-        unsafe {
-            wgpu_core::command::bundle_ffi::wgpu_render_bundle_set_bind_group(
-                &mut bundle_encoder.render_bundle_encoder,
-                index,
-                bind_group_id,
-                dynamic_offsets.as_ptr(),
-                dynamic_offsets.len(),
-            )
-        };
+        let result = self.instance.render_bundle_encoder_set_bind_group(
+            &mut bundle_encoder.render_bundle_encoder,
+            index,
+            bind_group_id,
+            dynamic_offsets,
+        );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
         Ok(Ok(()))
     }
 
@@ -2241,10 +2242,13 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         let pipeline_id = pipeline.render_pipeline_id;
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
         let bundle_encoder = bundle_encoder.as_mut().unwrap();
-        wgpu_core::command::bundle_ffi::wgpu_render_bundle_set_pipeline(
+        let result = self.instance.render_bundle_encoder_set_pipeline(
             &mut bundle_encoder.render_bundle_encoder,
             pipeline_id,
         );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
         Ok(())
     }
 
@@ -2260,13 +2264,16 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
         let bundle_encoder = bundle_encoder.as_mut().unwrap();
         // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
-        wgpu_core::command::bundle_ffi::wgpu_render_bundle_set_index_buffer(
+        let result = self.instance.render_bundle_encoder_set_index_buffer(
             &mut bundle_encoder.render_bundle_encoder,
             buffer_id,
             index_format.into(),
             offset.unwrap_or(0),
             size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
         );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
         Ok(())
     }
 
@@ -2278,18 +2285,23 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         offset: Option<webgpu::GpuSize64>,
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<()> {
-        let buffer = buffer.expect("TODO: Null buffers not yet supported in wgpu");
-        let buffer_id = self.table.get(&buffer)?.buffer_id;
+        let buffer_id = match buffer {
+            Some(buffer) => Some(self.table.get(&buffer)?.buffer_id),
+            None => None,
+        };
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
         let bundle_encoder = bundle_encoder.as_mut().unwrap();
         // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
-        wgpu_core::command::bundle_ffi::wgpu_render_bundle_set_vertex_buffer(
+        let result = self.instance.render_bundle_encoder_set_vertex_buffer(
             &mut bundle_encoder.render_bundle_encoder,
             slot,
             buffer_id,
             offset.unwrap_or(0),
             size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
         );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
         Ok(())
     }
 
@@ -2304,13 +2316,16 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
         let bundle_encoder = bundle_encoder.as_mut().unwrap();
         // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
-        wgpu_core::command::bundle_ffi::wgpu_render_bundle_draw(
+        let result = self.instance.render_bundle_encoder_draw(
             &mut bundle_encoder.render_bundle_encoder,
             vertex_count,
             instance_count.unwrap_or(1),
             first_vertex.unwrap_or(0),
             first_instance.unwrap_or(0),
         );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
         Ok(())
     }
 
@@ -2326,7 +2341,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
         let bundle_encoder = bundle_encoder.as_mut().unwrap();
         // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
-        wgpu_core::command::bundle_ffi::wgpu_render_bundle_draw_indexed(
+        let result = self.instance.render_bundle_encoder_draw_indexed(
             &mut bundle_encoder.render_bundle_encoder,
             index_count,
             instance_count.unwrap_or(1),
@@ -2334,6 +2349,9 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
             base_vertex.unwrap_or(0),
             first_instance.unwrap_or(0),
         );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
         Ok(())
     }
 
@@ -2346,11 +2364,14 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         let indirect_buffer = self.table.get(&indirect_buffer)?.buffer_id;
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
         let bundle_encoder = bundle_encoder.as_mut().unwrap();
-        wgpu_core::command::bundle_ffi::wgpu_render_bundle_draw_indirect(
+        let result = self.instance.render_bundle_encoder_draw_indirect(
             &mut bundle_encoder.render_bundle_encoder,
             indirect_buffer,
             indirect_offset,
         );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
         Ok(())
     }
 
@@ -2363,11 +2384,14 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         let indirect_buffer = self.table.get(&indirect_buffer)?.buffer_id;
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
         let bundle_encoder = bundle_encoder.as_mut().unwrap();
-        wgpu_core::command::bundle_ffi::wgpu_render_bundle_draw_indexed_indirect(
+        let result = self.instance.render_bundle_encoder_draw_indexed_indirect(
             &mut bundle_encoder.render_bundle_encoder,
             indirect_buffer,
             indirect_offset,
         );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
         Ok(())
     }
 
@@ -2691,13 +2715,31 @@ impl<T: Send> webgpu::HostGpuWithStore<T> for crate::HasWasiWebGpuCtx {
     ) -> wasmtime::Result<Option<Resource<webgpu::GpuAdapter>>> {
         accessor.with(|mut access: Access<'_, T, crate::HasWasiWebGpuCtx>| {
             let ctx = access.get();
-            let adapter = ctx.instance.request_adapter(
-                &options
-                    .map(|o| o.to_core(ctx.table))
-                    .unwrap_or(wgpu_types::RequestAdapterOptions::default()),
-                wgpu_types::Backends::all(),
-                None,
-            );
+            let apply_limit_buckets = ctx.options.apply_limit_buckets;
+
+            let options = match options {
+                Some(options) => {
+                    wgpu_types::RequestAdapterOptions {
+                        power_preference: options
+                            .power_preference
+                            .map(|pp| pp.into())
+                            .unwrap_or(wgpu_types::PowerPreference::None),
+                        // https://www.w3.org/TR/webgpu/#adapter-selection
+                        force_fallback_adapter: options.force_fallback_adapter.unwrap_or(false),
+                        apply_limit_buckets,
+                        compatible_surface: None,
+                    }
+                }
+                None => wgpu_types::RequestAdapterOptions {
+                    apply_limit_buckets,
+                    ..Default::default()
+                },
+            };
+
+            let adapter = ctx
+                .instance
+                .request_adapter(&options, wgpu_types::Backends::all(), None);
+
             Ok(match adapter {
                 Ok(adapter) => {
                     let adapter = Arc::new(adapter);

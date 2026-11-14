@@ -15,25 +15,6 @@ where
     }
 }
 
-impl ToCore<wgpu_types::RequestAdapterOptions<wgpu_core::id::SurfaceId>>
-    for webgpu::GpuRequestAdapterOptions
-{
-    fn to_core(
-        self,
-        _table: &ResourceTable,
-    ) -> wgpu_types::RequestAdapterOptions<wgpu_core::id::SurfaceId> {
-        wgpu_types::RequestAdapterOptions {
-            power_preference: self
-                .power_preference
-                .map(|pp| pp.into())
-                .unwrap_or(wgpu_types::PowerPreference::None),
-            // https://www.w3.org/TR/webgpu/#adapter-selection
-            force_fallback_adapter: self.force_fallback_adapter.unwrap_or(false),
-            compatible_surface: None,
-        }
-    }
-}
-
 impl ToCore<wgpu_types::Extent3d> for webgpu::GpuExtent3D {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::Extent3d {
         // https://www.w3.org/TR/webgpu/#dictdef-gpuextent3ddict
@@ -330,10 +311,7 @@ impl<'a> ToCore<wgpu_core::pipeline::VertexState<'a>> for webgpu::GpuVertexState
                 .map(|buffer| {
                     buffer
                         .into_iter()
-                        .map(|b| {
-                            b.map(|b| b.to_core(table))
-                                .expect("TODO: deal with `none` values")
-                        })
+                        .map(|b| b.map(|b| b.to_core(table)))
                         .collect()
                 })
                 .unwrap_or_default(),

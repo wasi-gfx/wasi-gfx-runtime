@@ -111,6 +111,10 @@ pub struct WasiWebGpuCtx<'a> {
 pub struct WasiWebGpuOptions {
     /// Memory allocation strategy passed to wgpu on every `request-device`.
     pub device_memory_hints: wgpu_types::MemoryHints,
+    /// Passed to wgpu on every `request-adapter`. When true, adapter limits are
+    /// rounded down to standard buckets, which reduces fingerprinting by guests.
+    /// See https://docs.rs/wgpu-core/latest/wgpu_core/limits/index.html#limit-bucketing.
+    pub apply_limit_buckets: bool,
 }
 
 struct HasWasiWebGpuCtx;
