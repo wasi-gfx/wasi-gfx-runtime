@@ -86,35 +86,6 @@ pub struct Device {
     pub(crate) adapter: Adapter,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
-impl Buffer {
-    pub(crate) fn buffer_id(&self) -> wgpu_core::id::BufferId {
-        *self.buffer_id
-    }
-}
-
-impl CommandEncoder {
-    pub(crate) fn command_encoder_id(&self) -> wgpu_core::id::CommandEncoderId {
-        *self.command_encoder_id
-    }
-}
-
-impl Texture {
-    pub(crate) fn texture_id(&self) -> wgpu_core::id::TextureId {
-        *self.texture_id
-    }
-}
-
-impl RenderPipeline {
-    pub(crate) fn render_pipeline_id(&self) -> wgpu_core::id::RenderPipelineId {
-        *self.render_pipeline_id
-    }
-}
-
-impl ComputePipeline {
-    pub(crate) fn compute_pipeline_id(&self) -> wgpu_core::id::ComputePipelineId {
-        *self.compute_pipeline_id
-    }
-}
 
 impl Device {
     pub fn device_id(&self) -> &wgpu_core::id::DeviceId {
@@ -127,8 +98,8 @@ impl Device {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the TextureId is actually connected to this device.
-    /// The returned `Texture` owns the id and releases it when dropped.
+    /// - `texture_id` must be connected to this device.
+    /// - Ownership of `texture_id` moves to the returned `Texture`, which releases it when dropped. The caller must not release it, or pass it to `connect_texture` again. wgpu-core panics when an id is released twice.
     #[doc(hidden)]
     pub unsafe fn connect_texture(&self, texture_id: wgpu_core::id::TextureId) -> Texture {
         Texture {
