@@ -3143,6 +3143,7 @@ dependencies = [
  "futures",
  "log",
  "pastey",
+ "tokio",
  "wasi-gfx-runtime-shared",
  "wasmtime",
  "wgpu-core",

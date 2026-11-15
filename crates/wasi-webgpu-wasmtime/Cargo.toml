@@ -13,6 +13,11 @@ futures.workspace = true
 shared.workspace = true
 async-broadcast.workspace = true
 log.workspace = true
+tokio = { workspace = true, optional = true }
+
+[features]
+# Enables `spawn_poll_devices_tokio_thread`.
+tokio = ["dep:tokio"]
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.wgpu-core]
 workspace = true

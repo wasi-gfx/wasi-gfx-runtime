@@ -1098,20 +1098,19 @@ impl<T: Send> webgpu::HostGpuQueueWithStore<T> for crate::HasWasiWebGpuCtx {
         accessor: &Accessor<T, Self>,
         queue: Resource<webgpu::GpuQueue>,
     ) -> wasmtime::Result<()> {
-        let (instance, queue_id) = accessor.with(|mut access| -> wasmtime::Result<_> {
+        let receiver = accessor.with(|mut access| -> wasmtime::Result<_> {
             let ctx = access.get();
-            Ok((Arc::clone(ctx.instance), **ctx.table.get(&queue)?))
+            let queue_id = **ctx.table.get(&queue)?;
+            let (sender, receiver) = oneshot::channel();
+            ctx.instance.queue_on_submitted_work_done(
+                queue_id,
+                Box::new(move || {
+                    let _ = sender.send(());
+                }),
+            );
+            ctx.request_poll();
+            Ok(receiver)
         })?;
-
-        let (sender, receiver) = oneshot::channel();
-        instance.queue_on_submitted_work_done(
-            queue_id,
-            Box::new(move || {
-                let _ = sender.send(());
-            }),
-        );
-        // TODO: only poll this device.
-        instance.poll_all_devices(true).unwrap();
         receiver.await?;
 
         Ok(())
@@ -2653,26 +2652,24 @@ impl<T: Send> webgpu::HostGpuBufferWithStore<T> for crate::HasWasiWebGpuCtx {
         // https://www.w3.org/TR/webgpu/#gpubuffer
         let offset = offset.unwrap_or(0);
 
-        let (instance, buffer_id) = accessor.with(|mut access| -> wasmtime::Result<_> {
+        let receiver = accessor.with(|mut access| -> wasmtime::Result<_> {
             let ctx = access.get();
-            let instance = Arc::clone(ctx.instance);
             let buffer = ctx.table.get_mut(&buffer)?;
             buffer.map_state = webgpu::GpuBufferMapState::Pending;
-            Ok((instance, buffer.buffer_id))
+            let buffer_id = buffer.buffer_id;
+            let (sender, receiver) = oneshot::channel();
+            let op = wgpu_core::resource::BufferMapOperation {
+                host: mode,
+                callback: Some(Box::new(move |result| {
+                    let _ = sender.send(result);
+                })),
+            };
+            ctx.instance
+                .buffer_map_async(buffer_id, offset, size, op)
+                .unwrap();
+            ctx.request_poll();
+            Ok(receiver)
         })?;
-
-        let (sender, receiver) = oneshot::channel();
-        let op = wgpu_core::resource::BufferMapOperation {
-            host: mode,
-            callback: Some(Box::new(move |result| {
-                let _ = sender.send(result);
-            })),
-        };
-        instance
-            .buffer_map_async(buffer_id, offset, size, op)
-            .unwrap();
-        // TODO: only poll this device.
-        instance.poll_all_devices(true).unwrap();
         receiver.await?.unwrap();
 
         accessor.with(|mut access| -> wasmtime::Result<_> {
