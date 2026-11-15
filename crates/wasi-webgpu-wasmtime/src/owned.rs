@@ -4,10 +4,7 @@ use std::{fmt, ops::Deref, sync::Arc};
 
 use wgpu_core::{global::Global, id};
 
-/// A wgpu-core object that a resource table entry owns. Dropping it releases
-/// the object, so a store torn down while the guest still holds handles frees
-/// them too. Each object must have exactly one owner: wgpu-core panics on a
-/// second release.
+/// A wgpu-core object that a resource table entry owns. Dropping it releases the object, so a store torn down while the guest still holds handles frees them too.
 pub struct Owned<I: Release> {
     id: I,
     instance: Arc<Global>,
@@ -106,8 +103,7 @@ mod tests {
         ))
     }
 
-    /// A store torn down without the guest dropping anything releases every
-    /// object, so its device can be destroyed.
+    /// A store torn down without the guest dropping anything releases every object, so its device can be destroyed.
     #[test]
     fn dropping_the_table_releases_every_object() {
         let instance = noop_instance();

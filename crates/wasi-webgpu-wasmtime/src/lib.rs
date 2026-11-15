@@ -109,7 +109,6 @@ pub trait WasiWebGpuCtxView: Send {
 }
 
 pub struct WasiWebGpuCtx<'a> {
-    // wrapped in arc so that table entries can release their objects when dropped.
     pub instance: &'a Arc<wgpu_core::global::Global>,
     /// Notified each time the instance needs polling.
     pub poll_notifier: &'a dyn PollNotifier,
