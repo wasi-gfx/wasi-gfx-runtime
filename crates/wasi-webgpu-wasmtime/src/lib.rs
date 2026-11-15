@@ -8,8 +8,6 @@
 #![allow(clippy::unwrap_or_default)]
 #![allow(clippy::new_without_default)]
 
-use std::sync::Arc;
-
 use wasmtime::component::HasData;
 
 // ToCore trait used for resources, records, and variants.
@@ -21,6 +19,14 @@ mod to_core_conversions;
 mod trait_impls;
 mod types;
 pub use types::*;
+
+mod poll;
+#[cfg(feature = "tokio")]
+pub use poll::spawn_poll_devices_tokio_thread;
+pub use poll::{
+    poll_devices_loop, spawn_poll_devices_thread, MpscPollNotifier, PollDevicesConfig,
+    PollDevicesRequest, PollNotifier,
+};
 
 /// Re-export of `wgpu_core` and `wgpu_types` so that runtime implementors don't need to keep track of what version of wgpu this crate is using.
 pub mod reexports {
@@ -100,10 +106,18 @@ pub trait WasiWebGpuCtxView: Send {
 }
 
 pub struct WasiWebGpuCtx<'a> {
-    // wrapped in arc to allow cloning for async. might be able to remove
-    pub instance: &'a Arc<wgpu_core::global::Global>,
+    pub instance: &'a wgpu_core::global::Global,
+    /// Notified each time the instance needs polling.
+    pub poll_notifier: &'a dyn PollNotifier,
     pub table: &'a mut wasmtime::component::ResourceTable,
     pub options: &'a WasiWebGpuOptions,
+}
+
+impl WasiWebGpuCtx<'_> {
+    /// Tells the embedder the instance needs polling.
+    pub(crate) fn request_poll(&self) {
+        self.poll_notifier.notify(PollDevicesRequest(()));
+    }
 }
 
 /// Extra WebGPU options
