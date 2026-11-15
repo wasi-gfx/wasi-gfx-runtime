@@ -61,14 +61,8 @@ pub struct Buffer {
     pub(crate) map_state: webgpu::GpuBufferMapState,
 }
 
-// references to queue and adapter are also saved in device.
-// TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
-/// A device's queue. It shares the device's error handler, so validation errors
-/// from queue operations reach the device's error scopes.
-pub struct Queue {
-    pub(crate) queue: Arc<wgpu_core::id::QueueId>,
-    pub(crate) error_handler: Arc<ErrorHandler>,
-}
+// references to adapter are also saved in device.
+// TODO: this should be unit-structs instead of `type` so that the internals are private to the crate
 pub type Adapter = Arc<wgpu_core::id::AdapterId>;
 
 // queue needed for Device.queue
@@ -100,6 +94,12 @@ impl Device {
             error_handler: Arc::clone(&self.error_handler),
         }
     }
+}
+
+pub struct Queue {
+    // references to queue are also saved in device.
+    pub(crate) queue: Arc<wgpu_core::id::QueueId>,
+    pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
 #[derive(Clone)]
