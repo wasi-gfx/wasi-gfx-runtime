@@ -2683,7 +2683,12 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         buffer: Resource<webgpu::GpuBuffer>,
     ) -> wasmtime::Result<Result<(), webgpu::UnmapError>> {
         let buffer = self.table.get_mut(&buffer)?;
-        self.instance.buffer_unmap(*buffer.buffer_id)?;
+        // https://www.w3.org/TR/webgpu/#dom-gpubuffer-unmap
+        // From the spec:
+        // > 2. If this.[[mapping]] is null:
+        // >  1. Return.
+        // So unmapping a buffer that isn't mapped does nothing.
+        let _ = self.instance.buffer_unmap(*buffer.buffer_id);
         buffer.map_state = webgpu::GpuBufferMapState::Unmapped;
         Ok(Ok(()))
     }
@@ -3588,6 +3593,44 @@ mod tests {
             usage,
             map_state: webgpu::GpuBufferMapState::Mapped,
         }
+    }
+
+    #[test]
+    fn unmap_never_fails() {
+        let (instance, device, _queue) = noop_device();
+        let mut table = wasmtime::component::ResourceTable::new();
+        let buffer = table.push(mapped_buffer(&instance, device, 16)).unwrap();
+        let options = Default::default();
+        let mut ctx = WasiWebGpuCtx {
+            instance: &instance,
+            table: &mut table,
+            poll_notifier: &|_: crate::PollDevicesRequest| {},
+            options: &options,
+        };
+        let borrow = || Resource::<Buffer>::new_borrow(buffer.rep());
+
+        webgpu::HostGpuBuffer::unmap(&mut ctx, borrow())
+            .unwrap()
+            .unwrap();
+        // Already unmapped.
+        webgpu::HostGpuBuffer::unmap(&mut ctx, borrow())
+            .unwrap()
+            .unwrap();
+
+        // Mapped, then the device is destroyed.
+        let buffer = ctx
+            .table
+            .push(mapped_buffer(&instance, device, 16))
+            .unwrap();
+        let borrow = || Resource::<Buffer>::new_borrow(buffer.rep());
+        instance.device_destroy(device);
+        webgpu::HostGpuBuffer::unmap(&mut ctx, borrow())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            webgpu::HostGpuBuffer::map_state(&mut ctx, borrow()).unwrap(),
+            webgpu::GpuBufferMapState::Unmapped
+        );
     }
 
     fn assert_mapped_range_error<T: std::fmt::Debug>(
