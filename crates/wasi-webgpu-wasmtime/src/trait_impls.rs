@@ -2,10 +2,7 @@ use core::slice;
 use futures::channel::oneshot;
 use shared::{FuturePipeMap, StreamPipeMap};
 use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, sync::Arc};
-use wasmtime::{
-    bail,
-    component::{Access, Accessor, FutureReader, Resource, StreamReader},
-};
+use wasmtime::component::{Access, Accessor, FutureReader, Resource, StreamReader};
 
 use crate::{
     to_core_conversions::ToCore,
@@ -320,6 +317,7 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
             size,
             usage,
             map_state,
+            error_handler,
         };
 
         Ok(self.table.push(buffer)?)
@@ -2694,8 +2692,13 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
     }
 
     fn destroy(&mut self, buffer: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<()> {
-        let buffer_id = *self.table.get_mut(&buffer)?.buffer_id;
-        self.instance.buffer_destroy(buffer_id);
+        let buffer = self.table.get_mut(&buffer)?;
+        self.instance.buffer_destroy(*buffer.buffer_id);
+        // https://www.w3.org/TR/webgpu/#dom-gpubuffer-destroy
+        // From the spec:
+        // > 1. Call this.unmap().
+        // wgpu-core unmaps the buffer, aborting any pending map, but the map state is tracked here.
+        buffer.map_state = webgpu::GpuBufferMapState::Unmapped;
         Ok(())
     }
 
@@ -2725,20 +2728,13 @@ impl<T: Send> webgpu::HostGpuBufferWithStore<T> for crate::HasWasiWebGpuCtx {
         offset: Option<webgpu::GpuSize64>,
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<(), webgpu::MapAsyncError>> {
-        // source: https://www.w3.org/TR/webgpu/#typedefdef-gpumapmodeflags
-        // from the spec
-        // > 3. If any of the following conditions are unsatisfied:
-        // >     - mode contains exactly one of READ or WRITE.
-        // >   Then:
-        // >     3. Generate a validation error.
-
-        let mode = if mode == webgpu::GpuMapMode::READ {
-            wgpu_core::device::HostMap::Read
-        } else if mode == webgpu::GpuMapMode::WRITE {
-            wgpu_core::device::HostMap::Write
-        } else {
-            // TODO: return webgpu::MapAsyncError
-            bail!("validation error")
+        let operation_error = |message: String| webgpu::MapAsyncError {
+            kind: webgpu::MapAsyncErrorKind::OperationError,
+            message,
+        };
+        let abort_error = |message: String| webgpu::MapAsyncError {
+            kind: webgpu::MapAsyncErrorKind::AbortError,
+            message,
         };
 
         // https://www.w3.org/TR/webgpu/#gpubuffer
@@ -2747,8 +2743,24 @@ impl<T: Send> webgpu::HostGpuBufferWithStore<T> for crate::HasWasiWebGpuCtx {
         let receiver = accessor.with(|mut access| -> wasmtime::Result<_> {
             let ctx = access.get();
             let buffer = ctx.table.get_mut(&buffer)?;
-            buffer.map_state = webgpu::GpuBufferMapState::Pending;
-            let buffer_id = *buffer.buffer_id;
+            // https://www.w3.org/TR/webgpu/#dom-gpubuffer-mapasync
+            // From the spec:
+            // > If any of the following conditions are unsatisfied:
+            // >  - mode contains exactly one of READ or WRITE.
+            // > Then:
+            // >  1. Set deviceLost to false.
+            // >  2. Issue the map failure steps on contentTimeline.
+            // >  3. Generate a validation error.
+            let mode = if mode == webgpu::GpuMapMode::READ {
+                wgpu_core::device::HostMap::Read
+            } else if mode == webgpu::GpuMapMode::WRITE {
+                wgpu_core::device::HostMap::Write
+            } else {
+                // TODO: also generate a validation error.
+                return Ok(Err(operation_error(
+                    "map mode must contain exactly one of READ or WRITE".to_string(),
+                )));
+            };
             let (sender, receiver) = oneshot::channel();
             let op = wgpu_core::resource::BufferMapOperation {
                 host: mode,
@@ -2756,22 +2768,79 @@ impl<T: Send> webgpu::HostGpuBufferWithStore<T> for crate::HasWasiWebGpuCtx {
                     let _ = sender.send(result);
                 })),
             };
-            ctx.instance
-                .buffer_map_async(buffer_id, offset, size, op)
-                .unwrap();
-            ctx.request_poll();
-            Ok(receiver)
+            // If wgpu-core rejects the map right away, it also passes the error to the callback, so it's handled below with the rest.
+            let pending = ctx
+                .instance
+                .buffer_map_async(*buffer.buffer_id, offset, size, op)
+                .is_ok();
+            if pending {
+                buffer.map_state = webgpu::GpuBufferMapState::Pending;
+                ctx.request_poll();
+            }
+            Ok(Ok((receiver, pending)))
         })?;
-        receiver.await?.unwrap();
+        let (receiver, pending) = match receiver {
+            Ok(receiver) => receiver,
+            Err(e) => return Ok(Err(e)),
+        };
+        let result = receiver.await;
 
         accessor.with(|mut access| -> wasmtime::Result<_> {
             let ctx = access.get();
             let buffer = ctx.table.get_mut(&buffer)?;
-            buffer.map_state = webgpu::GpuBufferMapState::Mapped;
-            Ok(())
-        })?;
-
-        Ok(Ok(()))
+            Ok(match result {
+                Ok(Ok(())) => {
+                    buffer.map_state = webgpu::GpuBufferMapState::Mapped;
+                    Ok(())
+                }
+                // https://www.w3.org/TR/webgpu/#dom-gpubuffer-mapasync
+                // From the spec:
+                // > If this.[[pending_map]] != p:
+                // >  Note: The map has been cancelled by unmap().
+                // `unmap` already reset the map state.
+                Ok(Err(e @ wgpu_core::resource::BufferAccessError::MapAborted)) => {
+                    Err(abort_error(e.to_string()))
+                }
+                // https://www.w3.org/TR/webgpu/#dom-gpubuffer-mapasync
+                // From the spec:
+                // > If any of the following conditions are unsatisfied:
+                // >  - this must be valid.
+                // > 1. Set deviceLost to true.
+                // > ...
+                // > If deviceLost:
+                // >  Reject p with an AbortError.
+                Ok(Err(
+                    e @ (wgpu_core::resource::BufferAccessError::InvalidResource(_)
+                    | wgpu_core::resource::BufferAccessError::Device(
+                        wgpu_core::device::DeviceError::Lost,
+                    )),
+                )) => {
+                    if pending {
+                        buffer.map_state = webgpu::GpuBufferMapState::Unmapped;
+                    }
+                    Err(abort_error(e.to_string()))
+                }
+                // The callback was dropped without being called, so the map can't complete.
+                Err(e) => {
+                    if pending {
+                        buffer.map_state = webgpu::GpuBufferMapState::Unmapped;
+                    }
+                    Err(abort_error(e.to_string()))
+                }
+                // https://www.w3.org/TR/webgpu/#dom-gpubuffer-mapasync
+                // From the spec:
+                // > Otherwise:
+                // >  Reject p with an OperationError.
+                Ok(Err(e)) => {
+                    if pending {
+                        buffer.map_state = webgpu::GpuBufferMapState::Unmapped;
+                    }
+                    let message = e.to_string();
+                    buffer.error_handler.handle_possible_error(Some(e));
+                    Err(operation_error(message))
+                }
+            })
+        })
     }
 }
 
@@ -3482,6 +3551,7 @@ mod tests {
                 size: 16,
                 usage: wgpu_types::BufferUsages::MAP_WRITE,
                 map_state: webgpu::GpuBufferMapState::Unmapped,
+                error_handler: Arc::new(ErrorHandler::default()),
             })
             .unwrap();
         let options = Default::default();
@@ -3592,6 +3662,7 @@ mod tests {
             size,
             usage,
             map_state: webgpu::GpuBufferMapState::Mapped,
+            error_handler: Arc::new(ErrorHandler::default()),
         }
     }
 
@@ -3629,6 +3700,298 @@ mod tests {
             .unwrap();
         assert_eq!(
             webgpu::HostGpuBuffer::map_state(&mut ctx, borrow()).unwrap(),
+            webgpu::GpuBufferMapState::Unmapped
+        );
+    }
+
+    #[test]
+    fn destroy_unmaps() {
+        let (instance, device, _queue) = noop_device();
+        let mut table = wasmtime::component::ResourceTable::new();
+        let buffer = table.push(mapped_buffer(&instance, device, 16)).unwrap();
+        let options = Default::default();
+        let mut ctx = WasiWebGpuCtx {
+            instance: &instance,
+            table: &mut table,
+            poll_notifier: &|_: crate::PollDevicesRequest| {},
+            options: &options,
+        };
+        let borrow = || Resource::<Buffer>::new_borrow(buffer.rep());
+
+        webgpu::HostGpuBuffer::destroy(&mut ctx, borrow()).unwrap();
+        assert_eq!(
+            webgpu::HostGpuBuffer::map_state(&mut ctx, borrow()).unwrap(),
+            webgpu::GpuBufferMapState::Unmapped
+        );
+    }
+
+    // Polls the devices whenever the instance asks, or never if it's `None`.
+    struct TestPoller(Option<Arc<wgpu_core::global::Global>>);
+
+    impl crate::PollNotifier for TestPoller {
+        fn notify(&self, _request: crate::PollDevicesRequest) {
+            if let Some(instance) = &self.0 {
+                instance.poll_all_devices(false).unwrap();
+            }
+        }
+    }
+
+    struct MapAsyncState {
+        instance: Arc<wgpu_core::global::Global>,
+        poller: TestPoller,
+        table: wasmtime::component::ResourceTable,
+        options: crate::WasiWebGpuOptions,
+    }
+
+    impl crate::WasiWebGpuCtxView for MapAsyncState {
+        fn webgpu_ctx(&mut self) -> WasiWebGpuCtx<'_> {
+            WasiWebGpuCtx {
+                instance: &self.instance,
+                poll_notifier: &self.poller,
+                table: &mut self.table,
+                options: &self.options,
+            }
+        }
+    }
+
+    fn map_async_store(
+        instance: &Arc<wgpu_core::global::Global>,
+        poll: bool,
+    ) -> wasmtime::Store<MapAsyncState> {
+        let mut config = wasmtime::Config::new();
+        config.wasm_component_model_async(true);
+        let engine = wasmtime::Engine::new(&config).unwrap();
+        wasmtime::Store::new(
+            &engine,
+            MapAsyncState {
+                instance: Arc::clone(instance),
+                poller: TestPoller(poll.then(|| Arc::clone(instance))),
+                table: wasmtime::component::ResourceTable::new(),
+                options: Default::default(),
+            },
+        )
+    }
+
+    fn push_buffer(
+        store: &mut wasmtime::Store<MapAsyncState>,
+        device: wgpu_core::id::DeviceId,
+        error_handler: &Arc<ErrorHandler>,
+        usage: wgpu_types::BufferUsages,
+        mapped_at_creation: bool,
+    ) -> u32 {
+        let instance = Arc::clone(&store.data().instance);
+        let (buffer_id, err) = instance.device_create_buffer(
+            device,
+            &wgpu_types::BufferDescriptor {
+                label: None,
+                size: 16,
+                usage,
+                mapped_at_creation,
+            },
+            None,
+        );
+        assert!(err.is_none(), "{err:?}");
+        let map_state = match mapped_at_creation {
+            true => webgpu::GpuBufferMapState::Mapped,
+            false => webgpu::GpuBufferMapState::Unmapped,
+        };
+        store
+            .data_mut()
+            .table
+            .push(Buffer {
+                buffer_id: Owned::new(&instance, buffer_id),
+                size: 16,
+                usage,
+                map_state,
+                error_handler: Arc::clone(error_handler),
+            })
+            .unwrap()
+            .rep()
+    }
+
+    async fn map_async(
+        accessor: &Accessor<MapAsyncState>,
+        buffer: u32,
+        mode: webgpu::GpuMapMode,
+    ) -> Result<(), webgpu::MapAsyncError> {
+        let accessor = accessor.with_getter::<crate::HasWasiWebGpuCtx>(
+            <MapAsyncState as crate::WasiWebGpuCtxView>::webgpu_ctx,
+        );
+        <crate::HasWasiWebGpuCtx as webgpu::HostGpuBufferWithStore<MapAsyncState>>::map_async(
+            &accessor,
+            Resource::new_borrow(buffer),
+            mode,
+            None,
+            None,
+        )
+        .await
+        .unwrap()
+    }
+
+    fn map_state(
+        store: &mut wasmtime::Store<MapAsyncState>,
+        buffer: u32,
+    ) -> webgpu::GpuBufferMapState {
+        store
+            .data()
+            .table
+            .get(&Resource::<Buffer>::new_borrow(buffer))
+            .unwrap()
+            .map_state
+    }
+
+    fn assert_map_async_error(
+        result: Result<(), webgpu::MapAsyncError>,
+        kind: webgpu::MapAsyncErrorKind,
+    ) {
+        match result {
+            Err(e) if std::mem::discriminant(&e.kind) == std::mem::discriminant(&kind) => {}
+            other => panic!("expected {kind:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_async_rejects_instead_of_panicking() {
+        let (instance, device, _queue) = noop_device();
+        let mut store = map_async_store(&instance, true);
+        let error_handler = Arc::new(ErrorHandler::default());
+        let read = push_buffer(
+            &mut store,
+            device,
+            &error_handler,
+            wgpu_types::BufferUsages::MAP_READ,
+            false,
+        );
+        let mapped = push_buffer(
+            &mut store,
+            device,
+            &error_handler,
+            wgpu_types::BufferUsages::MAP_WRITE,
+            true,
+        );
+
+        let map = |store: &mut wasmtime::Store<MapAsyncState>, buffer, mode| {
+            error_handler.push_scope(webgpu::GpuErrorFilter::Validation);
+            let result = futures::executor::block_on(
+                store.run_concurrent(async |accessor| map_async(accessor, buffer, mode).await),
+            )
+            .unwrap();
+            (result, error_handler.pop_scope().unwrap())
+        };
+
+        // Not exactly one of READ or WRITE.
+        let (result, error) = map(
+            &mut store,
+            read,
+            webgpu::GpuMapMode::READ | webgpu::GpuMapMode::WRITE,
+        );
+        assert_map_async_error(result, webgpu::MapAsyncErrorKind::OperationError);
+        // TODO: should also generate a validation error.
+        assert!(error.is_none());
+        // Missing the MAP_WRITE usage.
+        let (result, error) = map(&mut store, read, webgpu::GpuMapMode::WRITE);
+        assert_map_async_error(result, webgpu::MapAsyncErrorKind::OperationError);
+        assert!(error.is_some());
+        // Already mapped.
+        let (result, error) = map(&mut store, mapped, webgpu::GpuMapMode::WRITE);
+        assert_map_async_error(result, webgpu::MapAsyncErrorKind::OperationError);
+        assert!(error.is_some());
+
+        assert_eq!(
+            map_state(&mut store, read),
+            webgpu::GpuBufferMapState::Unmapped
+        );
+        assert_eq!(
+            map_state(&mut store, mapped),
+            webgpu::GpuBufferMapState::Mapped
+        );
+
+        let (result, error) = map(&mut store, read, webgpu::GpuMapMode::READ);
+        assert!(result.is_ok(), "{result:?}");
+        assert!(error.is_none());
+        assert_eq!(
+            map_state(&mut store, read),
+            webgpu::GpuBufferMapState::Mapped
+        );
+    }
+
+    #[test]
+    fn map_async_aborts_on_unmap_destroy_and_device_loss() {
+        let (instance, device, _queue) = noop_device();
+        // Never polls, so the map stays pending until it's unmapped.
+        let mut store = map_async_store(&instance, false);
+        let error_handler = Arc::new(ErrorHandler::default());
+        let buffer = push_buffer(
+            &mut store,
+            device,
+            &error_handler,
+            wgpu_types::BufferUsages::MAP_READ,
+            false,
+        );
+
+        error_handler.push_scope(webgpu::GpuErrorFilter::Validation);
+        let result = futures::executor::block_on(store.run_concurrent(async |accessor| {
+            let (result, ()) = futures::join!(
+                map_async(accessor, buffer, webgpu::GpuMapMode::READ),
+                async {
+                    accessor.with(|mut access| {
+                        webgpu::HostGpuBuffer::unmap(
+                            &mut access.get().webgpu_ctx(),
+                            Resource::new_borrow(buffer),
+                        )
+                        .unwrap()
+                        .unwrap()
+                    })
+                },
+            );
+            result
+        }))
+        .unwrap();
+        assert_map_async_error(result, webgpu::MapAsyncErrorKind::AbortError);
+        assert!(error_handler.pop_scope().unwrap().is_none());
+        assert_eq!(
+            map_state(&mut store, buffer),
+            webgpu::GpuBufferMapState::Unmapped
+        );
+
+        // Destroying the buffer also aborts a pending map.
+        let destroyed = push_buffer(
+            &mut store,
+            device,
+            &error_handler,
+            wgpu_types::BufferUsages::MAP_READ,
+            false,
+        );
+        let result = futures::executor::block_on(store.run_concurrent(async |accessor| {
+            let (result, ()) = futures::join!(
+                map_async(accessor, destroyed, webgpu::GpuMapMode::READ),
+                async {
+                    accessor.with(|mut access| {
+                        webgpu::HostGpuBuffer::destroy(
+                            &mut access.get().webgpu_ctx(),
+                            Resource::new_borrow(destroyed),
+                        )
+                        .unwrap()
+                    })
+                },
+            );
+            result
+        }))
+        .unwrap();
+        assert_map_async_error(result, webgpu::MapAsyncErrorKind::AbortError);
+        assert_eq!(
+            map_state(&mut store, destroyed),
+            webgpu::GpuBufferMapState::Unmapped
+        );
+
+        instance.device_destroy(device);
+        let result = futures::executor::block_on(store.run_concurrent(async |accessor| {
+            map_async(accessor, buffer, webgpu::GpuMapMode::READ).await
+        }))
+        .unwrap();
+        assert_map_async_error(result, webgpu::MapAsyncErrorKind::AbortError);
+        assert_eq!(
+            map_state(&mut store, buffer),
             webgpu::GpuBufferMapState::Unmapped
         );
     }
@@ -3807,6 +4170,7 @@ mod tests {
                 size: 16,
                 usage: wgpu_types::BufferUsages::COPY_DST,
                 map_state: webgpu::GpuBufferMapState::Unmapped,
+                error_handler: Arc::new(ErrorHandler::default()),
             })
             .unwrap();
         let error_handler = Arc::new(ErrorHandler::default());
@@ -3862,6 +4226,7 @@ mod tests {
                 size: 16,
                 usage: wgpu_types::BufferUsages::COPY_DST,
                 map_state: webgpu::GpuBufferMapState::Unmapped,
+                error_handler: Arc::new(ErrorHandler::default()),
             })
             .unwrap();
         let queue = table

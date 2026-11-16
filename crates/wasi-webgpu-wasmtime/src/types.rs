@@ -59,6 +59,7 @@ pub struct Buffer {
     pub(crate) size: u64,
     pub(crate) usage: wgpu_types::BufferUsages,
     pub(crate) map_state: webgpu::GpuBufferMapState,
+    pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
 // references to adapter are also saved in device.
