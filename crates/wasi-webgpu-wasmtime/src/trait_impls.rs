@@ -1,6 +1,6 @@
 use core::slice;
 use futures::channel::oneshot;
-use shared::StreamPipeMap;
+use shared::{FuturePipeMap, StreamPipeMap};
 use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, sync::Arc};
 use wasmtime::{
     bail,
@@ -10,9 +10,9 @@ use wasmtime::{
 use crate::{
     to_core_conversions::ToCore,
     types::{
-        Buffer, CommandEncoder, ComputePassEncoder, ComputePipeline, Device, ErrorHandler, Queue,
-        RenderBundleEncoder, RenderBundleEncoderInner, RenderPassEncoder, RenderPipeline, Texture,
-        WgslLanguageFeatures,
+        Buffer, CommandEncoder, ComputePassEncoder, ComputePipeline, Device, DeviceLost,
+        ErrorHandler, Queue, RenderBundleEncoder, RenderBundleEncoderInner, RenderPassEncoder,
+        RenderPipeline, Texture, WgslLanguageFeatures,
     },
     wasi::webgpu::webgpu,
     Owned, WasiWebGpuCtx, WasiWebGpuCtxView, PREFERRED_CANVAS_FORMAT,
@@ -286,6 +286,9 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
     fn destroy(&mut self, device: Resource<webgpu::GpuDevice>) -> wasmtime::Result<()> {
         let device_id = *self.table.get(&device)?.device_id();
         self.instance.device_destroy(device_id);
+        // `device_destroy` only marks the device invalid. wgpu reports it lost later, once a poll finds its queue empty, and nothing else would poll an idle device.
+        // https://docs.rs/wgpu-core/30.0.1/src/wgpu_core/device/global.rs.html#1959-1966
+        self.request_poll();
         Ok(())
     }
 
@@ -675,10 +678,17 @@ impl<T: Send + WasiWebGpuCtxView> webgpu::HostGpuDeviceWithStore<T> for crate::H
     }
 
     fn lost(
-        _accessor: Access<T, Self>,
-        _device: Resource<webgpu::GpuDevice>,
+        mut access: Access<T, Self>,
+        device: Resource<webgpu::GpuDevice>,
     ) -> wasmtime::Result<FutureReader<Resource<webgpu::GpuDeviceLostInfo>>> {
-        todo!()
+        let lost = access.get().table.get(&device)?.lost.clone();
+        FutureReader::new(
+            access,
+            FuturePipeMap(
+                Box::pin(async move { lost.wait().await }),
+                Some(|data: &mut T, info| Ok(data.webgpu_ctx().table.push(info)?)),
+            ),
+        )
     }
 }
 
@@ -962,11 +972,15 @@ impl<T: Send> webgpu::HostGpuAdapterWithStore<T> for crate::HasWasiWebGpuCtx {
 
             Ok(match device_queue_result {
                 Ok((device_id, queue_id)) => {
+                    let (on_lost, lost) = DeviceLost::new();
+                    ctx.instance
+                        .device_set_device_lost_closure(device_id, on_lost);
                     let device = table.push(Device {
                         device: Arc::new(Owned::new(ctx.instance, device_id)),
                         queue: Arc::new(Owned::new(ctx.instance, queue_id)),
                         adapter,
                         error_handler: Arc::new(ErrorHandler::default()),
+                        lost,
                     })?;
                     Ok(device)
                 }
@@ -1829,17 +1843,18 @@ impl<'a> webgpu::HostGpuError for WasiWebGpuCtx<'a> {
 impl<'a> webgpu::HostGpuDeviceLostInfo for WasiWebGpuCtx<'a> {
     fn reason(
         &mut self,
-        _self_: Resource<webgpu::GpuDeviceLostInfo>,
+        info: Resource<webgpu::GpuDeviceLostInfo>,
     ) -> wasmtime::Result<webgpu::GpuDeviceLostReason> {
-        todo!()
+        Ok(self.table.get(&info)?.reason)
     }
 
-    fn message(&mut self, _self_: Resource<webgpu::GpuDeviceLostInfo>) -> wasmtime::Result<String> {
-        todo!()
+    fn message(&mut self, info: Resource<webgpu::GpuDeviceLostInfo>) -> wasmtime::Result<String> {
+        Ok(self.table.get(&info)?.message.clone())
     }
 
-    fn drop(&mut self, _info: Resource<webgpu::GpuDeviceLostInfo>) -> wasmtime::Result<()> {
-        todo!()
+    fn drop(&mut self, info: Resource<webgpu::GpuDeviceLostInfo>) -> wasmtime::Result<()> {
+        self.table.delete(info)?;
+        Ok(())
     }
 }
 impl<'a> webgpu::HostGpuCanvasContext for WasiWebGpuCtx<'a> {
@@ -3418,6 +3433,30 @@ mod tests {
     }
 
     #[test]
+    fn destroying_a_device_resolves_lost_after_a_poll() {
+        use futures::FutureExt;
+
+        let (instance, device, _queue) = noop_device();
+        let (on_lost, lost) = DeviceLost::new();
+        instance.device_set_device_lost_closure(device, on_lost);
+
+        instance.device_destroy(device);
+        // wgpu only reports the loss from a poll, which is why `destroy` requests one.
+        assert!(lost.wait().now_or_never().is_none());
+
+        instance.poll_all_devices(false).unwrap();
+        let info = lost
+            .wait()
+            .now_or_never()
+            .expect("device should be lost after a poll");
+        assert!(matches!(
+            info.reason,
+            webgpu::GpuDeviceLostReason::Destroyed
+        ));
+        assert_eq!(info.message, "");
+    }
+
+    #[test]
     fn mapped_range_on_an_unmapped_buffer_is_an_operation_error() {
         let (instance, device, _queue) = noop_device();
         let (buffer_id, err) = instance.device_create_buffer(
@@ -3901,6 +3940,7 @@ mod tests {
                 queue: Arc::new(Owned::new(&instance, queue)),
                 adapter: Arc::new(Owned::new(&instance, adapter)),
                 error_handler: Arc::clone(&error_handler),
+                lost: DeviceLost::new().1,
             })
             .unwrap();
         let texture = table

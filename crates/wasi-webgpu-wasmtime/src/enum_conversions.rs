@@ -576,17 +576,6 @@ impl From<webgpu::GpuTextureAspect> for wgpu_types::TextureAspect {
     }
 }
 
-impl From<wgpu_types::error::ErrorType> for webgpu::GpuErrorKind {
-    fn from(value: wgpu_types::error::ErrorType) -> Self {
-        match value {
-            wgpu_types::error::ErrorType::Internal => webgpu::GpuErrorKind::InternalError,
-            wgpu_types::error::ErrorType::OutOfMemory => webgpu::GpuErrorKind::OutOfMemoryError,
-            wgpu_types::error::ErrorType::Validation => webgpu::GpuErrorKind::ValidationError,
-            wgpu_types::error::ErrorType::DeviceLost => todo!(),
-        }
-    }
-}
-
 impl From<webgpu::GpuCanvasAlphaMode> for wgpu_types::CompositeAlphaMode {
     fn from(value: webgpu::GpuCanvasAlphaMode) -> Self {
         match value {
@@ -603,6 +592,15 @@ impl From<webgpu::PredefinedColorSpace> for wgpu_types::SurfaceColorSpace {
         match value {
             webgpu::PredefinedColorSpace::Srgb => wgpu_types::SurfaceColorSpace::Srgb,
             webgpu::PredefinedColorSpace::DisplayP3 => wgpu_types::SurfaceColorSpace::DisplayP3,
+        }
+    }
+}
+
+impl From<wgpu_types::DeviceLostReason> for webgpu::GpuDeviceLostReason {
+    fn from(reason: wgpu_types::DeviceLostReason) -> Self {
+        match reason {
+            wgpu_types::DeviceLostReason::Unknown => webgpu::GpuDeviceLostReason::Unknown,
+            wgpu_types::DeviceLostReason::Destroyed => webgpu::GpuDeviceLostReason::Destroyed,
         }
     }
 }

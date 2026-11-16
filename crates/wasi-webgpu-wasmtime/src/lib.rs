@@ -86,6 +86,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu.gpu-query-set": types::QuerySet,
         "wasi:webgpu/webgpu.gpu-supported-limits": wgpu_types::Limits,
         "wasi:webgpu/webgpu.gpu-error": types::GpuError,
+        "wasi:webgpu/webgpu.gpu-device-lost-info": types::DeviceLostInfo,
         "wasi:webgpu/webgpu.wgsl-language-features": types::WgslLanguageFeatures,
         "wasi:webgpu/webgpu.record-gpu-pipeline-constant-value": types::RecordGpuPipelineConstantValue,
         "wasi:webgpu/webgpu.record-option-gpu-size64": types::RecordOptionGpuSize64,
