@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 wit-bindgen.workspace = true
-bytemuck = "1.25.2"
+bytemuck.workspace = true
 futures.workspace = true
 futures-lite.workspace = true
 

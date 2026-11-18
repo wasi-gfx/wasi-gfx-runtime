@@ -31,4 +31,4 @@ workspace = true
 features = ["wgsl", "gles", "noop"]
 
 [dev-dependencies]
-pastey = "0.2"
+pastey = "0.2.3"
