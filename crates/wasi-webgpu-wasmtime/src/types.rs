@@ -59,6 +59,7 @@ pub struct Buffer {
     pub(crate) size: u64,
     pub(crate) usage: wgpu_types::BufferUsages,
     pub(crate) map_state: webgpu::GpuBufferMapState,
+    pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
 // references to adapter are also saved in device.
@@ -85,6 +86,7 @@ pub struct Device {
     pub(crate) queue: Arc<Owned<wgpu_core::id::QueueId>>,
     pub(crate) adapter: Adapter,
     pub(crate) error_handler: Arc<ErrorHandler>,
+    pub(crate) lost: DeviceLost,
 }
 
 impl Device {
@@ -137,6 +139,41 @@ pub struct RenderBundleEncoderInner {
 pub struct ComputePipeline {
     pub(crate) compute_pipeline_id: Owned<wgpu_core::id::ComputePipelineId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
+}
+
+/// Why a device was lost.
+#[derive(Clone, Debug)]
+pub struct DeviceLostInfo {
+    pub(crate) reason: webgpu::GpuDeviceLostReason,
+    pub(crate) message: String,
+}
+
+/// Whether wgpu has reported the device lost, and why.
+#[derive(Clone)]
+pub(crate) struct DeviceLost(
+    futures::future::Shared<futures::channel::oneshot::Receiver<DeviceLostInfo>>,
+);
+
+impl DeviceLost {
+    /// Returns the closure to give wgpu for this device, and the loss it reports.
+    pub(crate) fn new() -> (wgpu_core::device::DeviceLostClosure, Self) {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        let closure: wgpu_core::device::DeviceLostClosure = Box::new(move |reason, message| {
+            let _ = sender.send(DeviceLostInfo {
+                reason: reason.into(),
+                message,
+            });
+        });
+        (closure, Self(futures::FutureExt::shared(receiver)))
+    }
+
+    /// Resolves once the device is lost. Never resolves if wgpu drops the device without losing it.
+    pub(crate) async fn wait(&self) -> DeviceLostInfo {
+        match self.0.clone().await {
+            Ok(info) => info,
+            Err(_) => std::future::pending().await,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -209,7 +246,19 @@ impl ErrorHandler {
         error: Option<E>,
     ) {
         if let Some(error) = error {
-            let error_kind = error.webgpu_error_type().into();
+            let error_kind = match error.webgpu_error_type() {
+                wgpu_types::error::ErrorType::Internal => webgpu::GpuErrorKind::InternalError,
+                wgpu_types::error::ErrorType::OutOfMemory => webgpu::GpuErrorKind::OutOfMemoryError,
+                wgpu_types::error::ErrorType::Validation => webgpu::GpuErrorKind::ValidationError,
+                wgpu_types::error::ErrorType::DeviceLost => {
+                    // `DeviceLost` errors are not reported.
+                    // From the spec:
+                    // > Note: No errors are generated from a device which is lost. If this algorithm is called while device is lost, it will not be observable to the application.
+                    // https://www.w3.org/TR/webgpu/#abstract-opdef-dispatch-error
+                    return;
+                }
+            };
+
             let error = GpuError {
                 message: error.to_string(),
                 kind: error_kind,

@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -6,7 +7,8 @@ use std::{
 use futures::{Stream, StreamExt};
 use wasmtime::StoreContextMut;
 use wasmtime::component::{
-    Access, Destination, HasData, Lift, Lower, StreamProducer, StreamReader, StreamResult,
+    Access, Destination, FutureProducer, HasData, Lift, Lower, StreamProducer, StreamReader,
+    StreamResult,
 };
 
 // TODO: explore moving these to wasmtime
@@ -80,6 +82,40 @@ where
     }
 }
 
+/// Like [`StreamPipeMap`], but for a single value: maps the future's output with access to the store data `D` once it resolves (e.g. to push it into the resource table).
+pub struct FuturePipeMap<Fut, F>(pub Pin<Box<Fut>>, pub Option<F>);
+
+impl<D, In, Out, Fut, F> FutureProducer<D> for FuturePipeMap<Fut, F>
+where
+    Out: Send + 'static,
+    Fut: Future<Output = In> + Send + 'static,
+    F: FnOnce(&mut D, In) -> wasmtime::Result<Out> + Send + Unpin + 'static,
+{
+    type Item = Out;
+
+    fn poll_produce(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        mut store: StoreContextMut<D>,
+        finish: bool,
+    ) -> Poll<wasmtime::Result<Option<Out>>> {
+        // `Pin<Box<_>>` and `F` are `Unpin`, so `Self: Unpin` and we can project freely.
+        let this = self.get_mut();
+        match this.0.as_mut().poll(cx) {
+            Poll::Ready(item) => {
+                let Some(map) = this.1.take() else {
+                    // wasmtime stops polling once we return a value, and `Fut` would panic first if polled after completion.
+                    unreachable!()
+                };
+                Poll::Ready(map(store.data_mut(), item).map(Some))
+            }
+            // The read was cancelled before the future resolved. It may be retried, so keep the future and `F`.
+            Poll::Pending if finish => Poll::Ready(Ok(None)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 /// Turns a broadcast receiver into a component-model stream. Needs the store
 /// (via `access`) because `StreamReader::new` registers the producer with it.
 pub fn channel_to_stream<T, D, A>(
@@ -110,6 +146,5 @@ pub fn unwrap_unless_inactive_or_full<T>(res: Result<Option<T>, TrySendError<T>>
     {
         return;
     }
-
     res.unwrap();
 }

@@ -27,8 +27,8 @@ mod poll;
 #[cfg(feature = "tokio")]
 pub use poll::spawn_poll_devices_tokio_thread;
 pub use poll::{
-    poll_devices_loop, spawn_poll_devices_thread, MpscPollNotifier, PollDevicesConfig,
-    PollDevicesRequest, PollNotifier,
+    MpscPollNotifier, PollDevicesConfig, PollDevicesRequest, PollNotifier, poll_devices_loop,
+    spawn_poll_devices_thread,
 };
 
 /// Re-export of `wgpu_core` and `wgpu_types` so that runtime implementors don't need to keep track of what version of wgpu this crate is using.
@@ -86,6 +86,7 @@ wasmtime::component::bindgen!({
         "wasi:webgpu/webgpu.gpu-query-set": types::QuerySet,
         "wasi:webgpu/webgpu.gpu-supported-limits": wgpu_types::Limits,
         "wasi:webgpu/webgpu.gpu-error": types::GpuError,
+        "wasi:webgpu/webgpu.gpu-device-lost-info": types::DeviceLostInfo,
         "wasi:webgpu/webgpu.wgsl-language-features": types::WgslLanguageFeatures,
         "wasi:webgpu/webgpu.record-gpu-pipeline-constant-value": types::RecordGpuPipelineConstantValue,
         "wasi:webgpu/webgpu.record-option-gpu-size64": types::RecordOptionGpuSize64,

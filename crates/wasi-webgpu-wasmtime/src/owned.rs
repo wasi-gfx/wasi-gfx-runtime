@@ -86,7 +86,7 @@ mod tests {
     use wgpu_core::{binding_model, pipeline};
 
     use super::*;
-    use crate::types::{Device, ErrorHandler};
+    use crate::types::{Device, DeviceLost, ErrorHandler};
 
     fn noop_instance() -> Arc<Global> {
         Arc::new(Global::new(
@@ -220,6 +220,7 @@ mod tests {
             queue: Arc::new(Owned::new(&instance, queue)),
             adapter: Arc::new(Owned::new(&instance, adapter)),
             error_handler: Arc::new(ErrorHandler::default()),
+            lost: DeviceLost::new().1,
         };
         table.push(Arc::clone(&device.queue)).unwrap();
         table.push(Arc::clone(&device.adapter)).unwrap();
