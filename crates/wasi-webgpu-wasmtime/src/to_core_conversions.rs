@@ -40,7 +40,7 @@ impl ToCore<wgpu_core::binding_model::BufferBinding> for webgpu::GpuBufferBindin
         let buffer = table.get(&self.buffer).unwrap();
         // https://www.w3.org/TR/webgpu/#dictdef-gpubufferbinding
         wgpu_core::binding_model::BufferBinding {
-            buffer: buffer.buffer_id(),
+            buffer: *buffer.buffer_id,
             offset: self.offset.unwrap_or(0),
             size: self.size,
         }
@@ -937,7 +937,7 @@ impl ToCore<wgpu_types::TexelCopyTextureInfo<wgpu_core::id::TextureId>>
         let texture = table.get(&self.texture).unwrap();
         // https://www.w3.org/TR/webgpu/#gputexelcopytextureinfo
         wgpu_types::TexelCopyTextureInfo {
-            texture: texture.texture_id(),
+            texture: *texture.texture_id,
             mip_level: self.mip_level.unwrap_or(0),
             origin: self.origin.map(|o| o.to_core(table)).unwrap_or_default(),
             aspect: self
@@ -1038,7 +1038,7 @@ impl ToCore<wgpu_types::TexelCopyBufferInfo<wgpu_core::id::BufferId>>
     ) -> wgpu_types::TexelCopyBufferInfo<wgpu_core::id::BufferId> {
         // https://www.w3.org/TR/webgpu/#gputexelcopybufferlayout
         wgpu_types::TexelCopyBufferInfo {
-            buffer: table.get(&self.buffer).unwrap().buffer_id(),
+            buffer: *table.get(&self.buffer).unwrap().buffer_id,
             layout: wgpu_types::TexelCopyBufferLayout {
                 offset: self.offset.unwrap_or(0),
                 bytes_per_row: self.bytes_per_row,
