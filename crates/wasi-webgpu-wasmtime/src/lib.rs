@@ -20,13 +20,12 @@ mod trait_impls;
 mod types;
 pub use types::*;
 
-
 mod poll;
 #[cfg(feature = "tokio")]
 pub use poll::spawn_poll_devices_tokio_thread;
 pub use poll::{
-    poll_devices_loop, spawn_poll_devices_thread, MpscPollNotifier, PollDevicesConfig,
-    PollDevicesRequest, PollNotifier,
+    MpscPollNotifier, PollDevicesConfig, PollDevicesRequest, PollNotifier, poll_devices_loop,
+    spawn_poll_devices_thread,
 };
 
 /// Re-export of `wgpu_core` and `wgpu_types` so that runtime implementors don't need to keep track of what version of wgpu this crate is using.

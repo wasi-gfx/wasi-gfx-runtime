@@ -5,8 +5,8 @@
 use std::{
     io,
     sync::{
-        mpsc::{self, Receiver, RecvTimeoutError},
         Arc,
+        mpsc::{self, Receiver, RecvTimeoutError},
     },
     thread::{self, JoinHandle},
     time::Duration,

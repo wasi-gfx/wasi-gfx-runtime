@@ -7,8 +7,8 @@ use surface_wasmtime::{
     SurfaceWebgpuCtxView, winit::WasiWinitEventLoopProxy,
 };
 use wasi_webgpu_wasmtime::{
-    spawn_poll_devices_thread, MpscPollNotifier, WasiWebGpuCtx, WasiWebGpuCtxView,
-    WasiWebGpuOptions,
+    MpscPollNotifier, WasiWebGpuCtx, WasiWebGpuCtxView, WasiWebGpuOptions,
+    spawn_poll_devices_thread,
 };
 use wasmtime::{
     Config, Engine, Store,
