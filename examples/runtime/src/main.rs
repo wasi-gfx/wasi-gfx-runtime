@@ -6,7 +6,10 @@ use surface_wasmtime::{
     SurfaceCtxView, SurfaceFrameBufferCtx, SurfaceFrameBufferCtxView, SurfaceWebgpuCtx,
     SurfaceWebgpuCtxView, winit::WasiWinitEventLoopProxy,
 };
-use wasi_webgpu_wasmtime::{WasiWebGpuCtx, WasiWebGpuCtxView, WasiWebGpuOptions};
+use wasi_webgpu_wasmtime::{
+    spawn_poll_devices_thread, MpscPollNotifier, WasiWebGpuCtx, WasiWebGpuCtxView,
+    WasiWebGpuOptions,
+};
 use wasmtime::{
     Config, Engine, Store,
     component::{Component, Linker},
@@ -34,24 +37,30 @@ wasmtime::component::bindgen!({
 
 struct HostState {
     instance: Arc<wgpu_core::global::Global>,
+    poll_notifier: MpscPollNotifier,
     webgpu_options: WasiWebGpuOptions,
     main_thread_proxy: Arc<surface_wasmtime::winit::WasiWinitEventLoopProxy>,
 }
 
 impl HostState {
     fn new(main_thread_proxy: surface_wasmtime::winit::WasiWinitEventLoopProxy) -> Self {
+        let instance = Arc::new(wgpu_core::global::Global::new(
+            "webgpu",
+            wgpu_types::InstanceDescriptor {
+                backends: wgpu_types::Backends::all(),
+                flags: wgpu_types::InstanceFlags::from_build_config(),
+                backend_options: Default::default(),
+                memory_budget_thresholds: Default::default(),
+                display: None,
+            },
+            None,
+        ));
+        let (poll_notifier, _poll_thread) =
+            spawn_poll_devices_thread(Arc::clone(&instance), Default::default())
+                .expect("failed to spawn the poll thread");
         Self {
-            instance: Arc::new(wgpu_core::global::Global::new(
-                "webgpu",
-                wgpu_types::InstanceDescriptor {
-                    backends: wgpu_types::Backends::all(),
-                    flags: wgpu_types::InstanceFlags::from_build_config(),
-                    backend_options: Default::default(),
-                    memory_budget_thresholds: Default::default(),
-                    display: None,
-                },
-                None,
-            )),
+            instance,
+            poll_notifier,
             webgpu_options: WasiWebGpuOptions::default(),
             main_thread_proxy: Arc::new(main_thread_proxy),
         }
@@ -59,8 +68,9 @@ impl HostState {
     pub fn add_workload(&self) -> WorkloadState {
         WorkloadState {
             table: ResourceTable::new(),
-            wasi_ctx: WasiCtx::builder().inherit_stdio().inherit_args().build(),
             instance: Arc::clone(&self.instance),
+            poll_notifier: self.poll_notifier.clone(),
+            wasi_ctx: WasiCtx::builder().inherit_stdio().inherit_args().build(),
             webgpu_options: self.webgpu_options.clone(),
             main_thread_proxy: Arc::clone(&self.main_thread_proxy),
         }
@@ -68,9 +78,10 @@ impl HostState {
 }
 
 struct WorkloadState {
-    table: ResourceTable,
-    wasi_ctx: WasiCtx,
     instance: Arc<wgpu_core::global::Global>,
+    table: ResourceTable,
+    poll_notifier: MpscPollNotifier,
+    wasi_ctx: WasiCtx,
     webgpu_options: WasiWebGpuOptions,
     main_thread_proxy: Arc<WasiWinitEventLoopProxy>,
 }
@@ -92,6 +103,7 @@ impl WasiWebGpuCtxView for WorkloadState {
     fn webgpu_ctx(&mut self) -> WasiWebGpuCtx<'_> {
         WasiWebGpuCtx {
             instance: &self.instance,
+            poll_notifier: &self.poll_notifier,
             table: &mut self.table,
             options: &self.webgpu_options,
         }
