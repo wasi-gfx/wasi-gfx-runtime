@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::wasi::webgpu::webgpu;
+use crate::{owned::Owned, wasi::webgpu::webgpu};
 
 pub struct WgslLanguageFeatures;
 impl WgslLanguageFeatures {
@@ -55,27 +55,40 @@ where
 // size needed in `GpuBuffer.size`, `RenderPass.set_index_buffer`, `RenderPass.set_vertex_buffer`.
 // usage needed in `GpuBuffer.usage`
 pub struct Buffer {
-    pub(crate) buffer_id: wgpu_core::id::BufferId,
+    pub(crate) buffer_id: Owned<wgpu_core::id::BufferId>,
     pub(crate) size: u64,
     pub(crate) usage: wgpu_types::BufferUsages,
     pub(crate) map_state: webgpu::GpuBufferMapState,
+    pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
-// references to queue and adapter are also saved in device.
-// TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
-pub type Queue = Arc<wgpu_core::id::QueueId>;
-pub type Adapter = Arc<wgpu_core::id::AdapterId>;
+// references to adapter are also saved in device.
+// TODO: this should be unit-structs instead of `type` so that the internals are private to the crate
+pub type Adapter = Arc<Owned<wgpu_core::id::AdapterId>>;
+
+// Resources that are only a wgpu-core id. Dropping the table entry releases it.
+pub type BindGroup = Owned<wgpu_core::id::BindGroupId>;
+pub type BindGroupLayout = Owned<wgpu_core::id::BindGroupLayoutId>;
+pub type CommandBuffer = Owned<wgpu_core::id::CommandBufferId>;
+pub type PipelineLayout = Owned<wgpu_core::id::PipelineLayoutId>;
+pub type QuerySet = Owned<wgpu_core::id::QuerySetId>;
+pub type RenderBundle = Owned<wgpu_core::id::RenderBundleId>;
+pub type Sampler = Owned<wgpu_core::id::SamplerId>;
+pub type ShaderModule = Owned<wgpu_core::id::ShaderModuleId>;
+pub type TextureView = Owned<wgpu_core::id::TextureViewId>;
 
 // queue needed for Device.queue
 // adapter needed for surface_get_capabilities in connect_graphics_context
 // keeping queue and adapter as Arc for reference counting while dropping.
 #[derive(Clone)]
 pub struct Device {
-    pub(crate) device: wgpu_core::id::DeviceId,
-    pub(crate) queue: Arc<wgpu_core::id::QueueId>,
-    pub(crate) adapter: Arc<wgpu_core::id::AdapterId>,
+    pub(crate) device: Arc<Owned<wgpu_core::id::DeviceId>>,
+    pub(crate) queue: Arc<Owned<wgpu_core::id::QueueId>>,
+    pub(crate) adapter: Adapter,
     pub(crate) error_handler: Arc<ErrorHandler>,
+    pub(crate) lost: DeviceLost,
 }
+
 impl Device {
     pub fn device_id(&self) -> &wgpu_core::id::DeviceId {
         &self.device
@@ -87,28 +100,34 @@ impl Device {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the TextureId is actually connected to this device
+    /// - `texture_id` must be connected to this device.
+    /// - Ownership of `texture_id` moves to the returned `Texture`, which releases it when dropped. The caller must not release it, or pass it to `connect_texture` again. wgpu-core panics when an id is released twice.
     #[doc(hidden)]
     pub unsafe fn connect_texture(&self, texture_id: wgpu_core::id::TextureId) -> Texture {
         Texture {
-            texture_id,
+            texture_id: Owned::new(self.device.instance(), texture_id),
             error_handler: Arc::clone(&self.error_handler),
         }
     }
 }
 
-#[derive(Clone)]
+pub struct Queue {
+    // references to queue are also saved in device.
+    pub(crate) queue: Arc<Owned<wgpu_core::id::QueueId>>,
+    pub(crate) error_handler: Arc<ErrorHandler>,
+}
+
 pub struct CommandEncoder {
-    pub(crate) command_encoder_id: wgpu_core::id::CommandEncoderId,
+    pub(crate) command_encoder_id: Owned<wgpu_core::id::CommandEncoderId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
 pub struct Texture {
-    pub(crate) texture_id: wgpu_core::id::TextureId,
+    pub(crate) texture_id: Owned<wgpu_core::id::TextureId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 pub struct RenderPipeline {
-    pub(crate) render_pipeline_id: wgpu_core::id::RenderPipelineId,
+    pub(crate) render_pipeline_id: Owned<wgpu_core::id::RenderPipelineId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 
@@ -118,8 +137,43 @@ pub struct RenderBundleEncoderInner {
     pub(crate) error_handler: Arc<ErrorHandler>,
 }
 pub struct ComputePipeline {
-    pub(crate) compute_pipeline_id: wgpu_core::id::ComputePipelineId,
+    pub(crate) compute_pipeline_id: Owned<wgpu_core::id::ComputePipelineId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
+}
+
+/// Why a device was lost.
+#[derive(Clone, Debug)]
+pub struct DeviceLostInfo {
+    pub(crate) reason: webgpu::GpuDeviceLostReason,
+    pub(crate) message: String,
+}
+
+/// Whether wgpu has reported the device lost, and why.
+#[derive(Clone)]
+pub(crate) struct DeviceLost(
+    futures::future::Shared<futures::channel::oneshot::Receiver<DeviceLostInfo>>,
+);
+
+impl DeviceLost {
+    /// Returns the closure to give wgpu for this device, and the loss it reports.
+    pub(crate) fn new() -> (wgpu_core::device::DeviceLostClosure, Self) {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        let closure: wgpu_core::device::DeviceLostClosure = Box::new(move |reason, message| {
+            let _ = sender.send(DeviceLostInfo {
+                reason: reason.into(),
+                message,
+            });
+        });
+        (closure, Self(futures::FutureExt::shared(receiver)))
+    }
+
+    /// Resolves once the device is lost. Never resolves if wgpu drops the device without losing it.
+    pub(crate) async fn wait(&self) -> DeviceLostInfo {
+        match self.0.clone().await {
+            Ok(info) => info,
+            Err(_) => std::future::pending().await,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -192,7 +246,19 @@ impl ErrorHandler {
         error: Option<E>,
     ) {
         if let Some(error) = error {
-            let error_kind = error.webgpu_error_type().into();
+            let error_kind = match error.webgpu_error_type() {
+                wgpu_types::error::ErrorType::Internal => webgpu::GpuErrorKind::InternalError,
+                wgpu_types::error::ErrorType::OutOfMemory => webgpu::GpuErrorKind::OutOfMemoryError,
+                wgpu_types::error::ErrorType::Validation => webgpu::GpuErrorKind::ValidationError,
+                wgpu_types::error::ErrorType::DeviceLost => {
+                    // `DeviceLost` errors are not reported.
+                    // From the spec:
+                    // > Note: No errors are generated from a device which is lost. If this algorithm is called while device is lost, it will not be observable to the application.
+                    // https://www.w3.org/TR/webgpu/#abstract-opdef-dispatch-error
+                    return;
+                }
+            };
+
             let error = GpuError {
                 message: error.to_string(),
                 kind: error_kind,
