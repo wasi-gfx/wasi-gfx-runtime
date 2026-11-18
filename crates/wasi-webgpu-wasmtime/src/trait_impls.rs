@@ -11,7 +11,7 @@ use crate::{
     PREFERRED_CANVAS_FORMAT, WasiWebGpuCtx, WasiWebGpuCtxView,
     to_core_conversions::ToCore,
     types::{
-        Buffer, CommandEncoder, ComputePassEncoder, ComputePipeline, Device, ErrorHandler,
+        Buffer, CommandEncoder, ComputePassEncoder, ComputePipeline, Device, ErrorHandler, Queue,
         RenderBundleEncoder, RenderBundleEncoderInner, RenderPassEncoder, RenderPipeline, Texture,
         WgslLanguageFeatures,
     },
@@ -257,7 +257,11 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
     }
 
     fn queue(&mut self, device: Resource<Device>) -> wasmtime::Result<Resource<webgpu::GpuQueue>> {
-        let queue = Arc::clone(&self.table.get(&device)?.queue);
+        let device = self.table.get(&device)?;
+        let queue = Queue {
+            queue: Arc::clone(&device.queue),
+            error_handler: Arc::clone(&device.error_handler),
+        };
         Ok(self.table.push(queue)?)
     }
 
@@ -1021,10 +1025,14 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let command_buffers = val
             .into_iter()
-            .map(|buffer| *self.table.get(&buffer).unwrap())
-            .collect::<Vec<_>>();
-        let queue = *(*self.table.get(&queue)?);
-        self.instance.queue_submit(queue, &command_buffers).unwrap();
+            .map(|buffer| Ok(*self.table.get(&buffer)?))
+            .collect::<wasmtime::Result<Vec<_>>>()?;
+        let queue = self.table.get(&queue)?;
+        let result = self
+            .instance
+            .queue_submit(*queue.queue, &command_buffers)
+            .map_err(|(_, err)| err);
+        queue.error_handler.handle_possible_error(result.err());
         Ok(())
     }
 
@@ -1037,14 +1045,51 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
         data_offset: Option<webgpu::GpuSize64>,
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<(), webgpu::WriteBufferError>> {
-        let queue = *(*self.table.get(&queue)?);
         let buffer_id = self.table.get(&buffer)?.buffer_id;
-        let data = match write_buffer_data(&data, data_offset, size) {
-            Ok(data) => data,
-            Err(e) => return Ok(Err(e)),
+        let queue = self.table.get(&queue)?;
+        // https://www.w3.org/TR/webgpu/#dom-gpuqueue-writebuffer
+        // From the spec:
+        // > 4. If any of the following conditions are unsatisfied, throw an OperationError and return.
+        // >  - contentsSize ≥ 0.
+        // >  - dataOffset + contentsSize ≤ dataSize.
+        // >  - contentsSize, converted to bytes, is a multiple of 4 bytes.
+        // `data_offset` and `size` come from the guest, so they are converted and sliced with checked operations instead of panicking.
+        let operation_error = |message: String| {
+            Ok(Err(webgpu::WriteBufferError {
+                kind: webgpu::WriteBufferErrorKind::OperationError,
+                message,
+            }))
         };
-        self.instance
-            .queue_write_buffer(queue, buffer_id, buffer_offset, data)?;
+        let contents = usize::try_from(data_offset.unwrap_or(0))
+            .ok()
+            .and_then(|start| data.get(start..))
+            .and_then(|rest| match size {
+                None => Some(rest),
+                Some(size) => rest.get(..usize::try_from(size).ok()?),
+            });
+        let Some(data) = contents else {
+            let data_offset = data_offset.unwrap_or(0);
+            return operation_error(match size {
+                Some(size) => format!(
+                    "data-offset {data_offset} + size {size} is out of range for data of length {}",
+                    data.len()
+                ),
+                None => format!(
+                    "data-offset {data_offset} is out of range for data of length {}",
+                    data.len()
+                ),
+            });
+        };
+        if data.len() % 4 != 0 {
+            return operation_error(format!(
+                "write size {} is not a multiple of 4 bytes",
+                data.len()
+            ));
+        }
+        let result = self
+            .instance
+            .queue_write_buffer(*queue.queue, buffer_id, buffer_offset, data);
+        queue.error_handler.handle_possible_error(result.err());
         Ok(Ok(()))
     }
 
@@ -1056,14 +1101,18 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
         data_layout: webgpu::GpuTexelCopyBufferLayout,
         size: webgpu::GpuExtent3D,
     ) -> wasmtime::Result<()> {
-        let queue = *(*self.table.get(&queue)?);
-        self.instance.queue_write_texture(
-            queue,
-            &destination.to_core(self.table),
+        let destination = destination.to_core(self.table);
+        let data_layout = data_layout.to_core(self.table);
+        let size = size.to_core(self.table);
+        let queue = self.table.get(&queue)?;
+        let result = self.instance.queue_write_texture(
+            *queue.queue,
+            &destination,
             &data,
-            &data_layout.to_core(self.table),
-            &size.to_core(self.table),
-        )?;
+            &data_layout,
+            &size,
+        );
+        queue.error_handler.handle_possible_error(result.err());
         Ok(())
     }
 
@@ -1080,8 +1129,8 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
     }
 
     fn drop(&mut self, queue: Resource<webgpu::GpuQueue>) -> wasmtime::Result<()> {
-        let queue_id = self.table.delete(queue)?;
-        if let Some(queue_id) = Arc::into_inner(queue_id) {
+        let queue = self.table.delete(queue)?;
+        if let Some(queue_id) = Arc::into_inner(queue.queue) {
             self.instance.queue_drop(queue_id);
         }
         Ok(())
@@ -1095,7 +1144,7 @@ impl<T: Send> webgpu::HostGpuQueueWithStore<T> for crate::HasWasiWebGpuCtx {
     ) -> wasmtime::Result<()> {
         let receiver = accessor.with(|mut access| -> wasmtime::Result<_> {
             let ctx = access.get();
-            let queue_id = **ctx.table.get(&queue)?;
+            let queue_id = *ctx.table.get(&queue)?.queue;
             let (sender, receiver) = oneshot::channel();
             ctx.instance.queue_on_submitted_work_done(
                 queue_id,
@@ -1378,7 +1427,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let pipeline_id = self.table.get(&pipeline)?.render_pipeline_id;
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .render_pass_set_pipeline(render_pass, pipeline_id)?;
         Ok(())
@@ -1393,7 +1442,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         first_instance: Option<webgpu::GpuSize32>,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
         self.instance.render_pass_draw(
             render_pass,
@@ -1407,7 +1456,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
 
     fn end(&mut self, render_pass: Resource<RenderPassEncoder>) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let mut render_pass = render_pass.take().unwrap();
+        let mut render_pass = render_pass.take().ok_or_else(encoder_ended)?;
         self.instance.render_pass_end(&mut render_pass)?;
         Ok(())
     }
@@ -1423,7 +1472,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         max_depth: f32,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance.render_pass_set_viewport(
             render_pass,
             x,
@@ -1445,7 +1494,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         height: webgpu::GpuIntegerCoordinate,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .render_pass_set_scissor_rect(render_pass, x, y, width, height)?;
         Ok(())
@@ -1457,7 +1506,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         color: webgpu::GpuColor,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .render_pass_set_blend_constant(render_pass, color.into())?;
         Ok(())
@@ -1469,7 +1518,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         reference: webgpu::GpuStencilValue,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .render_pass_set_stencil_reference(render_pass, reference)?;
         Ok(())
@@ -1481,7 +1530,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         query_index: webgpu::GpuSize32,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .render_pass_begin_occlusion_query(render_pass, query_index)?;
         Ok(())
@@ -1492,7 +1541,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         render_pass: Resource<RenderPassEncoder>,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance.render_pass_end_occlusion_query(render_pass)?;
         Ok(())
     }
@@ -1504,10 +1553,10 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let render_bundle_ids = bundles
             .iter()
-            .map(|bundle| *self.table.get(bundle).unwrap())
-            .collect::<Vec<_>>();
+            .map(|bundle| self.table.get(bundle).copied())
+            .collect::<Result<Vec<_>, _>>()?;
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .render_pass_execute_bundles(render_pass, &render_bundle_ids)?;
         Ok(())
@@ -1531,7 +1580,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         group_label: String,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .render_pass_push_debug_group(render_pass, &group_label, 0)?;
         Ok(())
@@ -1542,7 +1591,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         render_pass: Resource<RenderPassEncoder>,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance.render_pass_pop_debug_group(render_pass)?;
         Ok(())
     }
@@ -1553,7 +1602,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         marker_label: String,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .render_pass_insert_debug_marker(render_pass, &marker_label, 0)?;
         Ok(())
@@ -1568,13 +1617,14 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         dynamic_offsets_data_start: Option<webgpu::GpuSize64>,
         dynamic_offsets_data_length: Option<webgpu::GpuSize32>,
     ) -> wasmtime::Result<Result<(), webgpu::SetBindGroupError>> {
-        let bind_group = bind_group.map(|bind_group| *self.table.get(&bind_group).unwrap());
+        let bind_group = bind_group
+            .map(|bind_group| self.table.get(&bind_group).copied())
+            .transpose()?;
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         // https://www.w3.org/TR/webgpu/#programmable-passes
-         let dynamic_offsets_data = dynamic_offsets_data.unwrap_or_default();
         let dynamic_offsets = match dynamic_offsets(
-            &dynamic_offsets_data,
+            dynamic_offsets_data.as_deref(),
             dynamic_offsets_data_start,
             dynamic_offsets_data_length,
         ) {
@@ -1601,7 +1651,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let buffer_id = self.table.get(&buffer)?.buffer_id;
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance.render_pass_set_index_buffer(
             render_pass,
             buffer_id,
@@ -1626,7 +1676,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
             None => None,
         };
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance.render_pass_set_vertex_buffer(
             render_pass,
             slot,
@@ -1648,7 +1698,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         first_instance: Option<webgpu::GpuSize32>,
     ) -> wasmtime::Result<()> {
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance.render_pass_draw_indexed(
             render_pass,
             index_count,
@@ -1669,7 +1719,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let indirect_buffer = self.table.get(&indirect_buffer)?.buffer_id;
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .render_pass_draw_indirect(render_pass, indirect_buffer, indirect_offset)?;
         Ok(())
@@ -1683,7 +1733,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let indirect_buffer = self.table.get(&indirect_buffer)?.buffer_id;
         let mut render_pass = self.table.get_mut(&render_pass)?.lock();
-        let render_pass = render_pass.as_mut().unwrap();
+        let render_pass = render_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance.render_pass_draw_indexed_indirect(
             render_pass,
             indirect_buffer,
@@ -1864,7 +1914,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let pipeline = self.table.get(&pipeline)?.compute_pipeline_id;
         let mut compute_pass = self.table.get_mut(&compute_pass)?.lock();
-        let compute_pass = compute_pass.as_mut().unwrap();
+        let compute_pass = compute_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .compute_pass_set_pipeline(compute_pass, pipeline)?;
         Ok(())
@@ -1878,7 +1928,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         workgroup_count_z: Option<webgpu::GpuSize32>,
     ) -> wasmtime::Result<()> {
         let mut compute_pass = self.table.get_mut(&compute_pass)?.lock();
-        let compute_pass = compute_pass.as_mut().unwrap();
+        let compute_pass = compute_pass.as_mut().ok_or_else(encoder_ended)?;
         // https://www.w3.org/TR/webgpu/#gpucomputepassencoder
         self.instance.compute_pass_dispatch_workgroups(
             compute_pass,
@@ -1897,7 +1947,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let indirect_buffer = self.table.get(&indirect_buffer)?.buffer_id;
         let mut compute_pass = self.table.get_mut(&compute_pass)?.lock();
-        let compute_pass = compute_pass.as_mut().unwrap();
+        let compute_pass = compute_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance.compute_pass_dispatch_workgroups_indirect(
             compute_pass,
             indirect_buffer,
@@ -1911,7 +1961,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         compute_pass: Resource<webgpu::GpuComputePassEncoder>,
     ) -> wasmtime::Result<()> {
         let mut compute_pass = self.table.get_mut(&compute_pass)?.lock();
-        let mut compute_pass = compute_pass.take().unwrap();
+        let mut compute_pass = compute_pass.take().ok_or_else(encoder_ended)?;
         self.instance.compute_pass_end(&mut compute_pass)?;
         Ok(())
     }
@@ -1937,7 +1987,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         group_label: String,
     ) -> wasmtime::Result<()> {
         let mut compute_pass = self.table.get_mut(&compute_pass)?.lock();
-        let compute_pass = compute_pass.as_mut().unwrap();
+        let compute_pass = compute_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .compute_pass_push_debug_group(compute_pass, &group_label, 0)?;
         Ok(())
@@ -1948,7 +1998,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         compute_pass: Resource<webgpu::GpuComputePassEncoder>,
     ) -> wasmtime::Result<()> {
         let mut compute_pass = self.table.get_mut(&compute_pass)?.lock();
-        let compute_pass = compute_pass.as_mut().unwrap();
+        let compute_pass = compute_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance.compute_pass_pop_debug_group(compute_pass)?;
         Ok(())
     }
@@ -1959,7 +2009,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         label: String,
     ) -> wasmtime::Result<()> {
         let mut compute_pass = self.table.get_mut(&compute_pass)?.lock();
-        let compute_pass = compute_pass.as_mut().unwrap();
+        let compute_pass = compute_pass.as_mut().ok_or_else(encoder_ended)?;
         self.instance
             .compute_pass_insert_debug_marker(compute_pass, &label, 0)?;
         Ok(())
@@ -1974,14 +2024,15 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         dynamic_offsets_data_start: Option<webgpu::GpuSize64>,
         dynamic_offsets_data_length: Option<webgpu::GpuSize32>,
     ) -> wasmtime::Result<Result<(), webgpu::SetBindGroupError>> {
-        let bind_group = bind_group.map(|bind_group| *self.table.get(&bind_group).unwrap());
+        let bind_group = bind_group
+            .map(|bind_group| self.table.get(&bind_group).copied())
+            .transpose()?;
         let mut compute_pass = self.table.get_mut(&compute_pass)?.lock();
-        let compute_pass = compute_pass.as_mut().unwrap();
+        let compute_pass = compute_pass.as_mut().ok_or_else(encoder_ended)?;
         // https://www.w3.org/TR/webgpu/#programmable-passes
 
-        let dynamic_offsets_data = dynamic_offsets_data.unwrap_or_default();
         let dynamic_offsets = match dynamic_offsets(
-            &dynamic_offsets_data,
+            dynamic_offsets_data.as_deref(),
             dynamic_offsets_data_start,
             dynamic_offsets_data_length,
         ) {
@@ -2139,7 +2190,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
             .map(|d| d.to_core(self.table))
             .unwrap_or(wgpu_types::RenderBundleDescriptor::default());
         let mut bundle_encoder_lock = self.table.get_mut(&bundle_encoder)?.lock();
-        let mut bundle_encoder = bundle_encoder_lock.take().unwrap();
+        let mut bundle_encoder = bundle_encoder_lock.take().ok_or_else(encoder_ended)?;
         drop(bundle_encoder_lock);
         let (render_bundle, err) = self.instance.render_bundle_encoder_finish(
             &mut bundle_encoder.render_bundle_encoder,
@@ -2197,14 +2248,15 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         dynamic_offsets_data_start: Option<webgpu::GpuSize64>,
         dynamic_offsets_data_length: Option<webgpu::GpuSize32>,
     ) -> wasmtime::Result<Result<(), webgpu::SetBindGroupError>> {
-        let bind_group_id = bind_group.map(|bind_group| *self.table.get(&bind_group).unwrap());
+        let bind_group_id = bind_group
+            .map(|bind_group| self.table.get(&bind_group).copied())
+            .transpose()?;
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
-        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
 
         // https://www.w3.org/TR/webgpu/#programmable-passes
-         let dynamic_offsets_data = dynamic_offsets_data.unwrap_or_default();
         let dynamic_offsets = match dynamic_offsets(
-            &dynamic_offsets_data,
+            dynamic_offsets_data.as_deref(),
             dynamic_offsets_data_start,
             dynamic_offsets_data_length,
         ) {
@@ -2232,7 +2284,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         let pipeline = self.table.get(&pipeline)?;
         let pipeline_id = pipeline.render_pipeline_id;
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
-        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
         let result = self.instance.render_bundle_encoder_set_pipeline(
             &mut bundle_encoder.render_bundle_encoder,
             pipeline_id,
@@ -2253,7 +2305,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let buffer_id = self.table.get(&buffer)?.buffer_id;
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
-        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
         // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
         let result = self.instance.render_bundle_encoder_set_index_buffer(
             &mut bundle_encoder.render_bundle_encoder,
@@ -2281,7 +2333,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
             None => None,
         };
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
-        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
         // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
         let result = self.instance.render_bundle_encoder_set_vertex_buffer(
             &mut bundle_encoder.render_bundle_encoder,
@@ -2305,7 +2357,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         first_instance: Option<webgpu::GpuSize32>,
     ) -> wasmtime::Result<()> {
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
-        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
         // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
         let result = self.instance.render_bundle_encoder_draw(
             &mut bundle_encoder.render_bundle_encoder,
@@ -2330,7 +2382,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         first_instance: Option<webgpu::GpuSize32>,
     ) -> wasmtime::Result<()> {
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
-        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
         // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
         let result = self.instance.render_bundle_encoder_draw_indexed(
             &mut bundle_encoder.render_bundle_encoder,
@@ -2354,7 +2406,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let indirect_buffer = self.table.get(&indirect_buffer)?.buffer_id;
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
-        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
         let result = self.instance.render_bundle_encoder_draw_indirect(
             &mut bundle_encoder.render_bundle_encoder,
             indirect_buffer,
@@ -2374,7 +2426,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<()> {
         let indirect_buffer = self.table.get(&indirect_buffer)?.buffer_id;
         let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
-        let bundle_encoder = bundle_encoder.as_mut().unwrap();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
         let result = self.instance.render_bundle_encoder_draw_indexed_indirect(
             &mut bundle_encoder.render_bundle_encoder,
             indirect_buffer,
@@ -2547,18 +2599,35 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<Vec<u8>, webgpu::GetMappedRangeError>> {
         let buffer = self.table.get(&buffer)?;
+        // https://www.w3.org/TR/webgpu/#dom-gpubuffer-getmappedrange
+        // From the spec:
+        // > 2. If any of the following conditions are unsatisfied, throw an OperationError and return.
+        // >  - this.[[mapping]] is not null.
+        // >  - offset is a multiple of 8.
+        // >  - rangeSize is a multiple of 4.
+        // >  - offset ≥ this.[[mapping]].range[0].
+        // >  - offset + rangeSize ≤ this.[[mapping]].range[1].
+        // >  - [offset, offset + rangeSize) does not overlap another range in this.[[mapping]].views.
+        let operation_error = |message: String| {
+            Ok(Err(webgpu::GetMappedRangeError {
+                kind: webgpu::GetMappedRangeErrorKind::OperationError,
+                message,
+            }))
+        };
         if buffer.map_state != webgpu::GpuBufferMapState::Mapped {
-            todo!("Throw buffer not mapped error");
+            return operation_error("buffer is not mapped".to_string());
         }
-        let buffer_id = buffer.buffer_id;
-        let (ptr, len) = self
-            .instance
-            // https://www.w3.org/TR/webgpu/#gpubuffer
-            .buffer_get_mapped_range(buffer_id, offset.unwrap_or(0), size)?;
+        let (ptr, len) =
+            match self
+                .instance
+                .buffer_get_mapped_range(buffer.buffer_id, offset.unwrap_or(0), size)
+            {
+                Ok(range) => range,
+                Err(e) => return operation_error(e.to_string()),
+            };
+        // The range is mapped into host memory, so its length fits in a `usize`.
         let data = unsafe { slice::from_raw_parts(ptr.as_ptr(), len as usize) };
-        let mut output = vec![0; len as usize];
-        output.copy_from_slice(data);
-        Ok(Ok(output))
+        Ok(Ok(data.to_vec()))
     }
 
     fn get_mapped_range_set_with_copy(
@@ -2569,26 +2638,48 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         size: Option<webgpu::GpuSize64>,
     ) -> wasmtime::Result<Result<(), webgpu::GetMappedRangeError>> {
         let buffer = self.table.get(&buffer)?;
+        // https://www.w3.org/TR/webgpu/#dom-gpubuffer-getmappedrange
+        // From the spec:
+        // > 2. If any of the following conditions are unsatisfied, throw an OperationError and return.
+        // >  - this.[[mapping]] is not null.
+        // >  - offset is a multiple of 8.
+        // >  - rangeSize is a multiple of 4.
+        // >  - offset ≥ this.[[mapping]].range[0].
+        // >  - offset + rangeSize ≤ this.[[mapping]].range[1].
+        // >  - [offset, offset + rangeSize) does not overlap another range in this.[[mapping]].views.
+        let operation_error = |message: String| {
+            Ok(Err(webgpu::GetMappedRangeError {
+                kind: webgpu::GetMappedRangeErrorKind::OperationError,
+                message,
+            }))
+        };
         if buffer.map_state != webgpu::GpuBufferMapState::Mapped {
-            todo!("Throw buffer not mapped error");
+            return operation_error("buffer is not mapped".to_string());
         }
-        let buffer_id = buffer.buffer_id;
-        let (ptr, len) = self
-            .instance
-            // https://www.w3.org/TR/webgpu/#gpubuffer
-            .buffer_get_mapped_range(buffer_id, offset.unwrap_or(0), size)?;
-        let buffer = unsafe { slice::from_raw_parts_mut(ptr.as_ptr(), len as usize) };
-        if data.len() != buffer.len() {
+        let (ptr, len) =
+            match self
+                .instance
+                .buffer_get_mapped_range(buffer.buffer_id, offset.unwrap_or(0), size)
+            {
+                Ok(range) => range,
+                Err(e) => return operation_error(e.to_string()),
+            };
+        // The range is mapped into host memory, so its length fits in a `usize`.
+        let range = unsafe { slice::from_raw_parts_mut(ptr.as_ptr(), len as usize) };
+        // Like `TypedArray.set` on the range: `data` fills its start, and a `RangeError` is thrown if it doesn't fit.
+        // https://tc39.es/ecma262/#sec-settypedarrayfromtypedarray
+        // From the spec:
+        // > 14. If sourceLength + targetOffset > targetLength, throw a RangeError exception.
+        let Some(range) = range.get_mut(..data.len()) else {
             return Ok(Err(webgpu::GetMappedRangeError {
                 kind: webgpu::GetMappedRangeErrorKind::RangeError,
                 message: format!(
-                    "data length {} does not match mapped range length {}",
+                    "data length {} is longer than the mapped range length {len}",
                     data.len(),
-                    buffer.len()
                 ),
             }));
-        }
-        buffer.copy_from_slice(&data);
+        };
+        range.copy_from_slice(&data);
         Ok(Ok(()))
     }
 
@@ -2666,11 +2757,13 @@ impl<T: Send> webgpu::HostGpuBufferWithStore<T> for crate::HasWasiWebGpuCtx {
                     let _ = sender.send(result);
                 })),
             };
-            ctx.instance.buffer_map_async(buffer_id, offset, size, op)?;
+            ctx.instance
+                .buffer_map_async(buffer_id, offset, size, op)
+                .unwrap();
             ctx.request_poll();
             Ok(receiver)
         })?;
-        receiver.await??;
+        receiver.await?.unwrap();
 
         accessor.with(|mut access| -> wasmtime::Result<_> {
             let ctx = access.get();
@@ -2736,7 +2829,6 @@ impl<T: Send> webgpu::HostGpuWithStore<T> for crate::HasWasiWebGpuCtx {
             let adapter = ctx
                 .instance
                 .request_adapter(&options, wgpu_types::Backends::all(), None);
-
             Ok(match adapter {
                 Ok(adapter) => {
                     let adapter = Arc::new(adapter);
@@ -3225,68 +3317,34 @@ impl<'a> webgpu::HostGpuSupportedLimits for WasiWebGpuCtx<'a> {
     }
 }
 
-
-/// Returns the `[start, start + length)` sub-slice of a guest-supplied list, or `None` if that
-/// range does not fit. A missing `start` means 0 and a missing `length` means "to the end".
-///
-/// `start` and `length` come from the guest, so this must not panic, overflow, or truncate on
-/// any host pointer width.
-fn guest_sub_slice<T>(data: &[T], start: Option<u64>, length: Option<u64>) -> Option<&[T]> {
-    let start = usize::try_from(start.unwrap_or(0)).ok()?;
-    let rest = data.get(start..)?;
-    match length {
-        None => Some(rest),
-        Some(length) => rest.get(..usize::try_from(length).ok()?),
-    }
-}
-
-/// Selects the bytes of `data` that `write-buffer-with-copy` writes.
-///
-/// From the spec, an `OperationError` is thrown unless `dataOffset + contentsSize <= dataSize`
-/// and `contentsSize` is a multiple of 4 bytes.
-/// https://www.w3.org/TR/webgpu/#dom-gpuqueue-writebuffer
-fn write_buffer_data(
-    data: &[u8],
-    data_offset: Option<u64>,
-    size: Option<u64>,
-) -> Result<&[u8], webgpu::WriteBufferError> {
-    let operation_error = |message| webgpu::WriteBufferError {
-        kind: webgpu::WriteBufferErrorKind::OperationError,
-        message,
-    };
-    let contents = guest_sub_slice(data, data_offset, size).ok_or_else(|| {
-        let data_offset = data_offset.unwrap_or(0);
-        operation_error(match size {
-            Some(size) => format!(
-                "data-offset {data_offset} + size {size} is out of range for data of length {}",
-                data.len()
-            ),
-            None => format!(
-                "data-offset {data_offset} is out of range for data of length {}",
-                data.len()
-            ),
-        })
-    })?;
-    if contents.len() % 4 != 0 {
-        return Err(operation_error(format!(
-            "write size {} is not a multiple of 4 bytes",
-            contents.len()
-        )));
-    }
-    Ok(contents)
+// The trap for a call on a pass or bundle encoder after `end` or `finish` has released it.
+fn encoder_ended() -> wasmtime::Error {
+    wasmtime::Error::msg("the encoder has already ended")
 }
 
 /// Selects the dynamic offsets that `set-bind-group` uses.
 ///
-/// From the spec, a `RangeError` is thrown if
-/// `dynamicOffsetsDataStart + dynamicOffsetsDataLength > dynamicOffsetsData.length`.
-/// https://www.w3.org/TR/webgpu/#programmable-passes
+/// https://www.w3.org/TR/webgpu/#dom-gpubindingcommandsmixin-setbindgroup-index-bindgroup-dynamicoffsetsdata-dynamicoffsetsdatastart-dynamicoffsetsdatalength
+/// From the spec:
+/// > 1. If any of the following requirements are unmet, throw a RangeError and return.
+/// >  - dynamicOffsetsDataStart must be ≥ 0.
+/// >  - dynamicOffsetsDataStart + dynamicOffsetsDataLength must be ≤ dynamicOffsetsData.length.
+///
+/// `start` and `length` come from the guest, so they are converted and sliced with checked operations instead of panicking.
 fn dynamic_offsets(
-    data: &[webgpu::GpuBufferDynamicOffset],
+    data: Option<&[webgpu::GpuBufferDynamicOffset]>,
     start: Option<u64>,
     length: Option<u32>,
 ) -> Result<&[webgpu::GpuBufferDynamicOffset], webgpu::SetBindGroupError> {
-    guest_sub_slice(data, start, length.map(u64::from)).ok_or_else(|| {
+    let data = data.unwrap_or(&[]);
+    let offsets = usize::try_from(start.unwrap_or(0))
+        .ok()
+        .and_then(|start| data.get(start..))
+        .and_then(|rest| match length {
+            None => Some(rest),
+            Some(length) => rest.get(..usize::try_from(length).ok()?),
+        });
+    offsets.ok_or_else(|| {
         let start = start.unwrap_or(0);
         webgpu::SetBindGroupError {
             kind: webgpu::SetBindGroupErrorKind::RangeError,
@@ -3309,82 +3367,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn guest_sub_slice_in_range() {
-        let data = [0u8, 1, 2, 3, 4, 5, 6, 7];
-        assert_eq!(guest_sub_slice(&data, None, None), Some(&data[..]));
-        assert_eq!(guest_sub_slice(&data, Some(2), None), Some(&data[2..]));
-        assert_eq!(guest_sub_slice(&data, Some(2), Some(4)), Some(&data[2..6]));
-        assert_eq!(guest_sub_slice(&data, None, Some(3)), Some(&data[..3]));
-        assert_eq!(guest_sub_slice(&data, Some(8), None), Some(&data[8..]));
-        assert_eq!(guest_sub_slice(&data, Some(8), Some(0)), Some(&data[8..]));
-    }
-
-    #[test]
-    fn guest_sub_slice_out_of_range() {
-        let data = [0u8; 8];
-        assert_eq!(guest_sub_slice(&data, Some(9), None), None);
-        assert_eq!(guest_sub_slice(&data, None, Some(9)), None);
-        assert_eq!(guest_sub_slice(&data, Some(4), Some(5)), None);
-        // Values that would overflow `offset + size`, or truncate as `usize` on 32-bit hosts.
-        assert_eq!(guest_sub_slice(&data, Some(u64::MAX), None), None);
-        assert_eq!(guest_sub_slice(&data, Some(4), Some(u64::MAX)), None);
-        assert_eq!(guest_sub_slice(&data, Some(u64::MAX), Some(u64::MAX)), None);
-        assert_eq!(guest_sub_slice(&data, Some(1 << 32), None), None);
-        assert_eq!(guest_sub_slice(&data, None, Some((1 << 32) + 4)), None);
-    }
-
-    fn assert_write_buffer_operation_error(result: Result<&[u8], webgpu::WriteBufferError>) {
-        match result {
-            Err(webgpu::WriteBufferError {
-                kind: webgpu::WriteBufferErrorKind::OperationError,
-                ..
-            }) => {}
-            Ok(data) => panic!("expected an error, got {} bytes", data.len()),
-        }
-    }
-
-    #[test]
-    fn write_buffer_data_in_range() {
-        let data: Vec<u8> = (0..16).collect();
-        assert_eq!(write_buffer_data(&data, None, None).unwrap(), &data[..]);
-        assert_eq!(write_buffer_data(&data, Some(4), None).unwrap(), &data[4..]);
-        assert_eq!(
-            write_buffer_data(&data, Some(4), Some(8)).unwrap(),
-            &data[4..12]
-        );
-        assert_eq!(
-            write_buffer_data(&data, Some(16), None).unwrap(),
-            &[] as &[u8]
-        );
-    }
-
-    #[test]
-    fn write_buffer_data_out_of_range() {
-        let data = vec![0u8; 16];
-        assert_write_buffer_operation_error(write_buffer_data(&data, Some(17), None));
-        assert_write_buffer_operation_error(write_buffer_data(&data, None, Some(20)));
-        assert_write_buffer_operation_error(write_buffer_data(&data, Some(8), Some(12)));
-        assert_write_buffer_operation_error(write_buffer_data(&data, Some(u64::MAX), None));
-        assert_write_buffer_operation_error(write_buffer_data(&data, Some(4), Some(u64::MAX)));
-    }
-
-    #[test]
-    fn write_buffer_data_unaligned_size() {
-        let data = vec![0u8; 16];
-        assert_write_buffer_operation_error(write_buffer_data(&data, None, Some(3)));
-        assert_write_buffer_operation_error(write_buffer_data(&data, Some(1), None));
-        assert_write_buffer_operation_error(write_buffer_data(&data[..15], None, None));
-    }
-
-    #[test]
     fn dynamic_offsets_in_range() {
         let data = [0u32, 256, 512, 768];
-        assert_eq!(dynamic_offsets(&data, None, None).unwrap(), &data[..]);
         assert_eq!(
-            dynamic_offsets(&data, Some(1), Some(2)).unwrap(),
+            dynamic_offsets(Some(&data[..]), None, None).unwrap(),
+            &data[..]
+        );
+        assert_eq!(
+            dynamic_offsets(Some(&data[..]), Some(1), Some(2)).unwrap(),
             &data[1..3]
         );
-        assert_eq!(dynamic_offsets(&[], None, None).unwrap(), &[] as &[u32]);
+        assert_eq!(dynamic_offsets(None, None, None).unwrap(), &[] as &[u32]);
     }
 
     #[test]
@@ -3394,9 +3387,12 @@ mod tests {
             (Some(5), None),
             (Some(2), Some(3)),
             (None, Some(5)),
+            // Values that would overflow `start + length`, or truncate as `usize` on 32-bit hosts.
+            (Some(u64::MAX), None),
             (Some(u64::MAX), Some(u32::MAX)),
+            (Some(1 << 32), None),
         ] {
-            match dynamic_offsets(&data, start, length) {
+            match dynamic_offsets(Some(&data[..]), start, length) {
                 Err(webgpu::SetBindGroupError {
                     kind: webgpu::SetBindGroupErrorKind::RangeError,
                     ..
@@ -3404,6 +3400,470 @@ mod tests {
                 other => panic!("expected a range error for {start:?}/{length:?}, got {other:?}"),
             }
         }
-        assert!(dynamic_offsets(&[], Some(1), None).is_err());
+        assert!(dynamic_offsets(None, Some(1), None).is_err());
+    }
+
+    fn noop_device() -> (
+        Arc<wgpu_core::global::Global>,
+        wgpu_core::id::DeviceId,
+        wgpu_core::id::QueueId,
+    ) {
+        let instance = Arc::new(wgpu_core::global::Global::new(
+            "test",
+            wgpu_types::InstanceDescriptor {
+                backends: wgpu_types::Backends::NOOP,
+                backend_options: wgpu_types::BackendOptions {
+                    noop: wgpu_types::NoopBackendOptions::enabled(),
+                    ..Default::default()
+                },
+                ..wgpu_types::InstanceDescriptor::new_without_display_handle()
+            },
+            None,
+        ));
+        let adapter = instance
+            .request_adapter(
+                &wgpu_types::RequestAdapterOptions::default(),
+                wgpu_types::Backends::NOOP,
+                None,
+            )
+            .unwrap();
+        let (device, queue) = instance
+            .adapter_request_device(
+                adapter,
+                &wgpu_types::DeviceDescriptor::default(),
+                None,
+                None,
+            )
+            .unwrap();
+        (instance, device, queue)
+    }
+
+    #[test]
+    fn mapped_range_on_an_unmapped_buffer_is_an_operation_error() {
+        let (instance, device, _queue) = noop_device();
+        let (buffer_id, err) = instance.device_create_buffer(
+            device,
+            &wgpu_types::BufferDescriptor {
+                label: None,
+                size: 16,
+                usage: wgpu_types::BufferUsages::MAP_WRITE,
+                mapped_at_creation: false,
+            },
+            None,
+        );
+        assert!(err.is_none(), "{err:?}");
+        let mut table = wasmtime::component::ResourceTable::new();
+        let buffer = table
+            .push(Buffer {
+                buffer_id,
+                size: 16,
+                usage: wgpu_types::BufferUsages::MAP_WRITE,
+                map_state: webgpu::GpuBufferMapState::Unmapped,
+            })
+            .unwrap();
+        let options = Default::default();
+        let mut ctx = WasiWebGpuCtx {
+            instance: &instance,
+            table: &mut table,
+            poll_notifier: &|_: crate::PollDevicesRequest| {},
+            options: &options,
+        };
+        let borrow = || Resource::<Buffer>::new_borrow(buffer.rep());
+
+        let set = webgpu::HostGpuBuffer::get_mapped_range_set_with_copy(
+            &mut ctx,
+            borrow(),
+            vec![0; 16],
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                set,
+                Err(webgpu::GetMappedRangeError {
+                    kind: webgpu::GetMappedRangeErrorKind::OperationError,
+                    ..
+                })
+            ),
+            "{set:?}"
+        );
+        let get =
+            webgpu::HostGpuBuffer::get_mapped_range_get_with_copy(&mut ctx, borrow(), None, None)
+                .unwrap();
+        assert!(
+            matches!(
+                get,
+                Err(webgpu::GetMappedRangeError {
+                    kind: webgpu::GetMappedRangeErrorKind::OperationError,
+                    ..
+                })
+            ),
+            "{get:?}"
+        );
+    }
+
+    #[test]
+    fn using_an_ended_pass_traps() {
+        let (instance, device, _queue) = noop_device();
+        let (encoder, err) = instance.device_create_command_encoder(
+            device,
+            &wgpu_types::CommandEncoderDescriptor::default(),
+            None,
+        );
+        assert!(err.is_none(), "{err:?}");
+        let (pass, err) = instance.command_encoder_begin_compute_pass(
+            encoder,
+            &wgpu_core::command::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            },
+        );
+        assert!(err.is_none(), "{err:?}");
+        let mut table = wasmtime::component::ResourceTable::new();
+        let pass = table.push(ComputePassEncoder::new(pass)).unwrap();
+        let options = Default::default();
+        let mut ctx = WasiWebGpuCtx {
+            instance: &instance,
+            table: &mut table,
+            poll_notifier: &|_: crate::PollDevicesRequest| {},
+            options: &options,
+        };
+        let borrow = || Resource::<ComputePassEncoder>::new_borrow(pass.rep());
+
+        webgpu::HostGpuComputePassEncoder::end(&mut ctx, borrow()).unwrap();
+        let err = webgpu::HostGpuComputePassEncoder::set_bind_group(
+            &mut ctx,
+            borrow(),
+            0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "the encoder has already ended");
+        let err = webgpu::HostGpuComputePassEncoder::end(&mut ctx, borrow()).unwrap_err();
+        assert_eq!(err.to_string(), "the encoder has already ended");
+    }
+
+    fn mapped_buffer(
+        instance: &wgpu_core::global::Global,
+        device: wgpu_core::id::DeviceId,
+        size: u64,
+    ) -> Buffer {
+        let usage = wgpu_types::BufferUsages::MAP_WRITE | wgpu_types::BufferUsages::COPY_SRC;
+        let (buffer_id, err) = instance.device_create_buffer(
+            device,
+            &wgpu_types::BufferDescriptor {
+                label: None,
+                size,
+                usage,
+                mapped_at_creation: true,
+            },
+            None,
+        );
+        assert!(err.is_none(), "{err:?}");
+        Buffer {
+            buffer_id,
+            size,
+            usage,
+            map_state: webgpu::GpuBufferMapState::Mapped,
+        }
+    }
+
+    fn assert_mapped_range_error<T: std::fmt::Debug>(
+        result: Result<T, webgpu::GetMappedRangeError>,
+        kind: webgpu::GetMappedRangeErrorKind,
+    ) {
+        match result {
+            Err(e) if std::mem::discriminant(&e.kind) == std::mem::discriminant(&kind) => {}
+            other => panic!("expected {kind:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mapped_range_set_fills_the_start_of_the_range() {
+        let (instance, device, _queue) = noop_device();
+        let mut table = wasmtime::component::ResourceTable::new();
+        let buffer = table.push(mapped_buffer(&instance, device, 16)).unwrap();
+        let options = Default::default();
+        let mut ctx = WasiWebGpuCtx {
+            instance: &instance,
+            table: &mut table,
+            poll_notifier: &|_: crate::PollDevicesRequest| {},
+            options: &options,
+        };
+        let borrow = || Resource::<Buffer>::new_borrow(buffer.rep());
+
+        webgpu::HostGpuBuffer::get_mapped_range_set_with_copy(
+            &mut ctx,
+            borrow(),
+            vec![1, 2, 3, 4],
+            Some(8),
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        let range = webgpu::HostGpuBuffer::get_mapped_range_get_with_copy(
+            &mut ctx,
+            borrow(),
+            Some(8),
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(range[..4], [1, 2, 3, 4]);
+        assert_eq!(range.len(), 8);
+
+        assert_mapped_range_error(
+            webgpu::HostGpuBuffer::get_mapped_range_set_with_copy(
+                &mut ctx,
+                borrow(),
+                vec![0; 12],
+                Some(8),
+                None,
+            )
+            .unwrap(),
+            webgpu::GetMappedRangeErrorKind::RangeError,
+        );
+    }
+
+    #[test]
+    fn invalid_mapped_range_is_an_operation_error() {
+        let (instance, device, _queue) = noop_device();
+        let mut table = wasmtime::component::ResourceTable::new();
+        let buffer = table.push(mapped_buffer(&instance, device, 16)).unwrap();
+        let options = Default::default();
+        let mut ctx = WasiWebGpuCtx {
+            instance: &instance,
+            table: &mut table,
+            poll_notifier: &|_: crate::PollDevicesRequest| {},
+            options: &options,
+        };
+        let borrow = || Resource::<Buffer>::new_borrow(buffer.rep());
+
+        // Past the end, an offset that isn't a multiple of 8, and a size that
+        // isn't a multiple of 4.
+        for (offset, size) in [(Some(32), None), (Some(4), None), (None, Some(6))] {
+            assert_mapped_range_error(
+                webgpu::HostGpuBuffer::get_mapped_range_get_with_copy(
+                    &mut ctx,
+                    borrow(),
+                    offset,
+                    size,
+                )
+                .unwrap(),
+                webgpu::GetMappedRangeErrorKind::OperationError,
+            );
+            assert_mapped_range_error(
+                webgpu::HostGpuBuffer::get_mapped_range_set_with_copy(
+                    &mut ctx,
+                    borrow(),
+                    vec![],
+                    offset,
+                    size,
+                )
+                .unwrap(),
+                webgpu::GetMappedRangeErrorKind::OperationError,
+            );
+        }
+    }
+
+    /// Runs `f` inside a validation error scope and returns the error the
+    /// scope caught.
+    fn validation_error(
+        error_handler: &ErrorHandler,
+        f: impl FnOnce() -> wasmtime::Result<()>,
+    ) -> Option<webgpu::GpuError> {
+        error_handler.push_scope(webgpu::GpuErrorFilter::Validation);
+        f().unwrap();
+        error_handler.pop_scope().unwrap()
+    }
+
+    #[test]
+    fn submitting_a_command_buffer_twice_is_a_validation_error() {
+        let (instance, device, queue) = noop_device();
+        let (encoder, err) = instance.device_create_command_encoder(
+            device,
+            &wgpu_types::CommandEncoderDescriptor::default(),
+            None,
+        );
+        assert!(err.is_none(), "{err:?}");
+        let (command_buffer, err) = instance.command_encoder_finish(
+            encoder,
+            &wgpu_types::CommandBufferDescriptor::default(),
+            None,
+        );
+        assert!(err.is_none(), "{err:?}");
+        let mut table = wasmtime::component::ResourceTable::new();
+        let command_buffer = table.push(command_buffer).unwrap();
+        let error_handler = Arc::new(ErrorHandler::default());
+        let queue = table
+            .push(Queue {
+                queue: Arc::new(queue),
+                error_handler: Arc::clone(&error_handler),
+            })
+            .unwrap();
+        let options = Default::default();
+        let mut ctx = WasiWebGpuCtx {
+            instance: &instance,
+            table: &mut table,
+            poll_notifier: &|_: crate::PollDevicesRequest| {},
+            options: &options,
+        };
+        let submit = |ctx: &mut WasiWebGpuCtx| {
+            webgpu::HostGpuQueue::submit(
+                ctx,
+                Resource::new_borrow(queue.rep()),
+                vec![Resource::new_borrow(command_buffer.rep())],
+            )
+        };
+
+        assert!(validation_error(&error_handler, || submit(&mut ctx)).is_none());
+        let err = validation_error(&error_handler, || submit(&mut ctx));
+        assert!(err.is_some(), "the second submit wasn't rejected");
+    }
+
+    #[test]
+    fn write_buffer_to_an_unaligned_offset_is_a_validation_error() {
+        let (instance, device, queue) = noop_device();
+        let (buffer_id, err) = instance.device_create_buffer(
+            device,
+            &wgpu_types::BufferDescriptor {
+                label: None,
+                size: 16,
+                usage: wgpu_types::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+            None,
+        );
+        assert!(err.is_none(), "{err:?}");
+        let mut table = wasmtime::component::ResourceTable::new();
+        let buffer = table
+            .push(Buffer {
+                buffer_id,
+                size: 16,
+                usage: wgpu_types::BufferUsages::COPY_DST,
+                map_state: webgpu::GpuBufferMapState::Unmapped,
+            })
+            .unwrap();
+        let error_handler = Arc::new(ErrorHandler::default());
+        let queue_entry = table
+            .push(Queue {
+                queue: Arc::new(queue),
+                error_handler: Arc::clone(&error_handler),
+            })
+            .unwrap();
+        let options = Default::default();
+        let mut ctx = WasiWebGpuCtx {
+            instance: &instance,
+            table: &mut table,
+            poll_notifier: &|_: crate::PollDevicesRequest| {},
+            options: &options,
+        };
+        let mut write = |buffer_offset| {
+            webgpu::HostGpuQueue::write_buffer_with_copy(
+                &mut ctx,
+                Resource::new_borrow(queue_entry.rep()),
+                Resource::new_borrow(buffer.rep()),
+                buffer_offset,
+                vec![0; 4],
+                None,
+                None,
+            )
+            .map(|result| result.unwrap())
+        };
+
+        assert!(validation_error(&error_handler, || write(4)).is_none());
+        assert!(validation_error(&error_handler, || write(2)).is_some());
+        assert!(validation_error(&error_handler, || write(16)).is_some());
+    }
+
+    #[test]
+    fn write_buffer_data_range_is_checked() {
+        let (instance, device, queue) = noop_device();
+        let (buffer_id, err) = instance.device_create_buffer(
+            device,
+            &wgpu_types::BufferDescriptor {
+                label: None,
+                size: 16,
+                usage: wgpu_types::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+            None,
+        );
+        assert!(err.is_none(), "{err:?}");
+        let mut table = wasmtime::component::ResourceTable::new();
+        let buffer = table
+            .push(Buffer {
+                buffer_id,
+                size: 16,
+                usage: wgpu_types::BufferUsages::COPY_DST,
+                map_state: webgpu::GpuBufferMapState::Unmapped,
+            })
+            .unwrap();
+        let queue = table
+            .push(Queue {
+                queue: Arc::new(queue),
+                error_handler: Arc::new(ErrorHandler::default()),
+            })
+            .unwrap();
+        let options = Default::default();
+        let mut ctx = WasiWebGpuCtx {
+            instance: &instance,
+            table: &mut table,
+            poll_notifier: &|_: crate::PollDevicesRequest| {},
+            options: &options,
+        };
+        let mut write = |data: Vec<u8>, data_offset, size| {
+            webgpu::HostGpuQueue::write_buffer_with_copy(
+                &mut ctx,
+                Resource::new_borrow(queue.rep()),
+                Resource::new_borrow(buffer.rep()),
+                0,
+                data,
+                data_offset,
+                size,
+            )
+            .unwrap()
+        };
+
+        for (data_offset, size) in [
+            (None, None),
+            (Some(4), None),
+            (Some(4), Some(8)),
+            (Some(16), None),
+        ] {
+            let result = write(vec![0; 16], data_offset, size);
+            assert!(result.is_ok(), "{data_offset:?}/{size:?}: {result:?}");
+        }
+
+        for (len, data_offset, size) in [
+            // Out of range.
+            (16, Some(17), None),
+            (16, None, Some(20)),
+            (16, Some(8), Some(12)),
+            // Values that would overflow `data_offset + size`, or truncate as `usize` on 32-bit hosts.
+            (16, Some(u64::MAX), None),
+            (16, Some(4), Some(u64::MAX)),
+            (16, Some(1 << 32), None),
+            // Not a multiple of 4 bytes.
+            (16, None, Some(3)),
+            (16, Some(1), None),
+            (15, None, None),
+        ] {
+            let result = write(vec![0; len], data_offset, size);
+            assert!(
+                matches!(
+                    result,
+                    Err(webgpu::WriteBufferError {
+                        kind: webgpu::WriteBufferErrorKind::OperationError,
+                        ..
+                    })
+                ),
+                "{len}/{data_offset:?}/{size:?}: {result:?}"
+            );
+        }
     }
 }
