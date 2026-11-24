@@ -1,0 +1,20 @@
+{
+    "type": "module",
+    "scripts": {
+        "create-guest": "npm run generate-types && npm run generate-spec-list && npm run rollup && npm run jco",
+        "generate-spec-list": "node ./generate-spec-list.js",
+        "rollup": "rollup --config ./rollup.config.js",
+        "jco": "mkdir -p out && jco componentize ./temp/tests.js --wit ../wit -n imports -o ./out/tests.wasm --backend qjs",
+        "generate-types": "rm -rf types && jco guest-types ../wit --out-dir=types",
+        "check": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@bytecodealliance/jco": "^1.42.0",
+        "@rollup/plugin-node-resolve": "^16.0.3",
+        "@rollup/plugin-typescript": "^12.1.1",
+        "@wasi-gfx/js-webgpu": "0.4.1",
+        "@webgpu/types": "^0.1.70",
+        "rollup": "^4.12.0",
+        "typescript": "~5.2.2"
+    }
+}

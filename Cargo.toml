@@ -5,6 +5,7 @@ members = [
     "crates/wasi-webgpu-wasmtime",
     "crates/frame-buffer-wasmtime",
     "crates/surface-wasmtime",
+    "tests/webgpu-spec",
     "examples/apps/rectangle_frame_buffer",
     "examples/apps/triangle",
     "examples/apps/skybox",
@@ -25,12 +26,12 @@ wasi-webgpu-wasmtime = { path = "crates/wasi-webgpu-wasmtime", version = "0.5.2"
 
 clap = { version = "4.3", features = ["derive"] }
 wasmtime = ">=46, <=50"
+wasmtime-wasi = ">=46, <=50"
 anyhow = "1.0"
 winit = { version = "0.30", features = [ "android-native-activity" ] }
 wgpu-core = "30"
 wgpu-types = "30"
 raw-window-handle = "0.6"
-async-trait = "0.1"
 rand = "0.9"
 futures = "0.3"
 futures-lite = "2"
@@ -41,3 +42,6 @@ log = "0.4"
 async-broadcast = "0.7"
 wit-bindgen = { version = "0.57", features = ["futures-stream"] }
 bytemuck = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+colored = "2"
