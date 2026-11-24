@@ -16,6 +16,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   prepare:
@@ -79,3 +80,8 @@ jobs:
             - Publish crates to crates.io
             - Create git tag `v${{ steps.version.outputs.version }}`
             - Create the GitHub release
+
+      - name: Run the CTS on the release branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run cts.yml --repo "$GITHUB_REPOSITORY" --ref "release/${{ steps.version.outputs.version }}"

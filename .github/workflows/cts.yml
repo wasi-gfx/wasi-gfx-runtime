@@ -1,0 +1,84 @@
+name: WebGPU CTS
+
+# The CTS is slow, so it only runs when started by hand:
+# Actions tab -> "WebGPU CTS" -> "Run workflow", or `gh workflow run cts.yml --ref <branch>`.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cts:
+    name: WebGPU CTS
+    # ubuntu-26.04 provides the LLVM 22 (`libLLVM.so.22.1`) that the pinned Mesa build links against.
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          submodules: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install Vulkan loader and Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan1 xvfb libxkbcommon-x11-0
+
+      # `expectations.json` is only meaningful against one exact driver, so pin
+      # lavapipe instead of taking whatever Mesa the runner image ships. This is
+      # the build wgpu's CI uses (see wgpu's .github/actions/install-mesa).
+      - name: Install pinned Mesa (lavapipe)
+        env:
+          MESA_VERSION: 26.2.6
+          CI_BINARY_BUILD: build31
+          MESA_SHA256: 334ebc6c9ca5c5659f36536e987fe64d741cef750b64a17080a27b4646257460
+        run: |
+          set -e
+          cd "$RUNNER_TEMP"
+          curl -L --fail --retry 5 --retry-all-errors -o mesa.tar.xz \
+            "https://github.com/gfx-rs/ci-build/releases/download/$CI_BINARY_BUILD/mesa-$MESA_VERSION-linux-x86_64.tar.xz"
+          echo "$MESA_SHA256  mesa.tar.xz" | sha256sum --check
+          mkdir mesa
+          tar xpf mesa.tar.xz -C mesa
+
+          # The archive's own ICD file points at its build directory, so write one that points here.
+          cat > icd.json <<EOF
+          {
+            "ICD": {
+              "api_version": "1.4.354",
+              "library_arch": "64",
+              "library_path": "$RUNNER_TEMP/mesa/lib/x86_64-linux-gnu/libvulkan_lvp.so"
+            },
+            "file_format_version": "1.0.1"
+          }
+          EOF
+
+          echo "VK_DRIVER_FILES=$RUNNER_TEMP/icd.json" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/mesa/lib/x86_64-linux-gnu/${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
+      - name: Run CTS
+        run: xvfb-run -a cargo test --locked --release --test cts
+
+      # The run rewrites expectations.json to match what this runner observed.
+      # To re-baseline, download it from here and commit it.
+      - name: Upload CTS results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cts-results
+          path: |
+            tests/webgpu-spec/results/expectations.json
+            tests/webgpu-spec/results/results.json
+          if-no-files-found: ignore

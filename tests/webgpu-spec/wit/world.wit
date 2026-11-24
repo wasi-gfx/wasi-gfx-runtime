@@ -1,0 +1,42 @@
+package wasi-gfx:webgpu-cts;
+
+world imports {
+    import wasi:webgpu/webgpu@0.3.0-rc.2;
+    import wasi:clocks/monotonic-clock@0.3.0;
+
+    export cts-tests;
+}
+
+interface cts-tests {
+    record spec-result {
+        tests: list<test-result>,
+    }
+
+    record test-result {
+        name: string,
+        cases: list<case-result>,
+    }
+
+    record case-result {
+        name: string,
+        status: case-result-status,
+        log: case-log,
+    }
+
+    record case-log {
+        message: string,
+        stack: option<string>,
+    }
+
+    enum case-result-status {
+        passed,
+        warned,
+        failed,
+        skipped,
+    }
+
+    list-specs: func() -> list<string>;
+    // TODO: consider changing error from `string` to `error-context`
+    /// Returns a list of tests. Each test can contain multiple cases
+    run-spec-tests: async func(name: string) -> result<spec-result, string>;
+}

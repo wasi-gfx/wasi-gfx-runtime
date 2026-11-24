@@ -46,6 +46,10 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
+      # `--all-targets` skips the CTS host, a `test = false` target.
+      - name: Run Clippy on the CTS host
+        run: cargo clippy --locked -p cts --test cts -- -D warnings
+
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -58,7 +62,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Run tests
-        run: cargo test --locked
+        run: cargo test --locked --workspace --exclude cts
 
   wasmtime-range:
     name: Check both ends of the wasmtime range

@@ -1,0 +1,19 @@
+{
+  "extends": "./cts/tsconfig.json",
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "typeRoots": ["./cts/node_modules", "./node_modules"],
+    "types": [
+      "@types/dom-mediacapture-transform",
+      "@webgpu/types",
+      "@types/jquery",
+      "@types/w3c-image-capture",
+      "@types/node"
+    ],
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "outDir": "temp"
+  },
+  "include": ["*.ts", "types/**/*.d.ts"]
+}

@@ -1,0 +1,21 @@
+[package]
+name = "cts"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[test]]
+name = "cts"
+harness = false
+test = false
+path = "host/host.rs"
+
+[dependencies]
+wasmtime.workspace = true
+# `p3` is only a default feature from some wasmtime-wasi releases on; the host needs it for wasi:clocks@0.3.0.
+wasmtime-wasi = { workspace = true, features = ["p3"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+colored.workspace = true
+wasi-webgpu-wasmtime = { path = "../../crates/wasi-webgpu-wasmtime" }
