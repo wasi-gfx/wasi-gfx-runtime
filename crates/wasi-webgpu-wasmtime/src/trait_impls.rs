@@ -7,9 +7,10 @@ use wasmtime::component::{Access, Accessor, FutureReader, Resource, StreamReader
 use crate::{
     to_core_conversions::ToCore,
     types::{
-        Buffer, CommandEncoder, ComputePassEncoder, ComputePipeline, Device, DeviceLost,
-        ErrorHandler, Queue, RenderBundleEncoder, RenderBundleEncoderInner, RenderPassEncoder,
-        RenderPipeline, Texture, WgslLanguageFeatures,
+        Buffer, CommandEncoder, CompilationInfo, CompilationMessage, ComputePassEncoder,
+        ComputePipeline, Device, DeviceLost, ErrorHandler, Queue, RenderBundleEncoder,
+        RenderBundleEncoderInner, RenderPassEncoder, RenderPipeline, ShaderModule, Texture,
+        WgslLanguageFeatures,
     },
     wasi::webgpu::webgpu,
     Owned, WasiWebGpuCtx, WasiWebGpuCtxView, PREFERRED_CANVAS_FORMAT,
@@ -224,9 +225,16 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
             None,
         );
 
+        let compilation_messages: Arc<[CompilationMessage]> = match &err {
+            Some(err) => Arc::new([CompilationMessage::from_error(err)]),
+            None => Arc::new([]),
+        };
         error_handler.handle_possible_error(err);
 
-        Ok(self.table.push(Owned::new(self.instance, shader))?)
+        Ok(self.table.push(ShaderModule {
+            shader_module_id: Owned::new(self.instance, shader),
+            compilation_messages,
+        })?)
     }
 
     fn create_render_pipeline(
@@ -856,10 +864,14 @@ impl<'a> webgpu::HostGpuShaderModule for WasiWebGpuCtx<'a> {
 
 impl<T: Send> webgpu::HostGpuShaderModuleWithStore<T> for crate::HasWasiWebGpuCtx {
     async fn get_compilation_info(
-        _accessor: &Accessor<T, Self>,
-        _shader: Resource<webgpu::GpuShaderModule>,
+        accessor: &Accessor<T, Self>,
+        shader: Resource<webgpu::GpuShaderModule>,
     ) -> wasmtime::Result<Resource<webgpu::GpuCompilationInfo>> {
-        todo!()
+        accessor.with(|mut access| {
+            let table = access.get().table;
+            let messages = Arc::clone(&table.get(&shader)?.compilation_messages);
+            Ok(table.push(CompilationInfo { messages })?)
+        })
     }
 }
 
@@ -2090,54 +2102,67 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
 impl<'a> webgpu::HostGpuCompilationMessage for WasiWebGpuCtx<'a> {
     fn message(
         &mut self,
-        _self_: Resource<webgpu::GpuCompilationMessage>,
+        message: Resource<webgpu::GpuCompilationMessage>,
     ) -> wasmtime::Result<String> {
-        todo!()
+        Ok(self.table.get(&message)?.message.clone())
     }
 
     fn type_(
         &mut self,
-        _self_: Resource<webgpu::GpuCompilationMessage>,
+        _message: Resource<webgpu::GpuCompilationMessage>,
     ) -> wasmtime::Result<webgpu::GpuCompilationMessageType> {
-        todo!()
+        // wgpu-core only reports errors, not warnings or info.
+        Ok(webgpu::GpuCompilationMessageType::Error)
     }
 
     fn line_num(
         &mut self,
-        _self_: Resource<webgpu::GpuCompilationMessage>,
+        message: Resource<webgpu::GpuCompilationMessage>,
     ) -> wasmtime::Result<u64> {
-        todo!()
+        Ok(self.table.get(&message)?.line_num)
     }
 
     fn line_pos(
         &mut self,
-        _self_: Resource<webgpu::GpuCompilationMessage>,
+        message: Resource<webgpu::GpuCompilationMessage>,
     ) -> wasmtime::Result<u64> {
-        todo!()
+        Ok(self.table.get(&message)?.line_pos)
     }
 
-    fn offset(&mut self, _self_: Resource<webgpu::GpuCompilationMessage>) -> wasmtime::Result<u64> {
-        todo!()
+    fn offset(
+        &mut self,
+        message: Resource<webgpu::GpuCompilationMessage>,
+    ) -> wasmtime::Result<u64> {
+        Ok(self.table.get(&message)?.offset)
     }
 
-    fn length(&mut self, _self_: Resource<webgpu::GpuCompilationMessage>) -> wasmtime::Result<u64> {
-        todo!()
+    fn length(
+        &mut self,
+        message: Resource<webgpu::GpuCompilationMessage>,
+    ) -> wasmtime::Result<u64> {
+        Ok(self.table.get(&message)?.length)
     }
 
-    fn drop(&mut self, _cm: Resource<webgpu::GpuCompilationMessage>) -> wasmtime::Result<()> {
-        todo!()
+    fn drop(&mut self, message: Resource<webgpu::GpuCompilationMessage>) -> wasmtime::Result<()> {
+        self.table.delete(message)?;
+        Ok(())
     }
 }
 impl<'a> webgpu::HostGpuCompilationInfo for WasiWebGpuCtx<'a> {
     fn messages(
         &mut self,
-        _self_: Resource<webgpu::GpuCompilationInfo>,
+        info: Resource<webgpu::GpuCompilationInfo>,
     ) -> wasmtime::Result<Vec<Resource<webgpu::GpuCompilationMessage>>> {
-        todo!()
+        let messages = Arc::clone(&self.table.get(&info)?.messages);
+        messages
+            .iter()
+            .map(|message| Ok(self.table.push(message.clone())?))
+            .collect()
     }
 
-    fn drop(&mut self, _info: Resource<webgpu::GpuCompilationInfo>) -> wasmtime::Result<()> {
-        todo!()
+    fn drop(&mut self, info: Resource<webgpu::GpuCompilationInfo>) -> wasmtime::Result<()> {
+        self.table.delete(info)?;
+        Ok(())
     }
 }
 impl<'a> webgpu::HostGpuQuerySet for WasiWebGpuCtx<'a> {
@@ -4395,5 +4420,30 @@ mod tests {
             "texture view left in the hub"
         );
         assert_eq!(hub.bind_groups.num_allocated, 1);
+    }
+
+    #[test]
+    fn compilation_message_positions_are_utf8_bytes() {
+        let (instance, device, _queue) = noop_device();
+        let source = "// header\n/* \u{e9}\u{1F600} */ fn f() -> u32 { return 1u + 1i; }";
+        let (_shader, err) = instance.device_create_shader_module(
+            device,
+            &wgpu_core::pipeline::ShaderModuleDescriptor {
+                label: None,
+                runtime_checks: wgpu_types::ShaderRuntimeChecks::default(),
+            },
+            wgpu_core::pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(source)),
+            None,
+        );
+        let message = CompilationMessage::from_error(&err.expect("shader should fail to compile"));
+        let start = message.offset as usize;
+        let end = start + message.length as usize;
+        assert_eq!(
+            &source[start..end],
+            "fn f() -> u32 { return 1u + 1i; }",
+            "{message:?}"
+        );
+        assert_eq!(message.line_num, 2);
+        assert_eq!(message.line_pos as usize, start - "// header\n".len() + 1);
     }
 }

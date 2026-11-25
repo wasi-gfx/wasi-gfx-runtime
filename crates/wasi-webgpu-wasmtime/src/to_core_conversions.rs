@@ -232,7 +232,7 @@ impl<'a> ToCore<wgpu_core::pipeline::FragmentState<'a>> for webgpu::GpuFragmentS
     fn to_core(self, table: &ResourceTable) -> wgpu_core::pipeline::FragmentState<'a> {
         wgpu_core::pipeline::FragmentState {
             stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
-                module: self.module.to_core(table),
+                module: *table.get(&self.module).unwrap().shader_module_id,
                 entry_point: self.entry_point.map(|ep| ep.into()),
                 constants: self
                     .constants
@@ -303,7 +303,7 @@ impl<'a> ToCore<wgpu_core::pipeline::VertexState<'a>> for webgpu::GpuVertexState
         // https://www.w3.org/TR/webgpu/#dictdef-gpuvertexstate
         wgpu_core::pipeline::VertexState {
             stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
-                module: self.module.to_core(table),
+                module: *table.get(&self.module).unwrap().shader_module_id,
                 entry_point: self.entry_point.map(|e| e.into()),
                 constants: self
                     .constants
@@ -994,7 +994,7 @@ impl<'a> ToCore<wgpu_core::pipeline::ProgrammableStageDescriptor<'a>>
         table: &ResourceTable,
     ) -> wgpu_core::pipeline::ProgrammableStageDescriptor<'a> {
         wgpu_core::pipeline::ProgrammableStageDescriptor {
-            module: self.module.to_core(table),
+            module: *table.get(&self.module).unwrap().shader_module_id,
             entry_point: self.entry_point.map(|ep| ep.into()),
             constants: self
                 .constants
