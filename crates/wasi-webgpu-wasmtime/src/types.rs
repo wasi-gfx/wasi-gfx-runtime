@@ -23,6 +23,43 @@ impl WgslLanguageFeatures {
     }
 }
 
+// wgpu-core doesn't keep shader compilation errors, so `getCompilationInfo` needs them stored with the shader module
+pub struct ShaderModule {
+    pub(crate) shader_module_id: Owned<wgpu_core::id::ShaderModuleId>,
+    pub(crate) compilation_messages: Arc<[CompilationMessage]>,
+}
+
+pub struct CompilationInfo {
+    pub(crate) messages: Arc<[CompilationMessage]>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompilationMessage {
+    pub(crate) message: String,
+    pub(crate) line_num: u64,
+    pub(crate) line_pos: u64,
+    pub(crate) offset: u64,
+    pub(crate) length: u64,
+}
+
+impl CompilationMessage {
+    pub(crate) fn from_error(error: &wgpu_core::pipeline::CreateShaderModuleError) -> Self {
+        use wgpu_core::pipeline::CreateShaderModuleError;
+        let location = match error {
+            CreateShaderModuleError::Parsing(e) => e.inner.location(&e.source),
+            CreateShaderModuleError::Validation(e) => e.inner.location(&e.source),
+            _ => None,
+        };
+        Self {
+            message: error.to_string(),
+            line_num: location.map(|l| l.line_number.into()).unwrap_or(0),
+            line_pos: location.map(|l| l.line_position.into()).unwrap_or(0),
+            offset: location.map(|l| l.offset.into()).unwrap_or(0),
+            length: location.map(|l| l.length.into()).unwrap_or(0),
+        }
+    }
+}
+
 // can't pass generics to `wasmtime::component::bindgen`
 // TODO: these should be unit-structs instead of `types` so that the internals are private to the crate
 pub type RecordGpuPipelineConstantValue = HashMap<String, webgpu::GpuPipelineConstantValue>;
@@ -74,7 +111,6 @@ pub type PipelineLayout = Owned<wgpu_core::id::PipelineLayoutId>;
 pub type QuerySet = Owned<wgpu_core::id::QuerySetId>;
 pub type RenderBundle = Owned<wgpu_core::id::RenderBundleId>;
 pub type Sampler = Owned<wgpu_core::id::SamplerId>;
-pub type ShaderModule = Owned<wgpu_core::id::ShaderModuleId>;
 pub type TextureView = Owned<wgpu_core::id::TextureViewId>;
 
 // queue needed for Device.queue
