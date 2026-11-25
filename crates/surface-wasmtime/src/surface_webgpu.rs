@@ -31,6 +31,8 @@ pub struct Context {
 
 pub(crate) struct ContextConfiguration {
     device: Resource<wasi_webgpu_wasmtime::Device>,
+    // https://www.w3.org/TR/webgpu/#dom-gpucanvascontext-texturedescriptor-slot
+    texture_descriptor: wgpu_types::TextureDescriptor<(), Vec<wgpu_types::TextureFormat>>,
 }
 
 // linker connection
@@ -105,22 +107,52 @@ impl<'a, S: MainThreadSpawner> surface_webgpu::HostContext for SurfaceWebgpuCtx<
 
         let context = self.table.get_mut(&context)?;
 
+        // https://www.w3.org/TR/webgpu/#abstract-opdef-gputexturedescriptor-for-the-canvas-and-configuration
+        let texture_descriptor = wgpu_types::TextureDescriptor {
+            // from config/canvas/surface
+            size: wgpu_types::Extent3d {
+                width: context.surface.width(),
+                height: context.surface.height(),
+                depth_or_array_layers: 1,
+            },
+            format: configuration.format.into(),
+            usage: configuration
+                .usage
+                .map(|usage| usage.try_into().unwrap())
+                .unwrap_or(wgpu_types::TextureUsages::RENDER_ATTACHMENT),
+            view_formats: configuration
+                .view_formats
+                .map(|formats| formats.into_iter().map(|f| f.into()).collect::<Vec<_>>())
+                .unwrap_or(vec![]),
+            // defaults
+            label: (),
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu_types::TextureDimension::D2,
+        };
+
         let err = self.instance.surface_configure(
             context.surface_id,
             device_id,
             &wgpu_types::SurfaceConfiguration {
                 // present in WebGPU, same defaults https://www.w3.org/TR/webgpu/#dictdef-gpucanvasconfiguration
-                format: configuration.format.into(),
-                usage: configuration.usage.unwrap_or(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::GpuTextureUsage::RENDER_ATTACHMENT).try_into().unwrap(),
-                view_formats: configuration.view_formats.into_iter().flatten().map(|f| f.into()).collect(),
-                alpha_mode: configuration.alpha_mode.unwrap_or(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::GpuCanvasAlphaMode::Opaque).into(),
-                color_space: configuration.color_space.unwrap_or(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::PredefinedColorSpace::Srgb).into(),
+                format: texture_descriptor.format,
+                usage: texture_descriptor.usage,
+                view_formats: texture_descriptor.view_formats.clone(),
+                alpha_mode: configuration
+                    .alpha_mode
+                    .map(|alpha_mode| alpha_mode.into())
+                    .unwrap_or(wgpu_types::CompositeAlphaMode::Opaque),
+                color_space: configuration
+                    .color_space
+                    .map(|color_space| color_space.into())
+                    .unwrap_or(wgpu_types::SurfaceColorSpace::Srgb),
                 // not present in WebGPU
-                width: context.surface.width(),
-                height: context.surface.height(),
+                width: texture_descriptor.size.width,
+                height: texture_descriptor.size.height,
                 present_mode: wgpu_types::PresentMode::default(),
                 desired_maximum_frame_latency: 2,
-            }
+            },
         );
         if let Some(err) = err {
             bail!("{err:#?}")
@@ -128,6 +160,7 @@ impl<'a, S: MainThreadSpawner> surface_webgpu::HostContext for SurfaceWebgpuCtx<
 
         context.configuration = Some(ContextConfiguration {
             device: configuration.device,
+            texture_descriptor,
         });
         Ok(())
     }
@@ -158,7 +191,8 @@ impl<'a, S: MainThreadSpawner> surface_webgpu::HostContext for SurfaceWebgpuCtx<
         let device = self.table.get(&configuration.device)?;
 
         // SAFETY: surface_get_current_texture will only give back a texture connected to the configured device.
-        let texture = unsafe { device.connect_texture(texture_id) };
+        let texture =
+            unsafe { device.connect_texture(texture_id, &configuration.texture_descriptor) };
 
         Ok(self.table.push(texture)?)
     }

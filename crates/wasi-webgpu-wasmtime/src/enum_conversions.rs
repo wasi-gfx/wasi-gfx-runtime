@@ -281,6 +281,16 @@ impl From<webgpu::GpuTextureDimension> for wgpu_types::TextureDimension {
     }
 }
 
+impl From<wgpu_types::TextureDimension> for webgpu::GpuTextureDimension {
+    fn from(value: wgpu_types::TextureDimension) -> Self {
+        match value {
+            wgpu_types::TextureDimension::D1 => webgpu::GpuTextureDimension::D1,
+            wgpu_types::TextureDimension::D2 => webgpu::GpuTextureDimension::D2,
+            wgpu_types::TextureDimension::D3 => webgpu::GpuTextureDimension::D3,
+        }
+    }
+}
+
 impl From<webgpu::GpuAddressMode> for wgpu_types::AddressMode {
     fn from(value: webgpu::GpuAddressMode) -> Self {
         match value {

@@ -340,16 +340,18 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
         let device_id = *device.device_id();
         let error_handler = Arc::clone(&device.error_handler);
 
-        let (texture_id, err) =
-            self.instance
-                .device_create_texture(device_id, &descriptor.to_core(self.table), None);
+        let descriptor = descriptor.to_core(self.table);
+        let (texture_id, err) = self
+            .instance
+            .device_create_texture(device_id, &descriptor, None);
 
         error_handler.handle_possible_error(err);
 
-        Ok(self.table.push(Texture {
-            texture_id: Owned::new(self.instance, texture_id),
+        Ok(self.table.push(Texture::new(
+            Owned::new(self.instance, texture_id),
+            &descriptor,
             error_handler,
-        })?)
+        ))?)
     }
 
     fn create_sampler(
@@ -732,58 +734,66 @@ impl<'a> webgpu::HostGpuTexture for WasiWebGpuCtx<'a> {
 
     fn width(
         &mut self,
-        _self_: Resource<webgpu::GpuTexture>,
+        texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<webgpu::GpuIntegerCoordinateOut> {
-        todo!()
+        let texture = self.table.get(&texture)?;
+        Ok(texture.width)
     }
 
     fn height(
         &mut self,
-        _self_: Resource<webgpu::GpuTexture>,
+        texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<webgpu::GpuIntegerCoordinateOut> {
-        todo!()
+        let texture = self.table.get(&texture)?;
+        Ok(texture.height)
     }
 
     fn depth_or_array_layers(
         &mut self,
-        _self_: Resource<webgpu::GpuTexture>,
+        texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<webgpu::GpuIntegerCoordinateOut> {
-        todo!()
+        let texture = self.table.get(&texture)?;
+        Ok(texture.depth_or_array_layers)
     }
 
     fn mip_level_count(
         &mut self,
-        _self_: Resource<webgpu::GpuTexture>,
+        texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<webgpu::GpuIntegerCoordinateOut> {
-        todo!()
+        let texture = self.table.get(&texture)?;
+        Ok(texture.mip_level_count)
     }
 
     fn sample_count(
         &mut self,
-        _self_: Resource<webgpu::GpuTexture>,
+        texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<webgpu::GpuSize32Out> {
-        todo!()
+        let texture = self.table.get(&texture)?;
+        Ok(texture.sample_count)
     }
 
     fn dimension(
         &mut self,
-        _self_: Resource<webgpu::GpuTexture>,
+        texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<webgpu::GpuTextureDimension> {
-        todo!()
+        let texture = self.table.get(&texture)?;
+        Ok(texture.dimension.into())
     }
 
     fn format(
         &mut self,
-        _self_: Resource<webgpu::GpuTexture>,
+        texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<webgpu::GpuTextureFormat> {
-        todo!()
+        let texture = self.table.get(&texture)?;
+        Ok(texture.format.into())
     }
 
     fn usage(
         &mut self,
-        _self_: Resource<webgpu::GpuTexture>,
+        texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<webgpu::GpuTextureUsage> {
-        todo!()
+        let texture = self.table.get(&texture)?;
+        texture.usage.try_into()
     }
 
     fn texture_binding_view_dimension(
@@ -4335,24 +4345,21 @@ mod tests {
                 None,
             )
             .unwrap();
-        let (texture_id, err) = instance.device_create_texture(
-            device,
-            &wgpu_types::TextureDescriptor {
-                label: None,
-                size: wgpu_types::Extent3d {
-                    width: 1,
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu_types::TextureDimension::D2,
-                format: wgpu_types::TextureFormat::Rgba8Unorm,
-                usage: wgpu_types::TextureUsages::TEXTURE_BINDING,
-                view_formats: vec![],
+        let texture_descriptor = wgpu_types::TextureDescriptor {
+            label: None,
+            size: wgpu_types::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
             },
-            None,
-        );
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu_types::TextureDimension::D2,
+            format: wgpu_types::TextureFormat::Rgba8Unorm,
+            usage: wgpu_types::TextureUsages::TEXTURE_BINDING,
+            view_formats: vec![],
+        };
+        let (texture_id, err) = instance.device_create_texture(device, &texture_descriptor, None);
         assert!(err.is_none(), "{err:?}");
         let (layout_id, err) = instance.device_create_bind_group_layout(
             device,
@@ -4384,10 +4391,11 @@ mod tests {
             })
             .unwrap();
         let texture = table
-            .push(Texture {
-                texture_id: Owned::new(&instance, texture_id),
-                error_handler: Arc::clone(&error_handler),
-            })
+            .push(Texture::new(
+                Owned::new(&instance, texture_id),
+                &texture_descriptor,
+                Arc::clone(&error_handler),
+            ))
             .unwrap();
         let layout = table.push(Owned::new(&instance, layout_id)).unwrap();
         let options = Default::default();

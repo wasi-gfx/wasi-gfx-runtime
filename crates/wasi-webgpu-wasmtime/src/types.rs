@@ -137,12 +137,18 @@ impl Device {
     ///
     /// - `texture_id` must be connected to this device.
     /// - Ownership of `texture_id` moves to the returned `Texture`, which releases it when dropped. The caller must not release it, or pass it to `connect_texture` again. wgpu-core panics when an id is released twice.
+    /// - `descriptor` must describe `texture_id`. It isn't checked, and the texture's getters return its values.
     #[doc(hidden)]
-    pub unsafe fn connect_texture(&self, texture_id: wgpu_core::id::TextureId) -> Texture {
-        Texture {
-            texture_id: Owned::new(self.device.instance(), texture_id),
-            error_handler: Arc::clone(&self.error_handler),
-        }
+    pub unsafe fn connect_texture<L, V>(
+        &self,
+        texture_id: wgpu_core::id::TextureId,
+        descriptor: &wgpu_types::TextureDescriptor<L, V>,
+    ) -> Texture {
+        Texture::new(
+            Owned::new(self.device.instance(), texture_id),
+            descriptor,
+            Arc::clone(&self.error_handler),
+        )
     }
 }
 
@@ -165,7 +171,36 @@ pub struct QuerySet {
 
 pub struct Texture {
     pub(crate) texture_id: Owned<wgpu_core::id::TextureId>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) depth_or_array_layers: u32,
+    pub(crate) mip_level_count: u32,
+    pub(crate) sample_count: u32,
+    pub(crate) dimension: wgpu_types::TextureDimension,
+    pub(crate) format: wgpu_types::TextureFormat,
+    pub(crate) usage: wgpu_types::TextureUsages,
     pub(crate) error_handler: Arc<ErrorHandler>,
+}
+
+impl Texture {
+    pub(crate) fn new<L, V>(
+        texture_id: Owned<wgpu_core::id::TextureId>,
+        descriptor: &wgpu_types::TextureDescriptor<L, V>,
+        error_handler: Arc<ErrorHandler>,
+    ) -> Self {
+        Self {
+            texture_id,
+            width: descriptor.size.width,
+            height: descriptor.size.height,
+            depth_or_array_layers: descriptor.size.depth_or_array_layers,
+            mip_level_count: descriptor.mip_level_count,
+            sample_count: descriptor.sample_count,
+            dimension: descriptor.dimension,
+            format: descriptor.format,
+            usage: descriptor.usage,
+            error_handler,
+        }
+    }
 }
 pub struct RenderPipeline {
     pub(crate) render_pipeline_id: Owned<wgpu_core::id::RenderPipelineId>,
