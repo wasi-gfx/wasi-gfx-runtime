@@ -108,7 +108,6 @@ pub type BindGroup = Owned<wgpu_core::id::BindGroupId>;
 pub type BindGroupLayout = Owned<wgpu_core::id::BindGroupLayoutId>;
 pub type CommandBuffer = Owned<wgpu_core::id::CommandBufferId>;
 pub type PipelineLayout = Owned<wgpu_core::id::PipelineLayoutId>;
-pub type QuerySet = Owned<wgpu_core::id::QuerySetId>;
 pub type RenderBundle = Owned<wgpu_core::id::RenderBundleId>;
 pub type Sampler = Owned<wgpu_core::id::SamplerId>;
 pub type TextureView = Owned<wgpu_core::id::TextureViewId>;
@@ -156,6 +155,12 @@ pub struct Queue {
 pub struct CommandEncoder {
     pub(crate) command_encoder_id: Owned<wgpu_core::id::CommandEncoderId>,
     pub(crate) error_handler: Arc<ErrorHandler>,
+}
+
+pub struct QuerySet {
+    pub(crate) query_set_id: Owned<wgpu_core::id::QuerySetId>,
+    pub(crate) type_: webgpu::GpuQueryType,
+    pub(crate) count: u32,
 }
 
 pub struct Texture {
