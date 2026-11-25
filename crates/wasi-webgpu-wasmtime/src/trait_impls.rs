@@ -8,7 +8,7 @@ use crate::{
     to_core_conversions::ToCore,
     types::{
         Buffer, CommandEncoder, CompilationInfo, CompilationMessage, ComputePassEncoder,
-        ComputePipeline, Device, DeviceLost, ErrorHandler, Queue, RenderBundleEncoder,
+        ComputePipeline, Device, DeviceLost, ErrorHandler, QuerySet, Queue, RenderBundleEncoder,
         RenderBundleEncoderInner, RenderPassEncoder, RenderPipeline, ShaderModule, Texture,
         WgslLanguageFeatures,
     },
@@ -556,13 +556,19 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
         let device_id = *device.device_id();
         let error_handler = Arc::clone(&device.error_handler);
 
+        let type_ = descriptor.type_;
+        let count = descriptor.count;
         let (query_set, err) =
             self.instance
                 .device_create_query_set(device_id, &descriptor.to_core(self.table), None);
 
         error_handler.handle_possible_error(err);
 
-        Ok(Ok(self.table.push(Owned::new(self.instance, query_set))?))
+        Ok(Ok(self.table.push(QuerySet {
+            query_set_id: Owned::new(self.instance, query_set),
+            type_,
+            count,
+        })?))
     }
 
     fn label(&mut self, _device: Resource<webgpu::GpuDevice>) -> wasmtime::Result<String> {
@@ -1199,7 +1205,7 @@ impl<'a> webgpu::HostGpuCommandEncoder for WasiWebGpuCtx<'a> {
             timestamp_writes,
             occlusion_query_set: descriptor
                 .occlusion_query_set
-                .map(|oqs| oqs.to_core(self.table)),
+                .map(|oqs| *self.table.get(&oqs).unwrap().query_set_id),
             // multiview_mask is not present in WebGPU
             multiview_mask: None,
             // TODO: self.max_draw_count not used
@@ -1363,7 +1369,7 @@ impl<'a> webgpu::HostGpuCommandEncoder for WasiWebGpuCtx<'a> {
         destination: Resource<webgpu::GpuBuffer>,
         destination_offset: webgpu::GpuSize64,
     ) -> wasmtime::Result<()> {
-        let query_set_id = **self.table.get(&query_set)?;
+        let query_set_id = *self.table.get(&query_set)?.query_set_id;
         let destination = *self.table.get(&destination)?.buffer_id;
         let command_encoder = *self.table.get(&command_encoder)?.command_encoder_id;
         self.instance.command_encoder_resolve_query_set(
@@ -2166,23 +2172,24 @@ impl<'a> webgpu::HostGpuCompilationInfo for WasiWebGpuCtx<'a> {
     }
 }
 impl<'a> webgpu::HostGpuQuerySet for WasiWebGpuCtx<'a> {
-    fn destroy(&mut self, _self_: Resource<webgpu::GpuQuerySet>) -> wasmtime::Result<()> {
-        // https://github.com/gfx-rs/wgpu/issues/6495
-        todo!()
+    fn destroy(&mut self, query_set: Resource<webgpu::GpuQuerySet>) -> wasmtime::Result<()> {
+        let query_set_id = *self.table.get(&query_set)?.query_set_id;
+        self.instance.query_set_destroy(query_set_id);
+        Ok(())
     }
 
     fn type_(
         &mut self,
-        _self_: Resource<webgpu::GpuQuerySet>,
+        query_set: Resource<webgpu::GpuQuerySet>,
     ) -> wasmtime::Result<webgpu::GpuQueryType> {
-        todo!()
+        Ok(self.table.get(&query_set)?.type_)
     }
 
     fn count(
         &mut self,
-        _self_: Resource<webgpu::GpuQuerySet>,
+        query_set: Resource<webgpu::GpuQuerySet>,
     ) -> wasmtime::Result<webgpu::GpuSize32Out> {
-        todo!()
+        Ok(self.table.get(&query_set)?.count)
     }
 
     fn label(&mut self, _self_: Resource<webgpu::GpuQuerySet>) -> wasmtime::Result<String> {

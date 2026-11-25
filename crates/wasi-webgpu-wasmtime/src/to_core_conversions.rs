@@ -1012,7 +1012,7 @@ impl<'a> ToCore<wgpu_core::pipeline::ProgrammableStageDescriptor<'a>>
 impl ToCore<wgpu_core::command::PassTimestampWrites> for webgpu::GpuComputePassTimestampWrites {
     fn to_core(self, table: &ResourceTable) -> wgpu_core::command::PassTimestampWrites {
         wgpu_core::command::PassTimestampWrites {
-            query_set: self.query_set.to_core(table),
+            query_set: *table.get(&self.query_set).unwrap().query_set_id,
             beginning_of_pass_write_index: self.beginning_of_pass_write_index,
             end_of_pass_write_index: self.end_of_pass_write_index,
         }
@@ -1022,7 +1022,7 @@ impl ToCore<wgpu_core::command::PassTimestampWrites> for webgpu::GpuComputePassT
 impl ToCore<wgpu_core::command::PassTimestampWrites> for webgpu::GpuRenderPassTimestampWrites {
     fn to_core(self, table: &ResourceTable) -> wgpu_core::command::PassTimestampWrites {
         wgpu_core::command::PassTimestampWrites {
-            query_set: self.query_set.to_core(table),
+            query_set: *table.get(&self.query_set).unwrap().query_set_id,
             beginning_of_pass_write_index: self.beginning_of_pass_write_index,
             end_of_pass_write_index: self.end_of_pass_write_index,
         }
