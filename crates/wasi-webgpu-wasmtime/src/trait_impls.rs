@@ -1,8 +1,9 @@
 use core::slice;
 use futures::channel::oneshot;
 use shared::{FuturePipeMap, StreamPipeMap};
-use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, fmt, num::NonZeroU64, sync::Arc};
 use wasmtime::component::{Access, Accessor, FutureReader, Resource, StreamReader};
+use wgpu_types::error::{ErrorType, WebGpuError};
 
 use crate::{
     to_core_conversions::ToCore,
@@ -620,10 +621,13 @@ impl<T: Send + WasiWebGpuCtxView> webgpu::HostGpuDeviceWithStore<T> for crate::H
                 None,
             );
 
-            error_handler.handle_possible_error(err);
+            let compute_pipeline_id = Owned::new(ctx.instance, compute_pipeline_id);
+            if let Some(error) = create_pipeline_error(err) {
+                return Ok(Err(error));
+            }
 
             Ok(Ok(ctx.table.push(ComputePipeline {
-                compute_pipeline_id: Owned::new(ctx.instance, compute_pipeline_id),
+                compute_pipeline_id,
                 error_handler,
             })?))
         })
@@ -647,10 +651,13 @@ impl<T: Send + WasiWebGpuCtxView> webgpu::HostGpuDeviceWithStore<T> for crate::H
                 None,
             );
 
-            error_handler.handle_possible_error(err);
+            let render_pipeline_id = Owned::new(ctx.instance, render_pipeline_id);
+            if let Some(error) = create_pipeline_error(err) {
+                return Ok(Err(error));
+            }
 
             let render_pipeline = ctx.table.push(RenderPipeline {
-                render_pipeline_id: Owned::new(ctx.instance, render_pipeline_id),
+                render_pipeline_id,
                 error_handler,
             })?;
             Ok(Ok(render_pipeline))
@@ -3473,6 +3480,33 @@ impl<'a> webgpu::HostGpuSupportedLimits for WasiWebGpuCtx<'a> {
         self.table.delete(limits)?;
         Ok(())
     }
+}
+
+// From the spec:
+// > If pipeline creation fails, the returned Promise rejects with an GPUPipelineError. (A GPUError is not dispatched to the device.)
+// https://www.w3.org/TR/webgpu/#dom-gpudevice-createcomputepipelineasync
+fn create_pipeline_error<E: WebGpuError + fmt::Display>(
+    error: Option<E>,
+) -> Option<webgpu::CreatePipelineError> {
+    let error = error?;
+    let reason = match error.webgpu_error_type() {
+        ErrorType::Validation => webgpu::GpuPipelineErrorReason::Validation,
+        ErrorType::Internal => webgpu::GpuPipelineErrorReason::Internal,
+        ErrorType::DeviceLost => {
+            // From the spec:
+            // > If pipeline is valid or this is lost:
+            // >  1. Resolve promise with pipeline.
+            return None;
+        }
+        ErrorType::OutOfMemory => {
+            // spec has no out-of-memory reason, so treat as internal
+            webgpu::GpuPipelineErrorReason::Internal
+        }
+    };
+    Some(webgpu::CreatePipelineError {
+        kind: webgpu::CreatePipelineErrorKind::GpuPipelineError(reason),
+        message: error.to_string(),
+    })
 }
 
 // The trap for a call on a pass or bundle encoder after `end` or `finish` has released it.
