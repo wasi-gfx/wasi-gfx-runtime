@@ -664,7 +664,9 @@ impl ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
                 webgpu::GpuFeatureName::TextureCompressionAstc => {
                     wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ASTC
                 }
-                webgpu::GpuFeatureName::TextureCompressionAstcSliced3d => todo!(),
+                webgpu::GpuFeatureName::TextureCompressionAstcSliced3d => {
+                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ASTC_SLICED_3D
+                }
                 webgpu::GpuFeatureName::TimestampQuery => {
                     wgpu_types::FeaturesWebGPU::TIMESTAMP_QUERY
                 }
@@ -756,9 +758,8 @@ impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
                         }
                     }
                     "maxbindgroupsplusvertexbuffers" => {
-                        if let Some(_value) = value {
-                            // TODO: enable once added to wgpu
-                            // limits.max_bind_groups_plus_vertex_buffers = *value as u32;
+                        if let Some(value) = value {
+                            limits.max_bind_groups_plus_vertex_buffers = *value as u32;
                         }
                     }
                     "maximmediatesize" => {
@@ -871,9 +872,8 @@ impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
                         }
                     }
                     "maxinterstageshadervariables" => {
-                        if let Some(_value) = value {
-                            // TODO: enable once added to wgpu
-                            // limits.max_inter_stage_shader_variables = *value as u32;
+                        if let Some(value) = value {
+                            limits.max_inter_stage_shader_variables = *value as u32;
                         }
                     }
                     "maxcolorattachments" => {
