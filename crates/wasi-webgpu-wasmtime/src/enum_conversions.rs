@@ -371,6 +371,20 @@ impl From<webgpu::GpuTextureSampleType> for wgpu_types::TextureSampleType {
     }
 }
 
+impl From<webgpu::GpuStorageTextureAccess> for wgpu_types::StorageTextureAccess {
+    fn from(value: webgpu::GpuStorageTextureAccess) -> Self {
+        match value {
+            webgpu::GpuStorageTextureAccess::WriteOnly => {
+                wgpu_types::StorageTextureAccess::WriteOnly
+            }
+            webgpu::GpuStorageTextureAccess::ReadOnly => wgpu_types::StorageTextureAccess::ReadOnly,
+            webgpu::GpuStorageTextureAccess::ReadWrite => {
+                wgpu_types::StorageTextureAccess::ReadWrite
+            }
+        }
+    }
+}
+
 impl From<webgpu::GpuTextureViewDimension> for wgpu_types::TextureViewDimension {
     fn from(value: webgpu::GpuTextureViewDimension) -> Self {
         match value {

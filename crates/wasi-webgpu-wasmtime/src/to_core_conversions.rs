@@ -526,7 +526,18 @@ impl ToCore<wgpu_types::BindingType> for webgpu::GpuTextureBindingLayout {
 
 impl ToCore<wgpu_types::BindingType> for webgpu::GpuStorageTextureBindingLayout {
     fn to_core(self, _table: &ResourceTable) -> wgpu_types::BindingType {
-        todo!()
+        // https://www.w3.org/TR/webgpu/#dictdef-gpustoragetexturebindinglayout
+        wgpu_types::BindingType::StorageTexture {
+            access: self
+                .access
+                .map(|access| access.into())
+                .unwrap_or(wgpu_types::StorageTextureAccess::WriteOnly),
+            format: self.format.into(),
+            view_dimension: self
+                .view_dimension
+                .map(|view_dimension| view_dimension.into())
+                .unwrap_or(wgpu_types::TextureViewDimension::D2),
+        }
     }
 }
 
