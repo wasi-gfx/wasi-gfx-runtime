@@ -1684,7 +1684,13 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
             index_format.into(),
             // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
             offset.unwrap_or(0),
-            size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
+            // TODO: wgpu-core can't yet express a size of 0 (an empty binding). Fixed upstream in https://github.com/gfx-rs/wgpu/pull/9848, should be fixed in the next release.
+            match size {
+                Some(size) => Some(NonZeroU64::new(size).ok_or_else(|| {
+                    wasmtime::Error::msg("a buffer binding size of 0 is not supported yet")
+                })?),
+                None => None,
+            },
         )?;
         Ok(())
     }
@@ -1709,7 +1715,13 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
             buffer_id,
             // https://www.w3.org/TR/webgpu/#gpurendercommandsmixin
             offset.unwrap_or(0),
-            size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
+            // TODO: wgpu-core can't yet express a size of 0 (an empty binding). Fixed upstream in https://github.com/gfx-rs/wgpu/pull/9848, should be fixed in the next release.
+            match size {
+                Some(size) => Some(NonZeroU64::new(size).ok_or_else(|| {
+                    wasmtime::Error::msg("a buffer binding size of 0 is not supported yet")
+                })?),
+                None => None,
+            },
         )?;
         Ok(())
     }
@@ -2377,7 +2389,13 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
             buffer_id,
             index_format.into(),
             offset.unwrap_or(0),
-            size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
+            // TODO: wgpu-core can't yet express a size of 0 (an empty binding). Fixed upstream in https://github.com/gfx-rs/wgpu/pull/9848, should be fixed in the next release.
+            match size {
+                Some(size) => Some(NonZeroU64::new(size).ok_or_else(|| {
+                    wasmtime::Error::msg("a buffer binding size of 0 is not supported yet")
+                })?),
+                None => None,
+            },
         );
         bundle_encoder
             .error_handler
@@ -2405,7 +2423,13 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
             slot,
             buffer_id,
             offset.unwrap_or(0),
-            size.map(|s| NonZeroU64::new(s).expect("Size can't be zero")),
+            // TODO: wgpu-core can't yet express a size of 0 (an empty binding). Fixed upstream in https://github.com/gfx-rs/wgpu/pull/9848, should be fixed in the next release.
+            match size {
+                Some(size) => Some(NonZeroU64::new(size).ok_or_else(|| {
+                    wasmtime::Error::msg("a buffer binding size of 0 is not supported yet")
+                })?),
+                None => None,
+            },
         );
         bundle_encoder
             .error_handler
