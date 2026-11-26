@@ -2257,25 +2257,51 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
 
     fn push_debug_group(
         &mut self,
-        _bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
-        _group_label: String,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        group_label: String,
     ) -> wasmtime::Result<()> {
-        todo!("Debug markers for RenderBundleEncoder not yet implemented in wgpu")
+        let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
+        let result = self.instance.render_bundle_encoder_push_debug_group(
+            &mut bundle_encoder.render_bundle_encoder,
+            &group_label,
+        );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
+        Ok(())
     }
 
     fn pop_debug_group(
         &mut self,
-        _bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
     ) -> wasmtime::Result<()> {
-        todo!("Debug markers for RenderBundleEncoder not yet implemented in wgpu")
+        let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
+        let result = self
+            .instance
+            .render_bundle_encoder_pop_debug_group(&mut bundle_encoder.render_bundle_encoder);
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
+        Ok(())
     }
 
     fn insert_debug_marker(
         &mut self,
-        _bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
-        _marker_label: String,
+        bundle_encoder: Resource<webgpu::GpuRenderBundleEncoder>,
+        marker_label: String,
     ) -> wasmtime::Result<()> {
-        todo!("Debug markers for RenderBundleEncoder not yet implemented in wgpu")
+        let mut bundle_encoder = self.table.get_mut(&bundle_encoder)?.lock();
+        let bundle_encoder = bundle_encoder.as_mut().ok_or_else(encoder_ended)?;
+        let result = self.instance.render_bundle_encoder_insert_debug_marker(
+            &mut bundle_encoder.render_bundle_encoder,
+            &marker_label,
+        );
+        bundle_encoder
+            .error_handler
+            .handle_possible_error(result.err());
+        Ok(())
     }
 
     fn set_bind_group(
@@ -3169,12 +3195,10 @@ impl<'a> webgpu::HostGpuSupportedLimits for WasiWebGpuCtx<'a> {
 
     fn max_bind_groups_plus_vertex_buffers(
         &mut self,
-        _limits: Resource<webgpu::GpuSupportedLimits>,
+        limits: Resource<webgpu::GpuSupportedLimits>,
     ) -> wasmtime::Result<u32> {
-        // Not present in wgpu yet so rely on spec default
-        // https://www.w3.org/TR/webgpu/#dom-supported-limits-maxbindgroupsplusvertexbuffers
-        // TODO: take value from wgpu once implemented there
-        Ok(24)
+        let limits = self.table.get(&limits)?;
+        Ok(limits.max_bind_groups_plus_vertex_buffers)
     }
 
     fn max_bindings_per_bind_group(

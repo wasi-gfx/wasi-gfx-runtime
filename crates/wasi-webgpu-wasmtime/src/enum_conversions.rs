@@ -319,16 +319,6 @@ impl From<webgpu::GpuMipmapFilterMode> for wgpu_types::FilterMode {
     }
 }
 
-// TODO: change to GpuMipmapFilterMode once in wasi:webgpu
-impl From<webgpu::GpuFilterMode> for wgpu_types::MipmapFilterMode {
-    fn from(value: webgpu::GpuFilterMode) -> Self {
-        match value {
-            webgpu::GpuFilterMode::Nearest => wgpu_types::MipmapFilterMode::Nearest,
-            webgpu::GpuFilterMode::Linear => wgpu_types::MipmapFilterMode::Linear,
-        }
-    }
-}
-
 impl From<webgpu::GpuMipmapFilterMode> for wgpu_types::MipmapFilterMode {
     fn from(value: webgpu::GpuMipmapFilterMode) -> Self {
         match value {
@@ -470,31 +460,31 @@ impl From<webgpu::GpuVertexStepMode> for wgpu_types::VertexStepMode {
 impl From<webgpu::GpuVertexFormat> for wgpu_types::VertexFormat {
     fn from(value: webgpu::GpuVertexFormat) -> Self {
         match value {
-            webgpu::GpuVertexFormat::Uint8 => todo!(),
+            webgpu::GpuVertexFormat::Uint8 => wgpu_types::VertexFormat::Uint8,
             webgpu::GpuVertexFormat::Uint8x2 => wgpu_types::VertexFormat::Uint8x2,
             webgpu::GpuVertexFormat::Uint8x4 => wgpu_types::VertexFormat::Uint8x4,
-            webgpu::GpuVertexFormat::Sint8 => todo!(),
+            webgpu::GpuVertexFormat::Sint8 => wgpu_types::VertexFormat::Sint8,
             webgpu::GpuVertexFormat::Sint8x2 => wgpu_types::VertexFormat::Sint8x2,
             webgpu::GpuVertexFormat::Sint8x4 => wgpu_types::VertexFormat::Sint8x4,
-            webgpu::GpuVertexFormat::Unorm8 => todo!(),
+            webgpu::GpuVertexFormat::Unorm8 => wgpu_types::VertexFormat::Unorm8,
             webgpu::GpuVertexFormat::Unorm8x2 => wgpu_types::VertexFormat::Unorm8x2,
             webgpu::GpuVertexFormat::Unorm8x4 => wgpu_types::VertexFormat::Unorm8x4,
-            webgpu::GpuVertexFormat::Snorm8 => todo!(),
+            webgpu::GpuVertexFormat::Snorm8 => wgpu_types::VertexFormat::Snorm8,
             webgpu::GpuVertexFormat::Snorm8x2 => wgpu_types::VertexFormat::Snorm8x2,
             webgpu::GpuVertexFormat::Snorm8x4 => wgpu_types::VertexFormat::Snorm8x4,
-            webgpu::GpuVertexFormat::Uint16 => todo!(),
+            webgpu::GpuVertexFormat::Uint16 => wgpu_types::VertexFormat::Uint16,
             webgpu::GpuVertexFormat::Uint16x2 => wgpu_types::VertexFormat::Uint16x2,
             webgpu::GpuVertexFormat::Uint16x4 => wgpu_types::VertexFormat::Uint16x4,
-            webgpu::GpuVertexFormat::Sint16 => todo!(),
+            webgpu::GpuVertexFormat::Sint16 => wgpu_types::VertexFormat::Sint16,
             webgpu::GpuVertexFormat::Sint16x2 => wgpu_types::VertexFormat::Sint16x2,
             webgpu::GpuVertexFormat::Sint16x4 => wgpu_types::VertexFormat::Sint16x4,
-            webgpu::GpuVertexFormat::Unorm16 => todo!(),
+            webgpu::GpuVertexFormat::Unorm16 => wgpu_types::VertexFormat::Unorm16,
             webgpu::GpuVertexFormat::Unorm16x2 => wgpu_types::VertexFormat::Unorm16x2,
             webgpu::GpuVertexFormat::Unorm16x4 => wgpu_types::VertexFormat::Unorm16x4,
-            webgpu::GpuVertexFormat::Snorm16 => todo!(),
+            webgpu::GpuVertexFormat::Snorm16 => wgpu_types::VertexFormat::Snorm16,
             webgpu::GpuVertexFormat::Snorm16x2 => wgpu_types::VertexFormat::Snorm16x2,
             webgpu::GpuVertexFormat::Snorm16x4 => wgpu_types::VertexFormat::Snorm16x4,
-            webgpu::GpuVertexFormat::Float16 => todo!(),
+            webgpu::GpuVertexFormat::Float16 => wgpu_types::VertexFormat::Float16,
             webgpu::GpuVertexFormat::Float16x2 => wgpu_types::VertexFormat::Float16x2,
             webgpu::GpuVertexFormat::Float16x4 => wgpu_types::VertexFormat::Float16x4,
             webgpu::GpuVertexFormat::Float32 => wgpu_types::VertexFormat::Float32,
@@ -510,7 +500,7 @@ impl From<webgpu::GpuVertexFormat> for wgpu_types::VertexFormat {
             webgpu::GpuVertexFormat::Sint32x3 => wgpu_types::VertexFormat::Sint32x3,
             webgpu::GpuVertexFormat::Sint32x4 => wgpu_types::VertexFormat::Sint32x4,
             webgpu::GpuVertexFormat::Unorm1010102 => wgpu_types::VertexFormat::Unorm10_10_10_2,
-            webgpu::GpuVertexFormat::Unorm8x4Bgra => todo!(),
+            webgpu::GpuVertexFormat::Unorm8x4Bgra => wgpu_types::VertexFormat::Unorm8x4Bgra,
         }
     }
 }
