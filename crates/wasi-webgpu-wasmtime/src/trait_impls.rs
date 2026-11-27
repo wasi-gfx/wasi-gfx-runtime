@@ -983,14 +983,18 @@ impl<T: Send> webgpu::HostGpuAdapterWithStore<T> for crate::HasWasiWebGpuCtx {
             let descriptor = match descriptor {
                 Some(desc) => wgpu_types::DeviceDescriptor {
                     label: desc.label.map(|l| l.into()),
-                    required_features: desc
-                        .required_features
-                        .map(|f| f.to_core(table))
-                        .unwrap_or_default(),
-                    required_limits: desc
-                        .required_limits
-                        .map(|limit| table.get(&limit).unwrap().to_core(table))
-                        .unwrap_or(wgpu_types::Limits::defaults()),
+                    required_features: match desc.required_features.map(|f| f.to_core(table)) {
+                        Some(Ok(features)) => features,
+                        Some(Err(error)) => return Ok(Err(error)),
+                        None => wgpu_types::Features::default(),
+                    },
+                    required_limits: match desc.required_limits {
+                        Some(limits) => match table.get(&limits)?.to_core(table) {
+                            Ok(limits) => limits,
+                            Err(error) => return Ok(Err(error)),
+                        },
+                        None => wgpu_types::Limits::defaults(),
+                    },
                     // TODO: use descriptor.default_queue?
                     // trace is not present in WebGPU
                     trace: wgpu_types::Trace::default(),
