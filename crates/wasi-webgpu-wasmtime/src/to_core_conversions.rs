@@ -651,95 +651,123 @@ impl<'a> ToCore<wgpu_types::BufferDescriptor<wgpu_core::Label<'a>>>
     }
 }
 
-impl ToCore<wgpu_types::Features> for Vec<webgpu::GpuFeatureName> {
-    fn to_core(self, _table: &ResourceTable) -> wgpu_types::Features {
+impl ToCore<Result<wgpu_types::Features, webgpu::RequestDeviceError>>
+    for Vec<webgpu::GpuFeatureName>
+{
+    fn to_core(
+        self,
+        _table: &ResourceTable,
+    ) -> Result<wgpu_types::Features, webgpu::RequestDeviceError> {
+        // From the spec:
+        // > 1. If any of the following requirements are unmet:
+        // >  - The set of values in descriptor.requiredFeatures must be a subset of those in adapter.[[features]].
+        // > Then issue the following steps on contentTimeline and return:
+        // >  1. Reject promise with a TypeError.
+        // https://www.w3.org/TR/webgpu/#dom-gpuadapter-requestdevice
+        let unsupported = |feature: &str| webgpu::RequestDeviceError {
+            kind: webgpu::RequestDeviceErrorKind::TypeError,
+            message: format!("{feature} is not supported"),
+        };
         let features_webgpu = self
             .into_iter()
-            .map(|feature| match feature {
-                webgpu::GpuFeatureName::CoreFeaturesAndLimits => {
-                    // wgpu_types::FeaturesWebGPU::CORE_FEATURES_AND_LIMITS
-                    todo!()
-                }
-                webgpu::GpuFeatureName::DepthClipControl => {
-                    wgpu_types::FeaturesWebGPU::DEPTH_CLIP_CONTROL
-                }
-                webgpu::GpuFeatureName::Depth32floatStencil8 => {
-                    wgpu_types::FeaturesWebGPU::DEPTH32FLOAT_STENCIL8
-                }
-                webgpu::GpuFeatureName::TextureCompressionBc => {
-                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC
-                }
-                webgpu::GpuFeatureName::TextureCompressionBcSliced3d => {
-                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC_SLICED_3D
-                }
-                webgpu::GpuFeatureName::TextureCompressionEtc2 => {
-                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ETC2
-                }
-                webgpu::GpuFeatureName::TextureCompressionAstc => {
-                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ASTC
-                }
-                webgpu::GpuFeatureName::TextureCompressionAstcSliced3d => {
-                    wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ASTC_SLICED_3D
-                }
-                webgpu::GpuFeatureName::TimestampQuery => {
-                    wgpu_types::FeaturesWebGPU::TIMESTAMP_QUERY
-                }
-                webgpu::GpuFeatureName::IndirectFirstInstance => {
-                    wgpu_types::FeaturesWebGPU::INDIRECT_FIRST_INSTANCE
-                }
-                webgpu::GpuFeatureName::ShaderF16 => wgpu_types::FeaturesWebGPU::SHADER_F16,
-                webgpu::GpuFeatureName::Rg11b10ufloatRenderable => {
-                    wgpu_types::FeaturesWebGPU::RG11B10UFLOAT_RENDERABLE
-                }
-                webgpu::GpuFeatureName::Bgra8unormStorage => {
-                    wgpu_types::FeaturesWebGPU::BGRA8UNORM_STORAGE
-                }
-                webgpu::GpuFeatureName::Float32Filterable => {
-                    wgpu_types::FeaturesWebGPU::FLOAT32_FILTERABLE
-                }
-                webgpu::GpuFeatureName::Float32Blendable => {
-                    wgpu_types::FeaturesWebGPU::FLOAT32_BLENDABLE
-                }
-                webgpu::GpuFeatureName::ClipDistances => wgpu_types::FeaturesWebGPU::CLIP_DISTANCES,
-                webgpu::GpuFeatureName::DualSourceBlending => {
-                    wgpu_types::FeaturesWebGPU::DUAL_SOURCE_BLENDING
-                }
-                webgpu::GpuFeatureName::Subgroups => {
-                    todo!()
-                    // TODO: enable once wgpu does
-                    // wgpu_types::FeaturesWebGPU::SUBGROUPS
-                }
-                webgpu::GpuFeatureName::TextureFormatsTier1 => {
-                    // wgpu_types::FeaturesWebGPU::TEXTURE_FORMATS_TIER_1
-                    todo!()
-                }
-                webgpu::GpuFeatureName::TextureFormatsTier2 => {
-                    // wgpu_types::FeaturesWebGPU::TEXTURE_FORMATS_TIER_2
-                    todo!()
-                }
-                webgpu::GpuFeatureName::PrimitiveIndex => {
-                    wgpu_types::FeaturesWebGPU::PRIMITIVE_INDEX
-                }
-                webgpu::GpuFeatureName::TextureComponentSwizzle => {
-                    // wgpu_types::FeaturesWebGPU::TEXTURE_COMPONENT_SWIZZLE
-                    todo!()
-                }
+            .map(|feature| {
+                Ok(match feature {
+                    webgpu::GpuFeatureName::CoreFeaturesAndLimits => {
+                        // TODO: enable once wgpu does
+                        // wgpu_types::FeaturesWebGPU::CORE_FEATURES_AND_LIMITS
+                        return Err(unsupported("core-features-and-limits"));
+                    }
+                    webgpu::GpuFeatureName::DepthClipControl => {
+                        wgpu_types::FeaturesWebGPU::DEPTH_CLIP_CONTROL
+                    }
+                    webgpu::GpuFeatureName::Depth32floatStencil8 => {
+                        wgpu_types::FeaturesWebGPU::DEPTH32FLOAT_STENCIL8
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionBc => {
+                        wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionBcSliced3d => {
+                        wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_BC_SLICED_3D
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionEtc2 => {
+                        wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ETC2
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionAstc => {
+                        wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ASTC
+                    }
+                    webgpu::GpuFeatureName::TextureCompressionAstcSliced3d => {
+                        wgpu_types::FeaturesWebGPU::TEXTURE_COMPRESSION_ASTC_SLICED_3D
+                    }
+                    webgpu::GpuFeatureName::TimestampQuery => {
+                        wgpu_types::FeaturesWebGPU::TIMESTAMP_QUERY
+                    }
+                    webgpu::GpuFeatureName::IndirectFirstInstance => {
+                        wgpu_types::FeaturesWebGPU::INDIRECT_FIRST_INSTANCE
+                    }
+                    webgpu::GpuFeatureName::ShaderF16 => wgpu_types::FeaturesWebGPU::SHADER_F16,
+                    webgpu::GpuFeatureName::Rg11b10ufloatRenderable => {
+                        wgpu_types::FeaturesWebGPU::RG11B10UFLOAT_RENDERABLE
+                    }
+                    webgpu::GpuFeatureName::Bgra8unormStorage => {
+                        wgpu_types::FeaturesWebGPU::BGRA8UNORM_STORAGE
+                    }
+                    webgpu::GpuFeatureName::Float32Filterable => {
+                        wgpu_types::FeaturesWebGPU::FLOAT32_FILTERABLE
+                    }
+                    webgpu::GpuFeatureName::Float32Blendable => {
+                        wgpu_types::FeaturesWebGPU::FLOAT32_BLENDABLE
+                    }
+                    webgpu::GpuFeatureName::ClipDistances => {
+                        wgpu_types::FeaturesWebGPU::CLIP_DISTANCES
+                    }
+                    webgpu::GpuFeatureName::DualSourceBlending => {
+                        wgpu_types::FeaturesWebGPU::DUAL_SOURCE_BLENDING
+                    }
+                    webgpu::GpuFeatureName::Subgroups => {
+                        // TODO: enable once wgpu does
+                        // wgpu_types::FeaturesWebGPU::SUBGROUPS
+                        return Err(unsupported("subgroups"));
+                    }
+                    webgpu::GpuFeatureName::TextureFormatsTier1 => {
+                        // TODO: enable once wgpu does
+                        // wgpu_types::FeaturesWebGPU::TEXTURE_FORMATS_TIER_1
+                        return Err(unsupported("texture-formats-tier1"));
+                    }
+                    webgpu::GpuFeatureName::TextureFormatsTier2 => {
+                        // TODO: enable once wgpu does
+                        // wgpu_types::FeaturesWebGPU::TEXTURE_FORMATS_TIER_2
+                        return Err(unsupported("texture-formats-tier2"));
+                    }
+                    webgpu::GpuFeatureName::PrimitiveIndex => {
+                        wgpu_types::FeaturesWebGPU::PRIMITIVE_INDEX
+                    }
+                    webgpu::GpuFeatureName::TextureComponentSwizzle => {
+                        // TODO: enable once wgpu does
+                        // wgpu_types::FeaturesWebGPU::TEXTURE_COMPONENT_SWIZZLE
+                        return Err(unsupported("texture-component-swizzle"));
+                    }
+                })
             })
-            .collect();
-        wgpu_types::Features {
+            .collect::<Result<_, _>>()?;
+        Ok(wgpu_types::Features {
             features_webgpu,
             // Don't enable any native features
             features_wgpu: wgpu_types::FeaturesWGPU::empty(),
-        }
+        })
     }
 }
 
-impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
-    fn to_core(self, _table: &ResourceTable) -> wgpu_types::Limits {
+impl ToCore<Result<wgpu_types::Limits, webgpu::RequestDeviceError>>
+    for &webgpu::RecordOptionGpuSize64
+{
+    fn to_core(
+        self,
+        _table: &ResourceTable,
+    ) -> Result<wgpu_types::Limits, webgpu::RequestDeviceError> {
         // this is a temporary solution while limit keys are strings
         fn limits_record_to_core_limits(
             record: &webgpu::RecordOptionGpuSize64,
-        ) -> wgpu_types::Limits {
+        ) -> Result<wgpu_types::Limits, webgpu::RequestDeviceError> {
             let mut limits = wgpu_types::Limits::defaults();
 
             for (key, value) in record {
@@ -930,11 +958,24 @@ impl ToCore<wgpu_types::Limits> for &webgpu::RecordOptionGpuSize64 {
                             limits.max_compute_workgroups_per_dimension = *value as u32;
                         }
                     }
-                    key => panic!("Unknown limit key: {}", key),
+                    // From the spec:
+                    // > 2. All of the requirements in the following steps must be met.
+                    // >  2. For each [key, value] in descriptor.requiredLimits for which value is not undefined:
+                    // >   1. key must be the name of a member of supported limits.
+                    // > 3. If any are unmet, issue the following steps on contentTimeline and return:
+                    // >  1. Reject promise with an OperationError.
+                    // https://www.w3.org/TR/webgpu/#dom-gpuadapter-requestdevice
+                    key if value.is_some() => {
+                        return Err(webgpu::RequestDeviceError {
+                            kind: webgpu::RequestDeviceErrorKind::OperationError,
+                            message: format!("{key} is not a known limit"),
+                        })
+                    }
+                    _ => {}
                 }
             }
 
-            limits
+            Ok(limits)
         }
 
         limits_record_to_core_limits(self)
