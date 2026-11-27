@@ -1,4 +1,4 @@
-use wasmtime::component::ResourceTable;
+use wasmtime::{bail, component::ResourceTable};
 
 use crate::wasi::webgpu::webgpu;
 
@@ -440,27 +440,30 @@ impl<'a> ToCore<wgpu_types::CommandBufferDescriptor<wgpu_core::Label<'a>>>
     }
 }
 
-impl<'a> ToCore<wgpu_core::binding_model::BindGroupLayoutDescriptor<'a>>
+impl<'a> ToCore<wasmtime::Result<wgpu_core::binding_model::BindGroupLayoutDescriptor<'a>>>
     for webgpu::GpuBindGroupLayoutDescriptor
 {
     fn to_core(
         self,
         table: &ResourceTable,
-    ) -> wgpu_core::binding_model::BindGroupLayoutDescriptor<'a> {
-        wgpu_core::binding_model::BindGroupLayoutDescriptor {
+    ) -> wasmtime::Result<wgpu_core::binding_model::BindGroupLayoutDescriptor<'a>> {
+        Ok(wgpu_core::binding_model::BindGroupLayoutDescriptor {
             label: self.label.map(|l| l.into()),
             entries: self
                 .entries
                 .into_iter()
                 .map(|entry| entry.to_core(table))
-                .collect(),
-        }
+                .collect::<wasmtime::Result<Vec<_>>>()?
+                .into(),
+        })
     }
 }
 
-impl ToCore<wgpu_types::BindGroupLayoutEntry> for webgpu::GpuBindGroupLayoutEntry {
-    fn to_core(self, table: &ResourceTable) -> wgpu_types::BindGroupLayoutEntry {
-        wgpu_types::BindGroupLayoutEntry {
+impl ToCore<wasmtime::Result<wgpu_types::BindGroupLayoutEntry>>
+    for webgpu::GpuBindGroupLayoutEntry
+{
+    fn to_core(self, table: &ResourceTable) -> wasmtime::Result<wgpu_types::BindGroupLayoutEntry> {
+        Ok(wgpu_types::BindGroupLayoutEntry {
             binding: self.binding,
             visibility: self.visibility.try_into().unwrap(),
             ty: match (
@@ -473,12 +476,12 @@ impl ToCore<wgpu_types::BindGroupLayoutEntry> for webgpu::GpuBindGroupLayoutEntr
                 (None, Some(sampler), None, None) => sampler.to_core(table),
                 (None, None, Some(texture), None) => texture.to_core(table),
                 (None, None, None, Some(storage_texture)) => storage_texture.to_core(table),
-                (None, None, None, None) => todo!(),
-                _ => panic!("Can't have multiple ..."),
+                (None, None, None, None) => bail!("TODO:"),
+                _ => bail!("Can't have multiple ..."),
             },
             // count is not present in WebGPU
             count: None,
-        }
+        })
     }
 }
 

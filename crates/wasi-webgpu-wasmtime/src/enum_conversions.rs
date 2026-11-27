@@ -1,3 +1,5 @@
+use wasmtime::bail;
+
 use crate::wasi::webgpu::webgpu;
 
 impl From<webgpu::GpuPowerPreference> for wgpu_types::PowerPreference {
@@ -11,9 +13,12 @@ impl From<webgpu::GpuPowerPreference> for wgpu_types::PowerPreference {
     }
 }
 
-impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
-    fn from(value: wgpu_types::TextureFormat) -> Self {
-        match value {
+// fallible since wgpu has native-only formats that WebGPU doesn't support
+impl TryFrom<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
+    type Error = wasmtime::Error;
+
+    fn try_from(value: wgpu_types::TextureFormat) -> Result<Self, Self::Error> {
+        Ok(match value {
             wgpu_types::TextureFormat::Bgra8UnormSrgb => webgpu::GpuTextureFormat::Bgra8unormSrgb,
             wgpu_types::TextureFormat::R8Unorm => webgpu::GpuTextureFormat::R8unorm,
             wgpu_types::TextureFormat::R8Snorm => webgpu::GpuTextureFormat::R8snorm,
@@ -31,7 +36,9 @@ impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
             wgpu_types::TextureFormat::R32Uint => webgpu::GpuTextureFormat::R32uint,
             wgpu_types::TextureFormat::R32Sint => webgpu::GpuTextureFormat::R32sint,
             wgpu_types::TextureFormat::R32Float => webgpu::GpuTextureFormat::R32float,
-            wgpu_types::TextureFormat::R64Uint => todo!(),
+            wgpu_types::TextureFormat::R64Uint => {
+                bail!("{value:?} not supported")
+            }
             wgpu_types::TextureFormat::Rg16Uint => webgpu::GpuTextureFormat::Rg16uint,
             wgpu_types::TextureFormat::Rg16Sint => webgpu::GpuTextureFormat::Rg16sint,
             wgpu_types::TextureFormat::Rg16Unorm => webgpu::GpuTextureFormat::Rg16unorm,
@@ -139,11 +146,14 @@ impl From<wgpu_types::TextureFormat> for webgpu::GpuTextureFormat {
                     wgpu_types::AstcBlock::B12x10 => webgpu::GpuTextureFormat::Astc12x10UnormSrgb,
                     wgpu_types::AstcBlock::B12x12 => webgpu::GpuTextureFormat::Astc12x12UnormSrgb,
                 },
-                wgpu_types::AstcChannel::Hdr => todo!(),
+                wgpu_types::AstcChannel::Hdr => {
+                    bail!("{value:?} not supported")
+                }
             },
-            wgpu_types::TextureFormat::NV12 => todo!(),
-            wgpu_types::TextureFormat::P010 => todo!(),
-        }
+            wgpu_types::TextureFormat::NV12 | wgpu_types::TextureFormat::P010 => {
+                bail!("{value:?} not supported")
+            }
+        })
     }
 }
 

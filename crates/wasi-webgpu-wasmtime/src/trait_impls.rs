@@ -2,7 +2,10 @@ use core::slice;
 use futures::channel::oneshot;
 use shared::{FuturePipeMap, StreamPipeMap};
 use std::{borrow::Cow, collections::HashMap, fmt, num::NonZeroU64, sync::Arc};
-use wasmtime::component::{Access, Accessor, FutureReader, Resource, StreamReader};
+use wasmtime::{
+    bail,
+    component::{Access, Accessor, FutureReader, Resource, StreamReader},
+};
 use wgpu_types::error::{ErrorType, WebGpuError};
 
 use crate::{
@@ -402,7 +405,7 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
 
         let (bind_group_layout, err) = self.instance.device_create_bind_group_layout(
             device_id,
-            &descriptor.to_core(self.table),
+            &descriptor.to_core(self.table)?,
             None,
         );
 
@@ -575,7 +578,7 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
     }
 
     fn label(&mut self, _device: Resource<webgpu::GpuDevice>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -583,7 +586,7 @@ impl<'a> webgpu::HostGpuDevice for WasiWebGpuCtx<'a> {
         _device: Resource<webgpu::GpuDevice>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn push_error_scope(
@@ -792,7 +795,7 @@ impl<'a> webgpu::HostGpuTexture for WasiWebGpuCtx<'a> {
         texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<webgpu::GpuTextureFormat> {
         let texture = self.table.get(&texture)?;
-        Ok(texture.format.into())
+        texture.format.try_into()
     }
 
     fn usage(
@@ -807,11 +810,11 @@ impl<'a> webgpu::HostGpuTexture for WasiWebGpuCtx<'a> {
         &mut self,
         _texture: Resource<webgpu::GpuTexture>,
     ) -> wasmtime::Result<Option<webgpu::GpuTextureViewDimension>> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn label(&mut self, _self_: Resource<webgpu::GpuTexture>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -819,7 +822,7 @@ impl<'a> webgpu::HostGpuTexture for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuTexture>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, texture: Resource<webgpu::GpuTexture>) -> wasmtime::Result<()> {
@@ -830,7 +833,7 @@ impl<'a> webgpu::HostGpuTexture for WasiWebGpuCtx<'a> {
 
 impl<'a> webgpu::HostGpuTextureView for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<webgpu::GpuTextureView>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -838,7 +841,7 @@ impl<'a> webgpu::HostGpuTextureView for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuTextureView>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, view: Resource<webgpu::GpuTextureView>) -> wasmtime::Result<()> {
@@ -849,7 +852,7 @@ impl<'a> webgpu::HostGpuTextureView for WasiWebGpuCtx<'a> {
 
 impl<'a> webgpu::HostGpuCommandBuffer for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -857,7 +860,7 @@ impl<'a> webgpu::HostGpuCommandBuffer for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuCommandBuffer>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, command_buffer: Resource<webgpu::GpuCommandBuffer>) -> wasmtime::Result<()> {
@@ -868,7 +871,7 @@ impl<'a> webgpu::HostGpuCommandBuffer for WasiWebGpuCtx<'a> {
 
 impl<'a> webgpu::HostGpuShaderModule for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<webgpu::GpuShaderModule>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -876,7 +879,7 @@ impl<'a> webgpu::HostGpuShaderModule for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuShaderModule>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, shader: Resource<webgpu::GpuShaderModule>) -> wasmtime::Result<()> {
@@ -900,7 +903,7 @@ impl<T: Send> webgpu::HostGpuShaderModuleWithStore<T> for crate::HasWasiWebGpuCt
 
 impl<'a> webgpu::HostGpuRenderPipeline for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<RenderPipeline>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -908,7 +911,7 @@ impl<'a> webgpu::HostGpuRenderPipeline for WasiWebGpuCtx<'a> {
         _self_: Resource<RenderPipeline>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn get_bind_group_layout(
@@ -1047,7 +1050,7 @@ impl<T: Send> webgpu::HostGpuAdapterWithStore<T> for crate::HasWasiWebGpuCtx {
                                 message,
                             })
                         }
-                        err => todo!("unhandled request device error: {:#?}", err),
+                        err => bail!("TODO: unhandled request device error: {:#?}", err),
                     }
                 }
             })
@@ -1155,7 +1158,7 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
     }
 
     fn label(&mut self, _self_: Resource<webgpu::GpuQueue>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -1163,7 +1166,7 @@ impl<'a> webgpu::HostGpuQueue for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuQueue>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, queue: Resource<webgpu::GpuQueue>) -> wasmtime::Result<()> {
@@ -1411,7 +1414,7 @@ impl<'a> webgpu::HostGpuCommandEncoder for WasiWebGpuCtx<'a> {
         _self_: Resource<CommandEncoder>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn push_debug_group(
@@ -1596,7 +1599,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
     }
 
     fn label(&mut self, _self_: Resource<RenderPassEncoder>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -1604,7 +1607,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         _self_: Resource<RenderPassEncoder>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn push_debug_group(
@@ -1795,7 +1798,7 @@ impl<'a> webgpu::HostGpuRenderPassEncoder for WasiWebGpuCtx<'a> {
         _data_offset: Option<u64>,
         _data_size: Option<u64>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, render_pass: Resource<RenderPassEncoder>) -> wasmtime::Result<()> {
@@ -1810,27 +1813,27 @@ impl<'a> webgpu::HostGpuUncapturedErrorEvent for WasiWebGpuCtx<'a> {
     //     _type_: String,
     //     _gpu_uncaptured_error_event_init_dict: webgpu::GpuUncapturedErrorEventInit,
     // ) -> Resource<webgpu::GpuUncapturedErrorEvent> {
-    //     todo!()
+    //     bail!("TODO:")
     // }
 
     fn error(
         &mut self,
         _self_: Resource<webgpu::GpuUncapturedErrorEvent>,
     ) -> wasmtime::Result<Resource<webgpu::GpuError>> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, _error: Resource<webgpu::GpuUncapturedErrorEvent>) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 }
 // impl<'a> webgpu::HostGpuInternalError for WasiWebGpu<'a> {
 //     fn new(&mut self, _message: String) -> Resource<webgpu::GpuInternalError> {
-//         todo!()
+//         bail!("TODO:")
 //     }
 
 //     fn message(&mut self, _self_: Resource<webgpu::GpuInternalError>) -> String {
-//         todo!()
+//         bail!("TODO:")
 //     }
 
 //     fn drop(&mut self, error: Resource<webgpu::GpuInternalError>) -> wasmtime::Result<()> {
@@ -1840,11 +1843,11 @@ impl<'a> webgpu::HostGpuUncapturedErrorEvent for WasiWebGpuCtx<'a> {
 // }
 // impl<'a> webgpu::HostGpuOutOfMemoryError for WasiWebGpu<'a> {
 //     fn new(&mut self, _message: String) -> Resource<webgpu::GpuOutOfMemoryError> {
-//         todo!()
+//         bail!("TODO:")
 //     }
 
 //     fn message(&mut self, _self_: Resource<webgpu::GpuOutOfMemoryError>) -> String {
-//         todo!()
+//         bail!("TODO:")
 //     }
 
 //     fn drop(&mut self, error: Resource<webgpu::GpuOutOfMemoryError>) -> wasmtime::Result<()> {
@@ -1854,11 +1857,11 @@ impl<'a> webgpu::HostGpuUncapturedErrorEvent for WasiWebGpuCtx<'a> {
 // }
 // impl<'a> webgpu::HostGpuValidationError for WasiWebGpu<'a> {
 //     fn new(&mut self, _message: String) -> Resource<webgpu::GpuValidationError> {
-//         todo!()
+//         bail!("TODO:")
 //     }
 
 //     fn message(&mut self, _self_: Resource<webgpu::GpuValidationError>) -> String {
-//         todo!()
+//         bail!("TODO:")
 //     }
 
 //     fn drop(&mut self, error: Resource<webgpu::GpuValidationError>) -> wasmtime::Result<()> {
@@ -1908,34 +1911,34 @@ impl<'a> webgpu::HostGpuCanvasContext for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuCanvasContext>,
         _configuration: webgpu::GpuCanvasConfiguration,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn get_configuration(
         &mut self,
         _self_: Resource<webgpu::GpuCanvasContext>,
     ) -> wasmtime::Result<Option<webgpu::GpuCanvasConfigurationOwned>> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn unconfigure(&mut self, _self_: Resource<webgpu::GpuCanvasContext>) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn get_current_texture(
         &mut self,
         _self_: Resource<webgpu::GpuCanvasContext>,
     ) -> wasmtime::Result<Resource<webgpu::GpuTexture>> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, _rep: Resource<webgpu::GpuCanvasContext>) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 }
 impl<'a> webgpu::HostGpuRenderBundle for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<webgpu::GpuRenderBundle>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -1943,7 +1946,7 @@ impl<'a> webgpu::HostGpuRenderBundle for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuRenderBundle>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, _bundle: Resource<webgpu::GpuRenderBundle>) -> wasmtime::Result<()> {
@@ -2015,7 +2018,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         &mut self,
         _self_: Resource<webgpu::GpuComputePassEncoder>,
     ) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -2023,7 +2026,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuComputePassEncoder>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn push_debug_group(
@@ -2102,7 +2105,7 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
         _data_offset: Option<u64>,
         _data_size: Option<u64>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(
@@ -2119,14 +2122,14 @@ impl<'a> webgpu::HostGpuComputePassEncoder for WasiWebGpuCtx<'a> {
 //         _message: Option<String>,
 //         _options: webgpu::GpuPipelineErrorInit,
 //     ) -> Resource<webgpu::GpuPipelineError> {
-//         todo!()
+//         bail!("TODO:")
 //     }
 
 //     fn reason(
 //         &mut self,
 //         _self_: Resource<webgpu::GpuPipelineError>,
 //     ) -> webgpu::GpuPipelineErrorReason {
-//         todo!()
+//         bail!("TODO:")
 //     }
 
 //     fn drop(&mut self, error: Resource<webgpu::GpuPipelineError>) -> wasmtime::Result<()> {
@@ -2222,7 +2225,7 @@ impl<'a> webgpu::HostGpuQuerySet for WasiWebGpuCtx<'a> {
     }
 
     fn label(&mut self, _self_: Resource<webgpu::GpuQuerySet>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -2230,7 +2233,7 @@ impl<'a> webgpu::HostGpuQuerySet for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuQuerySet>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, _query_set: Resource<webgpu::GpuQuerySet>) -> wasmtime::Result<()> {
@@ -2263,7 +2266,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         &mut self,
         _self_: Resource<webgpu::GpuRenderBundleEncoder>,
     ) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -2271,7 +2274,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuRenderBundleEncoder>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn push_debug_group(
@@ -2542,7 +2545,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
         _data_offset: Option<u64>,
         _data_size: Option<u64>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, encoder: Resource<webgpu::GpuRenderBundleEncoder>) -> wasmtime::Result<()> {
@@ -2552,7 +2555,7 @@ impl<'a> webgpu::HostGpuRenderBundleEncoder for WasiWebGpuCtx<'a> {
 }
 impl<'a> webgpu::HostGpuComputePipeline for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<webgpu::GpuComputePipeline>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -2560,7 +2563,7 @@ impl<'a> webgpu::HostGpuComputePipeline for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuComputePipeline>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn get_bind_group_layout(
@@ -2587,7 +2590,7 @@ impl<'a> webgpu::HostGpuComputePipeline for WasiWebGpuCtx<'a> {
 }
 impl<'a> webgpu::HostGpuBindGroup for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<webgpu::GpuBindGroup>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -2595,7 +2598,7 @@ impl<'a> webgpu::HostGpuBindGroup for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuBindGroup>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, bind_group: Resource<webgpu::GpuBindGroup>) -> wasmtime::Result<()> {
@@ -2605,7 +2608,7 @@ impl<'a> webgpu::HostGpuBindGroup for WasiWebGpuCtx<'a> {
 }
 impl<'a> webgpu::HostGpuPipelineLayout for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<webgpu::GpuPipelineLayout>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -2613,7 +2616,7 @@ impl<'a> webgpu::HostGpuPipelineLayout for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuPipelineLayout>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, layout: Resource<webgpu::GpuPipelineLayout>) -> wasmtime::Result<()> {
@@ -2623,7 +2626,7 @@ impl<'a> webgpu::HostGpuPipelineLayout for WasiWebGpuCtx<'a> {
 }
 impl<'a> webgpu::HostGpuBindGroupLayout for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<webgpu::GpuBindGroupLayout>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -2631,7 +2634,7 @@ impl<'a> webgpu::HostGpuBindGroupLayout for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuBindGroupLayout>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, layout: Resource<webgpu::GpuBindGroupLayout>) -> wasmtime::Result<()> {
@@ -2642,7 +2645,7 @@ impl<'a> webgpu::HostGpuBindGroupLayout for WasiWebGpuCtx<'a> {
 
 impl<'a> webgpu::HostGpuSampler for WasiWebGpuCtx<'a> {
     fn label(&mut self, _self_: Resource<webgpu::GpuSampler>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -2650,7 +2653,7 @@ impl<'a> webgpu::HostGpuSampler for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuSampler>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, sampler: Resource<webgpu::GpuSampler>) -> wasmtime::Result<()> {
@@ -2802,7 +2805,7 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
     }
 
     fn label(&mut self, _self_: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<String> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn set_label(
@@ -2810,7 +2813,7 @@ impl<'a> webgpu::HostGpuBuffer for WasiWebGpuCtx<'a> {
         _self_: Resource<webgpu::GpuBuffer>,
         _label: String,
     ) -> wasmtime::Result<()> {
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, buffer: Resource<webgpu::GpuBuffer>) -> wasmtime::Result<()> {
@@ -3007,8 +3010,7 @@ impl<T: Send> webgpu::HostGpuWithStore<T> for crate::HasWasiWebGpuCtx {
                     None
                 }
                 Err(e) => {
-                    log::warn!("Failed to get gpu adapter: {e:?}");
-                    panic!("Error when trying to get GPU adapter");
+                    bail!("Failed to get gpu adapter: {e:?}");
                 }
             })
         })
@@ -3446,7 +3448,7 @@ impl<'a> webgpu::HostGpuSupportedLimits for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<u32> {
         // let limits = self.table().get(&limits)?;
         // Ok(limits.max_storage_buffers_in_vertex_stage)
-        todo!()
+        bail!("TODO:")
     }
 
     fn max_storage_buffers_in_fragment_stage(
@@ -3455,7 +3457,7 @@ impl<'a> webgpu::HostGpuSupportedLimits for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<u32> {
         // let limits = self.table().get(&limits)?;
         // Ok(limits.max_storage_buffers_in_fragment_stage)
-        todo!()
+        bail!("TODO:")
     }
 
     fn max_storage_textures_in_vertex_stage(
@@ -3464,7 +3466,7 @@ impl<'a> webgpu::HostGpuSupportedLimits for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<u32> {
         // let limits = self.table().get(&limits)?;
         // Ok(limits.max_storage_textures_in_vertex_stage)
-        todo!()
+        bail!("TODO:")
     }
 
     fn max_storage_textures_in_fragment_stage(
@@ -3473,7 +3475,7 @@ impl<'a> webgpu::HostGpuSupportedLimits for WasiWebGpuCtx<'a> {
     ) -> wasmtime::Result<u32> {
         // let limits = self.table().get(&limits)?;
         // Ok(limits.max_storage_textures_in_fragment_stage)
-        todo!()
+        bail!("TODO:")
     }
 
     fn drop(&mut self, limits: Resource<webgpu::GpuSupportedLimits>) -> wasmtime::Result<()> {
