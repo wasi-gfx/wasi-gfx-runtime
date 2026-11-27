@@ -480,7 +480,7 @@ impl TryFrom<winit::keyboard::KeyCode> for wasi_gfx::surface::surface::Key {
             winit::keyboard::KeyCode::F33 => Err(()),
             winit::keyboard::KeyCode::F34 => Err(()),
             winit::keyboard::KeyCode::F35 => Err(()),
-            _ => todo!(),
+            _ => Err(()),
         }
     }
 }
